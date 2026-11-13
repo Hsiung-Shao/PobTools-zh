@@ -1,10 +1,6 @@
-// PobTools filter-editor localization layer (DISPLAY ONLY).
-//
-// Loads the same engine dictionaries the translation editor uses (items / uniques
-// / gems / ui) into an English->Chinese name map, plus a bundled base-type ->
-// item-class map (generated from POB's Data/Bases) and the class-name zh labels
-// from item_metadata.json. The tier-list UI shows Chinese names and groups items
-// by class, while the underlying .filter values stay English (output is unchanged).
+// PobTools filter-editor localization layer (DISPLAY ONLY): English->Chinese name map from the engine dictionaries,
+// a bundled base-type -> item-class map (from POB's Data/Bases) and class zh labels from item_metadata.json.
+// The underlying .filter values stay English.
 #pragma once
 
 #include <string>
@@ -30,10 +26,6 @@ public:
 	// an empty query matches nothing. Pairs are (English, Chinese).
 	std::vector<std::pair<std::string, std::string>> OffCatalogMatches(const std::string& query, size_t limit) const;
 
-	// English base type -> English item class ("Bow", "Body Armour", ...); "" if unknown.
-	// (Legacy gear-only map, used by the existing base-class sub-filter.)
-	std::string BaseClass(const std::string& en) const;
-
 	// English item name -> repoe item_class for ALL items ("StackableCurrency",
 	// "Bow", "Active Skill Gem", "Belt" for a unique, ...); "" if unknown.
 	std::string ItemClass(const std::string& en) const;
@@ -50,11 +42,9 @@ public:
 	// unknown — callers keep their defaults.
 	bool SizeOf(const std::string& en, int* w, int* h) const;
 
-	// zh -> en lookup tables for parsing pasted game item text. Built from the
-	// same item_metadata.json the paste path uses, plus code-side supplements
-	// verified against GGPK (the file itself feeds classify_lines and is not
-	// touched). Keys are the exact zh strings the TW client prints; values are
-	// the exact en client strings. Empty maps when the locale has no file.
+	// zh -> en lookup tables for parsing pasted item text: item_metadata.json (as the paste path uses, left untouched)
+	// plus GGPK-verified code-side supplements. Keys are the TW client's exact strings, values the en client's.
+	// Empty maps when the locale has no file.
 	struct ZhTables {
 		std::unordered_map<std::string, std::string> header;     // "物品種類" -> "Item Class"
 		std::unordered_map<std::string, std::string> rarity;     // "稀有"     -> "Rare"
@@ -83,7 +73,6 @@ private:
 
 	std::unordered_map<std::string, std::string> names_;      // en name  -> zh name
 	std::vector<std::pair<std::string, std::string>> offCatalog_;   // (en, zh) base items the catalog lacks, sorted
-	std::unordered_map<std::string, std::string> baseClass_;  // en base  -> en class (legacy)
 	std::unordered_map<std::string, std::string> classZh_;    // en class -> zh class
 	std::unordered_map<std::string, std::string> classEn_;    // class id -> game class name
 	std::unordered_map<std::string, Meta>        meta_;       // en name  -> {class, tags, drop, w, h}

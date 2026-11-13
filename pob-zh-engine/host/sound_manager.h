@@ -11,8 +11,3 @@ void SetSoundFolder(const std::wstring& folder);
 
 // Win32 folder-picker dialog ("" if cancelled). Shared with the 音效管理 section.
 std::wstring BrowseSoundFolder(void* owner = nullptr);
-
-// Draw the sound-library UI (folder picker + file list + ▶ preview + 選用). Call
-// inside a popup/child. Returns true once the user picks a file, with its full path
-// (UTF-8) in outPickedPathUtf8.
-bool DrawSoundLibrary(std::string& outPickedPathUtf8, float scale);

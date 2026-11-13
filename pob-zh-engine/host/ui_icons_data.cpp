@@ -7,16 +7,14 @@
 #include <cstring>
 
 namespace {
+// Raw TTF bytes, NOT compressed: the launcher builds its atlas on two threads at once, and ImGui's stb_decompress
+// keeps its state in file-scope globals. Read-only and static, so every atlas can point at it without a keep-alive.
 #include "data/icons_lucide.inc"
 
 const ImWchar kRanges[] = { (ImWchar)PobIcon::kRangeFirst, (ImWchar)PobIcon::kRangeLast, 0 };
 } // namespace
 
 namespace PobIcon {
-
-const unsigned char* FontData() { return kLucideTtf; }
-unsigned FontSize() { return kLucideTtfSize; }
-const unsigned short* GlyphRanges() { return kRanges; }
 
 float HheaAscentRatio(const std::vector<unsigned char>& d)
 {

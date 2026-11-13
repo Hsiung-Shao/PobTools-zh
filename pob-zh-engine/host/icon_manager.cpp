@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <winhttp.h>
 #include <shlobj.h>
+#include "win_util.h"
 
 #include <json.hpp> // nlohmann::ordered_json
 #include <cctype>
@@ -16,16 +17,7 @@
 
 using nlohmann::ordered_json;
 
-// ---- helpers ---------------------------------------------------------------
-
-static std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
+// helpers
 
 static bool read_file_bytes(const std::wstring& path, std::vector<unsigned char>& out)
 {
@@ -77,25 +69,40 @@ static bool HttpGet(HINTERNET hConnect, const std::wstring& path, std::vector<un
 		WinHttpQueryHeaders(hReq, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
 			WINHTTP_HEADER_NAME_BY_INDEX, &code, &len, WINHTTP_NO_HEADER_INDEX);
 		if (code == 200) {
-			DWORD avail = 0;
-			do {
-				avail = 0;
+			bool complete = false; // a read error mid-body is a failed download, not a short one
+			for (;;) {
+				DWORD avail = 0;
 				if (!WinHttpQueryDataAvailable(hReq, &avail)) break;
-				if (avail == 0) break;
+				if (avail == 0) { complete = true; break; }
 				size_t off = out.size();
 				out.resize(off + avail);
 				DWORD rd = 0;
-				if (!WinHttpReadData(hReq, out.data() + off, avail, &rd)) { out.resize(off); break; }
+				if (!WinHttpReadData(hReq, out.data() + off, avail, &rd)) break;
 				out.resize(off + rd);
-			} while (avail > 0);
-			ok = !out.empty();
+			}
+			ok = complete && !out.empty();
 		}
 	}
 	WinHttpCloseHandle(hReq);
 	return ok;
 }
 
-// ---- IconManager -----------------------------------------------------------
+unsigned char* IconLoadOrFetch(const std::wstring& cacheFile,
+                               const std::function<bool(std::vector<unsigned char>&)>& fetch, int* w, int* h)
+{
+	std::vector<unsigned char> bytes;
+	if (read_file_bytes(cacheFile, bytes)) {
+		if (unsigned char* px = DecodeImageRGBA(bytes.data(), (int)bytes.size(), w, h)) return px;
+		DeleteFileW(cacheFile.c_str()); // a cut-off download cached by an older build: fetch it again
+	}
+	bytes.clear();
+	if (!fetch(bytes) || bytes.empty()) return nullptr;
+	unsigned char* px = DecodeImageRGBA(bytes.data(), (int)bytes.size(), w, h);
+	if (px) write_file_bytes(cacheFile, bytes);
+	return px;
+}
+
+// IconManager
 
 void IconManager::Init(const std::wstring& exeDir)
 {
@@ -109,9 +116,7 @@ void IconManager::Init(const std::wstring& exeDir)
 					if (v.is_string()) paths_.emplace(k, v.get<std::string>());
 		} catch (...) {}
 	}
-	// The worker starts even without the index: callers that already know an art
-	// path (atlas planner scarabs) do not need one, and an idle worker parked on
-	// its condition variable costs nothing.
+	// The worker starts even without the index: callers that already know an art path (atlas planner) need none.
 	cacheDir_ = exeDir + L"PobTools\\cache\\icons\\";
 	SHCreateDirectoryExW(nullptr, cacheDir_.c_str(), nullptr); // best-effort
 
@@ -209,12 +214,9 @@ void IconManager::workerLoop()
 			reqQ_.pop_front();
 		}
 
-		// Two key shapes share this queue. Classic art paths
-		// ("Art/2DItems/X") fetch /image/<path>.png and cache under the
-		// sanitized path, exactly as before. Modern stash-API icons are
-		// pre-signed generator URLs ("gen/image/<b64>/<sig>/<Name>") -- the
-		// b64 token is a few hundred characters, so the cache name is a hash
-		// plus the readable tail instead of the sanitized whole.
+		// Two key shapes share this queue. Classic art paths ("Art/2DItems/X") fetch /image/<path>.png, cached under the
+		// sanitized path. Stash-API icons are pre-signed generator URLs ("gen/image/<b64>/<sig>/<Name>") whose b64
+		// token is a few hundred characters, so the cache name is a hash plus the readable tail.
 		std::wstring cacheName;
 		std::wstring urlPath;
 		if (artPath.rfind("gen/", 0) == 0) {
@@ -232,15 +234,9 @@ void IconManager::workerLoop()
 			urlPath = L"/image/" + widen(artPath) + L".png";
 		}
 		std::wstring cacheFile = cacheDir_ + cacheName + L".png";
-		std::vector<unsigned char> bytes;
-		if (!read_file_bytes(cacheFile, bytes)) {
-			if (HttpGet(hConnect, urlPath, bytes))
-				write_file_bytes(cacheFile, bytes);
-		}
-		if (bytes.empty()) continue;
-
 		int w = 0, h = 0;
-		unsigned char* rgba = DecodeImageRGBA(bytes.data(), (int)bytes.size(), &w, &h);
+		unsigned char* rgba = IconLoadOrFetch(cacheFile,
+			[&](std::vector<unsigned char>& b) { return HttpGet(hConnect, urlPath, b); }, &w, &h);
 		if (!rgba) continue;
 		{
 			std::lock_guard<std::mutex> lk(doneMx_);

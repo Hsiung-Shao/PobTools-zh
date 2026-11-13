@@ -1,9 +1,11 @@
 #include "pob_protocol.h"
 #include "error_log.h"
+#include "modern_ui_shared.h" // selftest: the host.open_folder path rule
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shlobj.h>
+#include "win_util.h"
 
 #include <cstdio>
 #include <cwchar>
@@ -21,15 +23,6 @@ namespace {
 // "%25XX", 5 chars): a 23-character Cyrillic name alone is ~230 characters.
 const size_t kMaxUri = 512;
 const wchar_t* const kSchemes[] = { L"pob", L"pob2" };
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-	return s;
-}
 
 bool id_char(wchar_t c)
 {
@@ -463,7 +456,7 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 		if (!ok) failures++;
 	};
 
-	// ---- URI whitelist ----
+	// URI whitelist
 	struct Good { const wchar_t* in; const wchar_t* game; const wchar_t* norm; };
 	const Good good[] = {
 		{ L"pob://poeninja/AbC123", L"poe1", L"pob://poeninja/AbC123" },
@@ -473,7 +466,7 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 		{ L"pob://poeninja/AbC123/", L"poe1", L"pob://poeninja/AbC123" },  // one trailing slash
 		{ L"pob:poeninja/abc", L"poe1", L"pob://poeninja/abc" },           // no slashes after the colon
 		{ L"pob:///poeninja/abc", L"poe1", L"pob://poeninja/abc" },        // one extra slash after the colon
-		// the real poe.ninja buttons (2026-10): a path plus the character in a query
+		// the real poe.ninja buttons: a path plus the character in a query
 		{ L"pob://poeninja/overview/code?account=Brainwar-1546&name=BrainAllFlamed&overview=allflame&type=exp", L"poe1",
 		  L"pob://poeninja/overview/code?account=Brainwar-1546&name=BrainAllFlamed&overview=allflame&type=exp" },
 		{ L"pob2://PoeNinja/overview/code?account=perceptionofreality-7468&name=BABYROSHANCOM&overview=forbidden-rites", L"poe2",
@@ -561,14 +554,14 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 		check("C refuse: unterminated program quote", !PobUriCommandLineIsClean(L"\"D:\\x\\pob-zh.exe pob://a/b", L"pob://a/b"));
 		check("C refuse: empty argument", !PobUriCommandLineIsClean(L"pob-zh.exe \"\"", L""));
 	}
-	// Phase 2: which game a classic POB window title belongs to.
+	// which game a classic POB window title belongs to
 	check("T title poe1", GameFromPobTitle(L"Imported Build (Chieftain) - Path of Building") == L"poe1");
 	check("T title poe2", GameFromPobTitle(L"Imported Build (Oracle) - Path of Building (PoE2)") == L"poe2");
 	check("T title bare poe1/poe2", GameFromPobTitle(L"Path of Building") == L"poe1" &&
 	                                    GameFromPobTitle(L"Path of Building (PoE2)") == L"poe2");
 	check("T title others are none", GameFromPobTitle(L"PobTools").empty() && GameFromPobTitle(L"").empty() &&
 	                                     GameFromPobTitle(L"Path of Building - notes.txt").empty());
-	// Phase 2: the WM_COPYDATA payload a running new-interface window accepts.
+	// the WM_COPYDATA payload a running new-interface window accepts
 	{
 		const std::wstring good = L"POB://PoeNinja/overview/code?account=a-1&name=b";
 		std::wstring out;
@@ -590,7 +583,7 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 	check("U LooksLikePobUri routes pob:/pob2:/POB2:", LooksLikePobUri(L"pob://x") && LooksLikePobUri(L"POB2:x") &&
 	                                                       !LooksLikePobUri(L"pobx://x") && !LooksLikePobUri(L"--engine"));
 
-	// ---- registry round-trip on a test-only scheme ----
+	// registry round-trip on a test-only scheme
 	const std::wstring scheme = L"pobtools-selftest";
 	const std::wstring me = L"C:\\PobToolsSelfTest\\Folder\\pob-zh.exe";
 	const std::wstring other = L"C:\\Program Files\\Path of Building\\Path of Building.exe";
@@ -648,7 +641,32 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 	RegDeleteKeyW(HKEY_CURRENT_USER, key_path(scheme).c_str());
 	check("R13 test scheme cleaned up", query_scheme(scheme, me) == State::None);
 
-	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
+	// host.open_folder (new interface): only the POB install and what is inside it
+	{
+		const wchar_t* pob = L"C:\\Games\\Path of Building\\";
+		struct Case { const wchar_t* path; bool allow; const char* name; };
+		const Case cases[] = {
+			{ L"C:\\Games\\Path of Building\\Builds", true, "open_folder 允許安裝資料夾內的子資料夾" },
+			{ L"C:/Games/Path of Building/Builds/sub", true, "open_folder 允許正斜線寫法" },
+			{ L"c:\\games\\path of building", true, "open_folder 允許安裝資料夾本身(大小寫不同)" },
+			{ L"C:\\Games\\Path of Building\\..\\..\\Windows", false, "open_folder 拒絕用 .. 跳出安裝資料夾" },
+			{ L"C:\\Games\\Path of Building\\Builds\\..\\..\\Secret", false, "open_folder 拒絕先進再跳出" },
+			{ L"C:\\Games\\Path of Building Evil\\x", false, "open_folder 拒絕同前綴的兄弟資料夾" },
+			{ L"C:\\Windows", false, "open_folder 拒絕安裝資料夾以外的路徑" },
+			{ L"", false, "open_folder 拒絕空路徑" },
+		};
+		for (const Case& c : cases)
+			check(c.name, ModernUiPathUnderPob(pob, c.path) == c.allow);
+		check("open_folder 沒有 POB 資料夾時一律拒絕", !ModernUiPathUnderPob(L"", L"C:\\Windows"));
+		check("open_folder 安裝資料夾不帶結尾反斜線也可", ModernUiPathUnderPob(L"C:\\Games\\Path of Building", L"C:\\Games\\Path of Building\\Builds")
+			&& !ModernUiPathUnderPob(L"C:\\Games\\Path of Building", L"C:\\Games\\Path of Building Evil"));
+		// relative and scheme-like input: must not be judged against the working directory
+		wchar_t cwd[MAX_PATH] = L"";
+		GetCurrentDirectoryW(MAX_PATH, cwd);
+		for (const wchar_t* rel : { L"shell:System", L"Builds", L"file:\\\\host\\share", L"C:Builds" })
+			check("open_folder 拒絕非完整路徑 " + narrow(rel), !ModernUiPathUnderPob(cwd, rel));
+	}
+
 	{
 		int pass = 0, total = 0;
 		size_t pos = 0;
@@ -661,6 +679,7 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 		}
 		report += std::to_string(pass) + "/" + std::to_string(total) + " passed\n";
 	}
+	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
 	HANDLE h = CreateFileW((exeDir + L"PobTools\\pob_protocol_selftest.txt").c_str(), GENERIC_WRITE, 0, nullptr,
 	                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

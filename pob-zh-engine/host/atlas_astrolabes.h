@@ -2,12 +2,9 @@
 // rule, as shipped in Data/astrolabes_poe1.json (generated from the GGPK by
 // tools/ggpk_zh/gen_astrolabes.py).
 //
-// 3.29 applies an astrolabe to a QUADRANT of the atlas, turning it into a
-// "Shaped Region" carrying one league mechanic. The atlas has exactly four
-// quadrants and each holds at most one at a time -- both facts come from the
-// game's own data (AtlasRegions has 4 rows; the client string
-// ItemErrorAstrolabeActiveRegion reads "This Atlas Quadrant already has an
-// active Shaped Region"), not from lore.
+// An astrolabe applies to a QUADRANT of the atlas, turning it into a "Shaped
+// Region" with one league mechanic. Four quadrants, at most one each -- from the
+// game's data (AtlasRegions has 4 rows; client string ItemErrorAstrolabeActiveRegion).
 //
 // Pure data + rule logic, no ImGui / GL — same split as atlas_scarabs.
 #pragma once

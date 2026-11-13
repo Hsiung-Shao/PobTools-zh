@@ -8,9 +8,7 @@
 #include <map>
 #include <mutex>
 
-// Feature tags in use, so a new caller picks an existing one instead of adding a
-// synonym. The left column is what a user would say when reporting the problem;
-// grepping the log for the tag is how a report turns into a place to look.
+// Feature tags in use; a new caller picks an existing one instead of adding a synonym.
 //
 //   inject       POB source/Lua patch did not apply (Chinese input, tooltips)
 //   search       a search box's patch failed, or a query could not be built
@@ -31,32 +29,19 @@ namespace {
 std::mutex g_mx;
 std::wstring g_testDir;   // non-empty only during a self-test
 
-// ---- per-incident cap --------------------------------------------------------
-// A failure inside a per-frame path repeats sixty times a second. Reported from
-// the field: with the bookmark file read-only, the regex panel's deferred save
-// failed every frame and the log grew without bound -- which destroys the one
-// property this file is supposed to have, that its contents are worth reading.
-//
-// So one incident -- the same feature tag with the same message -- is written at
-// most kMaxPerIncident times per run, and after that not at all.
-//
-// The last one allowed says so. Silence that is not announced is ambiguous in
-// the worst possible way: whoever reads the log cannot tell "the problem stopped"
-// from "the log gave up", and those call for opposite next steps.
-//
-// The count is per process and never resets. A cap that reset on a timer would
-// let a per-frame failure write ten more lines every minute, which is the same
-// unbounded growth again, just slower.
+// per-incident cap
+// A failure in a per-frame path repeats 60 times a second and would grow the log without bound.
+// One incident (same feature tag + same message) is written at most kMaxPerIncident times per run.
+// The last one allowed says so (silence is ambiguous: "problem stopped" vs "log gave up").
+// The count never resets: a timed reset would just be slower unbounded growth.
 const int kMaxPerIncident = 10;
-// Diag() is a trace, so its cap is per feature tag rather than per message, and
-// higher: ten lines would cut a browser-mode session off mid-story.
+// Diag() is a trace, so its cap is per feature tag rather than per message, and higher.
 const int kMaxDiagPerFeature = 200;
 
 std::map<std::string, int> g_seen;   // feature\x1fmessage -> times written
 
-// The install directory, resolved once. GetModuleFileNameW(nullptr) is the exe
-// even when this translation unit is linked into SimpleGraphic.dll, which is
-// what we want: both modules must agree on one log location.
+// The install directory, resolved once. GetModuleFileNameW(nullptr) is the exe even when linked
+// into SimpleGraphic.dll, so both modules agree on one log location.
 const std::wstring& InstallDir()
 {
 	static const std::wstring dir = [] {
@@ -69,8 +54,7 @@ const std::wstring& InstallDir()
 	return dir;
 }
 
-// Creates <install>\PobTools\logs\. Both levels, because a fresh install has
-// neither and CreateDirectoryW does not make intermediate ones.
+// Creates <install>\PobTools\logs\ (both levels: CreateDirectoryW makes no intermediate ones).
 std::wstring EnsureDir()
 {
 	if (!g_testDir.empty()) {
@@ -85,9 +69,8 @@ std::wstring EnsureDir()
 	return dir;
 }
 
-// A message is one line. GGG's strings, Windows error text and Lua tracebacks
-// all contain newlines, and one failure that printed as four lines would read as
-// four failures -- exactly the wrong answer to "how much went wrong?".
+// A message is one line (GGG strings, Windows errors and Lua tracebacks contain newlines; four
+// lines would read as four failures).
 std::string Flatten(const std::string& s)
 {
 	std::string out;
@@ -143,8 +126,7 @@ void WriteLineTo(const std::wstring& dir, const wchar_t* stem, const std::string
 // Appends one already-built line. Callers hold g_mx.
 void WriteLine(const std::wstring& dir, const std::string& line)
 {
-	// FILE_SHARE_WRITE matters: app_update.cpp's older logger omits it, so a
-	// second running copy of PobTools silently loses every line it tries to log.
+	// FILE_SHARE_WRITE matters: app_update.cpp's older logger omits it, so a second running copy loses every line.
 	SYSTEMTIME st{};
 	GetLocalTime(&st);
 	wchar_t name[64];
@@ -191,9 +173,7 @@ void PobLog::Error(const char* feature, const std::string& msg)
 	if (times >= kMaxPerIncident) return;   // this incident has said enough
 	times++;
 
-	// The whole line is assembled first and written with ONE WriteFile. Appends
-	// under FILE_APPEND_DATA are atomic per call, so a single write is what keeps
-	// two writers (host + engine, or two running copies) from interleaving.
+	// ONE WriteFile per line: FILE_APPEND_DATA appends are atomic per call, so writers (host + engine, two copies) don't interleave.
 	std::string line = Stamp() + "v" POBTOOLS_VERSION_STRING " [" + feature + "] " + flat;
 	if (times == kMaxPerIncident)
 		line += u8"（已達 " + std::to_string(kMaxPerIncident) + u8" 次上限，這一則之後不再記錄）";
@@ -209,9 +189,7 @@ void PobLog::Diag(const char* feature, const std::string& msg)
 	const std::wstring dir = EnsureDir();
 	if (dir.empty()) return;
 
-	// Capped per tag, not per message: a trace is a sequence of DIFFERENT lines,
-	// so the error log's "same incident ten times" key would never fire and a
-	// runaway caller could fill the disk.
+	// Capped per tag, not per message: a trace is DIFFERENT lines, so the per-message key would never fire.
 	const std::string key = std::string("\x1e") + feature;
 	int& times = g_seen[key];
 	if (times >= kMaxDiagPerFeature) return;
@@ -231,9 +209,7 @@ int PobLog::PruneOlderThan(int keepDays)
 	const std::wstring dir = EnsureDir();
 	if (dir.empty()) return 0;
 
-	// The cutoff, as the local date `keepDays` ago. Compared as text, because the
-	// file name is already a sortable date and converting it back to a time just
-	// adds a timezone question nobody needs answered.
+	// The cutoff, as the local date `keepDays` ago, compared as text (file names are sortable dates; avoids timezone questions).
 	SYSTEMTIME now{};
 	GetLocalTime(&now);
 	FILETIME ft{};
@@ -249,10 +225,8 @@ int PobLog::PruneOlderThan(int keepDays)
 	wchar_t cutName[32];
 	swprintf_s(cutName, L"%04d-%02d-%02d", cut.wYear, cut.wMonth, cut.wDay);
 
-	// Only names of exactly the shape this module writes: the daily failure log,
-	// and the hang/crash reports the watchdog drops beside it. Never a wildcard
-	// sweep -- this directory is inside the user's install, and a delete loop
-	// that trusted "*.txt" would one day meet a file somebody else put there.
+	// Only names of exactly the shape this module writes; never a wildcard sweep (the directory is in
+	// the user's install and may hold someone else's files).
 	//
 	//   error-YYYY-MM-DD.log
 	//   hang-YYYY-MM-DD-HHMMSS-<role>.txt
@@ -273,9 +247,8 @@ int PobLog::PruneOlderThan(int keepDays)
 		return fn.size() >= n && fn.compare(fn.size() - n, n, suffix) == 0;
 	};
 
-	// `fixedWidth` names carry nothing after the date; the reports carry a time,
-	// so what follows their date must be the separator and never part of a
-	// longer word (hang-notes.txt is somebody's file, not ours).
+	// `fixedWidth` names carry nothing after the date; reports carry a time, so what follows their
+	// date must be the separator (hang-notes.txt is somebody's file, not ours).
 	struct Shape { const wchar_t* pattern; const wchar_t* prefix; const wchar_t* suffix; bool fixedWidth; };
 	const Shape shapes[] = {
 		{ L"error-*.log", L"error-", L".log", true  },

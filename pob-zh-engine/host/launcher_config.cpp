@@ -8,6 +8,7 @@
 #include <cwchar>
 #include <cwctype>
 #include <initializer_list>
+#include "win_util.h"
 
 // Config section name after the PobCharm -> PobTools rename. Old pob-zh.ini files
 // store their keys under [PoeCharm]; we read that as a one-time migration fallback
@@ -29,19 +30,7 @@ const wchar_t* DictSlotFolder(DictSlot slot)
 	return (i >= 0 && i < kDictSlotCount) ? kDictSlotFolders[i] : kDictSlotFolders[0];
 }
 
-static bool file_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
-}
-
-static bool dir_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
-}
-
-// ---- path helpers ----------------------------------------------------------
+// path helpers
 
 // One trailing backslash, no leading/trailing spaces. The trailing separator is
 // load-bearing for PathIsInside: without it "…\Data" prefix-matches "…\Data2".
@@ -69,26 +58,6 @@ bool PathIsInside(const std::wstring& parentDir, const std::wstring& path)
 	return c.size() >= p.size() && c.compare(0, p.size(), p) == 0;
 }
 
-// ---- narrow/widen (UTF-8) --------------------------------------------------
-
-static std::string narrow_utf8(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s((size_t)n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-	return s;
-}
-
-static std::wstring widen_utf8(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w((size_t)n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
-
 // Read a string key from [PobTools]; if it is absent, fall back to the legacy
 // [PoeCharm] section (a sentinel default distinguishes "absent" from "empty").
 static void read_ini_str(const std::wstring& iniPath, const wchar_t* key,
@@ -110,9 +79,7 @@ static int read_ini_int(const std::wstring& iniPath, const wchar_t* key, int fal
 }
 
 // Read a key whose value is a PATH. The fixed 64/128-wchar buffers the other keys
-// use TRUNCATE anything longer, and GetPrivateProfileStringW gives no way to tell a
-// truncated value from a short one -- the symptom would be "the folder I chose is
-// being ignored", but only for long paths, which is the hardest kind to reproduce.
+// use TRUNCATE longer values and GetPrivateProfileStringW cannot report that.
 static std::wstring read_ini_path(const std::wstring& iniPath, const wchar_t* key)
 {
 	std::vector<wchar_t> buf(2048, L'\0');
@@ -121,12 +88,9 @@ static std::wstring read_ini_path(const std::wstring& iniPath, const wchar_t* ke
 }
 
 // pob-zh.ini carries no BOM, so WritePrivateProfileStringW encodes with the system
-// ANSI codepage. That works here (cp950 covers Traditional Chinese) right up until
-// the machine is switched to the UTF-8 ACP ("Beta: Use Unicode UTF-8 for worldwide
-// language support"), after which a path written under one codepage reads back as
-// mojibake under the other -- silently. A non-ASCII path therefore also gets a
-// pure-ASCII hex copy that the reader prefers; ASCII paths skip it so the common
-// case stays hand-editable.
+// ANSI codepage; switching the machine to the UTF-8 ACP turns a non-ASCII path
+// into mojibake silently. A non-ASCII path therefore also gets a pure-ASCII hex
+// copy that the reader prefers; ASCII paths skip it so the ini stays hand-editable.
 static bool is_ascii(const std::wstring& w)
 {
 	for (wchar_t c : w) if (c >= 0x80) return false;
@@ -136,7 +100,7 @@ static bool is_ascii(const std::wstring& w)
 static std::wstring hex_of_utf8(const std::wstring& w)
 {
 	static const wchar_t* kHex = L"0123456789abcdef";
-	std::string bytes = narrow_utf8(w);
+	std::string bytes = narrow(w);
 	std::wstring out;
 	out.reserve(bytes.size() * 2);
 	for (unsigned char b : bytes) { out.push_back(kHex[b >> 4]); out.push_back(kHex[b & 0xF]); }
@@ -159,8 +123,10 @@ static std::wstring utf8_of_hex(const std::wstring& hex)
 		if (hi < 0 || lo < 0) return std::wstring(); // garbage: fall back to the raw key
 		bytes.push_back((char)((hi << 4) | lo));
 	}
-	return widen_utf8(bytes);
+	return widen(bytes);
 }
+
+const wchar_t* ModernUiPage(int uiMode) { return uiMode == 2 ? L"theme2.html" : L"index.html"; }
 
 LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 {
@@ -185,10 +151,8 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 		c.locale = buf;
 	}
 
-	// ExitMode replaced the ReturnToLauncher boolean. Absent key = an ini written
-	// by an older build, so migrate from it; anything out of range (hand-edited,
-	// or written by a future version) falls back to the historical behaviour
-	// rather than to an undefined value.
+	// ExitMode replaced the ReturnToLauncher boolean: absent key = older ini, migrate
+	// from it; out-of-range values fall back to the historical behaviour.
 	{
 		int em = read_ini_int(iniPath, L"ExitMode", INT_MIN);
 		if (em == INT_MIN)
@@ -205,8 +169,7 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 		             ? WindowMode::Tabbed : WindowMode::Separate;
 
 		// Remembered window sizes. A pair is only meaningful whole: a width with
-		// no usable height (one key hand-deleted, one value garbage) is "default",
-		// not "default height with a remembered width".
+		// no usable height is "default".
 		auto readPair = [&](const wchar_t* wKey, const wchar_t* hKey, int& w, int& h) {
 			w = ClampWindowDim(read_ini_int(iniPath, wKey, 0));
 			h = ClampWindowDim(read_ini_int(iniPath, hKey, 0));
@@ -220,8 +183,9 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 		c.modernTheme = NormalizeModernTheme(read_ini_path(iniPath, L"ModernTheme"));
 		c.modernAccent = NormalizeModernAccent(read_ini_path(iniPath, L"ModernAccent"));
 		c.modernFont = NormalizeModernFont(read_ini_path(iniPath, L"ModernFont"));
-		// Same rule as WindowMode: anything but the one known value is the default.
-		c.uiMode = (read_ini_int(iniPath, L"UiMode", 0) == 1) ? 1 : 0;
+		// Same rule as WindowMode: anything but the known values is the default.
+		const int um = read_ini_int(iniPath, L"UiMode", 0);
+		c.uiMode = (um == 1 || um == 2) ? um : 0;
 	}
 
 	wchar_t fbuf[128];
@@ -231,9 +195,8 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	c.fontApplyAll = read_ini_int(iniPath, L"FontApplyAll", 1) != 0;
 	for (int i = 0; i < kOptionalDictCount; i++)
 		c.optionalDictOn[i] = read_ini_int(iniPath, kOptionalDicts[i].iniKey, 1) != 0 ? 1 : 0;
-	// Appearance, per game. The suffix-less keys are what the first test builds
-	// wrote (one shared set); they seed BOTH games when a per-game key is absent
-	// and are deleted on the next save.
+	// Appearance, per game. Legacy suffix-less keys (one shared set) seed BOTH
+	// games when a per-game key is absent and are deleted on the next save.
 	for (int g = 0; g < 2; g++) {
 		AppearanceConfig& a = c.look[g];
 		const std::wstring sfx = GameKeySuffix(g);
@@ -299,11 +262,9 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	c.proxy = read_ini_path(iniPath, L"Proxy");
 
 	if (c.game != L"poe1" && c.game != L"poe2") c.game = L"poe1";
-	// Deliberately NOT clamped to a list of known language codes. This function
-	// only sees an ini path, so it cannot know which language folders exist; the
-	// old two-string clamp made every added folder unreachable. Validation belongs
-	// where the disk is visible -- see ListInstalledLocales / PickLocaleIndex,
-	// the same split already used for the dictionary folders.
+	// Deliberately NOT clamped to known language codes: this function only sees an
+	// ini path. Validation belongs where the disk is visible (ListInstalledLocales
+	// / PickLocaleIndex), as for the dictionary folders.
 	if (c.locale.empty()) c.locale = L"zh-rTW";
 	return c;
 }
@@ -342,10 +303,8 @@ void SaveLauncherConfigKeepModern(const std::wstring& iniPath, LauncherConfig& c
 
 void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 {
-	// Only the first write is checked. Every line below goes to the same file
-	// through the same API, so they fail together (read-only install, folder gone,
-	// a security product holding the handle) -- checking one is enough to notice,
-	// and checking all twenty would bury the signal in repetition.
+	// Only the first write is checked: every line below goes to the same file
+	// through the same API, so they fail together (read-only install, folder gone).
 	if (!WritePrivateProfileStringW(kSection, L"Game", cfg.game.c_str(), iniPath.c_str())) {
 		PobLog::Error("config", "pob-zh.ini could not be written, GetLastError=" +
 		                            std::to_string((unsigned long)GetLastError()) +
@@ -465,7 +424,7 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 	WritePrivateProfileStringW(kSection, L"Proxy", cfg.proxy.c_str(), iniPath.c_str());
 }
 
-// ---- external translation-data root ----------------------------------------
+// external translation-data root
 
 // meta.json's load_order, read without pulling in the JSON library: this file is
 // linked into every entry point and the array is a flat list of quoted names.
@@ -540,7 +499,7 @@ static std::vector<std::pair<std::string, int>> locales_in(const std::wstring& d
 	for (const std::wstring& loc : subdirs_of(dir)) {
 		const std::wstring leaf = dir + loc + L"\\";
 		if (file_exists(leaf + L"meta.json"))
-			out.push_back({ narrow_utf8(loc), count_json(leaf) });
+			out.push_back({ narrow(loc), count_json(leaf) });
 	}
 	return out;
 }
@@ -567,10 +526,8 @@ DictDirInfo ResolveDictDir(const std::wstring& exeDir, DictSlot slot, const std:
 	info.found = locales_in(path);
 
 	if (info.found.empty()) {
-		// Both off-by-one-level mistakes are likely and look identical from a
-		// generic "nothing here": one level too deep (picked the zh-rTW folder) and
-		// one level too shallow (picked the Data folder). Name which, and hand back
-		// the corrected path so the fix is one click.
+		// Both off-by-one-level mistakes (picked the zh-rTW folder / picked the Data
+		// folder) look alike; name which and hand back the corrected path.
 		if (file_exists(path + L"meta.json")) {
 			info.status = DataDirStatus::WrongShape;
 			std::wstring up = path;
@@ -590,7 +547,7 @@ DictDirInfo ResolveDictDir(const std::wstring& exeDir, DictSlot slot, const std:
 	// load_order, and the engine loads only what load_order names -- so it goes
 	// missing with no error anywhere.
 	for (const auto& f : info.found) {
-		const std::wstring loc = widen_utf8(f.first);
+		const std::wstring loc = widen(f.first);
 		std::vector<std::string> mine = load_order_of(path + loc + L"\\meta.json");
 		for (const std::string& name : load_order_of(builtin + loc + L"\\meta.json")) {
 			bool have = false;
@@ -609,7 +566,7 @@ bool DictionariesPresentAt(const std::wstring& dest)
 	return !locales_in(with_trailing_sep(dest)).empty();
 }
 
-// ---- installed interface languages ------------------------------------------
+// installed interface languages
 
 // meta.json's optional "display_name". Same hand-rolled scan as load_order_of:
 // this file is linked into every entry point and pulling in the JSON library for
@@ -658,7 +615,7 @@ std::vector<LocaleInfo> ListInstalledLocales(const std::wstring& exeDir, const L
 		for (const std::wstring& loc : subdirs_of(root)) {
 			const std::wstring meta = root + loc + L"\\meta.json";
 			if (!file_exists(meta)) continue;
-			const std::string id = narrow_utf8(loc);
+			const std::string id = narrow(loc);
 			if (id == "en") continue; // already there, and it needs no dictionary
 
 			auto it = out.begin();
@@ -689,16 +646,14 @@ std::vector<LocaleInfo> ListInstalledLocales(const std::wstring& exeDir, const L
 int PickLocaleIndex(const std::vector<LocaleInfo>& locales, const std::wstring& want)
 {
 	if (locales.empty()) return 0;
-	const std::string id = narrow_utf8(want);
+	const std::string id = narrow(want);
 	for (size_t i = 0; i < locales.size(); i++) if (locales[i].id == id) return (int)i;
 	for (size_t i = 0; i < locales.size(); i++) if (locales[i].id == "zh-rTW") return (int)i;
 	return 0; // en
 }
 
-// Delete a folder and everything under it. Properly recursive: the selftest's
-// sandbox is four levels deep (box\exe\Data\poe1\zh-rTW) and a hand-unrolled
-// three-level version silently left the whole tree behind -- RemoveDirectoryW
-// fails on a non-empty folder and reports nothing.
+// Delete a folder and everything under it, recursively (RemoveDirectoryW fails
+// silently on a non-empty folder; the selftest sandbox is four levels deep).
 static void remove_tree(const std::wstring& dir)
 {
 	const std::wstring d = with_trailing_sep(dir);
@@ -720,7 +675,7 @@ static int copy_tree(const std::wstring& src, const std::wstring& dst, std::stri
 {
 	if (!dir_exists(dst) && !CreateDirectoryW(dst.c_str(), nullptr) &&
 	    GetLastError() != ERROR_ALREADY_EXISTS) {
-		if (err) *err = u8"無法建立資料夾：" + narrow_utf8(dst);
+		if (err) *err = u8"無法建立資料夾：" + narrow(dst);
 		return -1;
 	}
 	int n = 0;
@@ -737,7 +692,7 @@ static int copy_tree(const std::wstring& src, const std::wstring& dst, std::stri
 		} else if (CopyFileW((src + name).c_str(), (dst + name).c_str(), FALSE)) {
 			n++;
 		} else {
-			if (err) *err = u8"無法複製：" + narrow_utf8(name);
+			if (err) *err = u8"無法複製：" + narrow(name);
 			FindClose(h);
 			return -1;
 		}
@@ -934,10 +889,8 @@ static std::string read_pob_version(const std::wstring& installDir)
 	if (close == std::string::npos || close > end) return std::string();
 	std::string v = xml.substr(attr, close - attr);
 	// Release builds are "2.57.1"; the beta branch stamps "2.67.2-ed354c2f8"
-	// (16 chars, dash, hex letters). The old digits-and-dots-under-16 guard
-	// rejected exactly that and the launcher row showed no version at all for
-	// a beta install. Cap 25 (user-set): longer than any real stamp, short
-	// enough that markup or a corrupt attribute still reads as garbage.
+	// (dash, hex letters). Cap 25: longer than any real stamp, short enough that
+	// markup or a corrupt attribute still reads as garbage.
 	if (v.empty() || v.size() > 25) return std::string();
 	for (char c : v) {
 		const bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') ||
@@ -1027,7 +980,7 @@ std::wstring FindPoe1Dir(const std::wstring& exeDir)
 	return d;
 }
 
-// ---- --detect-selftest --------------------------------------------------------
+// --detect-selftest
 
 static bool st_mkdir(const std::wstring& p)
 {
@@ -1070,7 +1023,7 @@ int RunDetectInstallsSelfTest(const std::wstring& exeDir)
 
 	std::string report;
 	int failures = 0;
-	auto narrow = [](const std::wstring& w) {
+	auto ascii_narrow = [](const std::wstring& w) {
 		std::string s;
 		for (wchar_t c : w) s.push_back(c < 128 ? (char)c : '?');
 		return s;
@@ -1103,21 +1056,21 @@ int RunDetectInstallsSelfTest(const std::wstring& exeDir)
 		      i.poe2Dir == r + L"PathOfBuildingCommunity-PoE2-Portable" &&
 		      i.poe1Lua == i.poe1Dir + L"\\Launch.lua" &&
 		      i.poe2Lua == i.poe2Dir + L"\\Launch.lua",
-		      narrow(i.poe1Dir + L" | " + i.poe2Dir));
+		      ascii_narrow(i.poe1Dir + L" | " + i.poe2Dir));
 	}
 	{ // T2: the official portable folder name counts as PoE1
 		std::wstring r = makeRoot({ L"PathOfBuildingCommunity-Portable" }, false);
 		InstallInfo i = DetectInstalls(r);
 		check("T2 portable name",
 		      i.poe1Dir == r + L"PathOfBuildingCommunity-Portable" && i.poe2Dir.empty(),
-		      narrow(i.poe1Dir));
+		      ascii_narrow(i.poe1Dir));
 	}
 	{ // T3: arbitrary names, classified by the "poe2" substring
 		std::wstring r = makeRoot({ L"MyPob", L"PathOfBuilding-PoE2" }, false);
 		InstallInfo i = DetectInstalls(r);
 		check("T3 arbitrary names",
 		      i.poe1Dir == r + L"MyPob" && i.poe2Dir == r + L"PathOfBuilding-PoE2",
-		      narrow(i.poe1Dir + L" | " + i.poe2Dir));
+		      ascii_narrow(i.poe1Dir + L" | " + i.poe2Dir));
 	}
 	{ // T4: Launch.lua next to the exe itself; slot from the folder's own name
 		std::wstring r1 = makeRoot({}, true, L"case4_plain");
@@ -1127,12 +1080,12 @@ int RunDetectInstallsSelfTest(const std::wstring& exeDir)
 		check("T4 root-level lua",
 		      a.poe1Dir + L"\\" == r1 && a.poe2Dir.empty() &&
 		      b.poe2Dir + L"\\" == r2 && b.poe1Dir.empty(),
-		      narrow(a.poe1Dir + L" | " + b.poe2Dir));
+		      ascii_narrow(a.poe1Dir + L" | " + b.poe2Dir));
 	}
 	{ // T5: canonical wins over a renamed sibling that sorts first
 		std::wstring r = makeRoot({ L"AAA_Renamed", L"PathOfBuildingCommunity" }, false);
 		InstallInfo i = DetectInstalls(r);
-		check("T5 canonical priority", i.poe1Dir == r + L"PathOfBuildingCommunity", narrow(i.poe1Dir));
+		check("T5 canonical priority", i.poe1Dir == r + L"PathOfBuildingCommunity", ascii_narrow(i.poe1Dir));
 	}
 	{ // T6: subfolders without Launch.lua are ignored
 		std::wstring r = makeRoot({}, false, L"case6");
@@ -1145,7 +1098,7 @@ int RunDetectInstallsSelfTest(const std::wstring& exeDir)
 		std::wstring r = makeRoot({ L"MyPob" }, false);
 		std::wstring d = FindPoe1Dir(r);
 		std::wstring none = FindPoe1Dir(root + L"\\case6\\");
-		check("T7 FindPoe1Dir", d == r + L"MyPob\\" && none.empty(), narrow(d));
+		check("T7 FindPoe1Dir", d == r + L"MyPob\\" && none.empty(), ascii_narrow(d));
 	}
 
 	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
@@ -1161,13 +1114,8 @@ int RunDetectInstallsSelfTest(const std::wstring& exeDir)
 	return failures ? 2 : 0;
 }
 
-// ---- launcher config selftest ----------------------------------------------
-//
-// Everything worth testing about the exit-mode setting is in LoadLauncherConfig,
-// which is a pure function of an ini file — so it can be exercised head-first
-// with synthetic files and no window. That is a large part of why exit mode is
-// an enum: two booleans would need tests for an illegal both-set state that the
-// enum simply cannot represent.
+// launcher config selftest: LoadLauncherConfig is a pure function of an ini file,
+// so it is exercised with synthetic files and no window.
 int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 {
 	wchar_t tmp[MAX_PATH];
@@ -1220,8 +1168,7 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 	write(L"PobTools", { { L"StartupTab", L"5" } });
 	check("T9 out-of-range StartupTab clamps to Home", tab() == 0, std::to_string(tab()));
 
-	// Window mode. The default matters more than the parsing here: the tabbed
-	// path is new, so an ini that says nothing must land on the old behaviour.
+	// Window mode: an ini that says nothing must land on the old (non-tabbed) behaviour.
 	auto wm = [&]() { return (int)LoadLauncherConfig(ini).windowMode; };
 	write(L"PobTools", { { L"Game", L"poe1" } });
 	check("T8b no WindowMode key defaults to Separate", wm() == 0, std::to_string(wm()));
@@ -1237,6 +1184,23 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 	check("T8f UiMode=1 selects the new interface", um() == 1, std::to_string(um()));
 	write(L"PobTools", { { L"UiMode", L"modern" } });
 	check("T8g an unknown UiMode falls back to classic", um() == 0, std::to_string(um()));
+	write(L"PobTools", { { L"UiMode", L"2" } });
+	check("T8h UiMode=2 selects theme 2", um() == 2, std::to_string(um()));
+	write(L"PobTools", { { L"UiMode", L"3" } });
+	check("T8i UiMode=3 falls back to classic", um() == 0, std::to_string(um()));
+	write(L"PobTools", { { L"UiMode", L"-1" } });
+	check("T8i2 UiMode=-1 falls back to classic", um() == 0, std::to_string(um()));
+	for (int m = 0; m <= 2; m++) {
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.uiMode = m;
+		SaveLauncherConfig(ini, c);
+		check(("T8j UiMode round-trips " + std::to_string(m)).c_str(), um() == m, std::to_string(um()));
+	}
+	check("T8k ModernUiPage(1) is index.html", std::wstring(ModernUiPage(1)) == L"index.html");
+	check("T8k2 ModernUiPage(2) is theme2.html", std::wstring(ModernUiPage(2)) == L"theme2.html");
+	check("T8k3 ModernUiPage(0) falls back to index.html", std::wstring(ModernUiPage(0)) == L"index.html");
+	check("T8k4 ModernUiPage(7) falls back to index.html", std::wstring(ModernUiPage(7)) == L"index.html");
 
 	// round trip, including the mirrored legacy key
 	for (int m = 0; m <= 2; m++) {
@@ -1256,10 +1220,9 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		      "legacy=" + std::to_string(legacy));
 	}
 
-	// ---- external data root ------------------------------------------------
+	// external data root
 
-	// T11 -- the prefix traps. "Data2" sharing a prefix with "Data" is the one that
-	// looks right until it silently marks an unrelated folder as inside the install.
+	// T11 -- the prefix traps: "Data2" must not count as inside "Data".
 	check("T11a exact folder counts as inside",      PathIsInside(L"D:\\app\\", L"D:\\app"));
 	check("T11b case-insensitive",                   PathIsInside(L"D:\\App\\Data", L"d:\\app\\data\\poe1"));
 	check("T11c trailing backslash irrelevant",      PathIsInside(L"D:\\app\\Data\\", L"D:\\app\\Data"));
@@ -1267,8 +1230,7 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 	check("T11e unrelated path is not inside",       !PathIsInside(L"D:\\app", L"E:\\elsewhere"));
 	check("T11f empty parent is never inside",       !PathIsInside(L"", L"D:\\app"));
 
-	// T12 -- a path longer than the 128-wchar buffers the other keys use. The old
-	// reader would truncate it and the setting would look like it was ignored.
+	// T12 -- a path longer than the 128-wchar buffers the other keys use.
 	{
 		std::wstring longPath = L"D:\\";
 		while (longPath.size() < 400) longPath += L"translation_working_copy\\";
@@ -1292,7 +1254,7 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		std::wstring hex = read_ini_path(ini, L"DataDirPoe1Hex");
 		LauncherConfig back = LoadLauncherConfig(ini);
 		check("T13 non-ASCII DataDir round-trips and writes a hex copy",
-		      back.dataDir[0] == zh && !hex.empty(), narrow_utf8(hex));
+		      back.dataDir[0] == zh && !hex.empty(), narrow(hex));
 
 		DeleteFileW(ini.c_str());
 		c.dataDir[0] = L"D:\\plain\\ascii\\";
@@ -1314,9 +1276,7 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 	check("T16 unparseable hex falls back to the raw value",
 	      LoadLauncherConfig(ini).dataDir[0] == L"D:\\raw\\");
 
-	// T16b -- the single shared DataDir from the first cut of this feature is
-	// dropped on save. It never shipped, so there is nothing to migrate; leaving
-	// it behind would just be a key that looks like it still does something.
+	// T16b -- the legacy single shared DataDir (never shipped) is dropped on save.
 	write(L"PobTools", { { L"DataDir", L"D:\\old" }, { L"DataDirHex", L"6162" } });
 	{
 		LauncherConfig c = LoadLauncherConfig(ini);
@@ -1325,8 +1285,7 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		      read_ini_path(ini, L"DataDir").empty() && read_ini_path(ini, L"DataDirHex").empty());
 	}
 
-	// T17 -- the update toggle. Default must be ON: most people want new-season
-	// translations, and only someone editing them wants to opt out.
+	// T17 -- the update toggle. Default ON.
 	write(L"PobTools", { { L"Game", L"poe1" } });
 	check("T17a UpdateTranslations defaults to on", LoadLauncherConfig(ini).updateTranslations);
 	for (int on = 0; on <= 1; on++) {
@@ -1338,9 +1297,7 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		      LoadLauncherConfig(ini).updateTranslations == (on != 0));
 	}
 
-	// T17i -- installing a new version by itself. The default is the whole point
-	// of the case: ON by default would mean an install that closes and reopens
-	// itself on a user who never asked for that.
+	// T17i -- installing a new version by itself. Default OFF.
 	DeleteFileW(ini.c_str());
 	write(L"PobTools", { { L"Game", L"poe1" } });
 	check("T17i AutoApplyAppUpdate defaults to OFF", !LoadLauncherConfig(ini).autoApplyAppUpdate);
@@ -1353,9 +1310,7 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		      LoadLauncherConfig(ini).autoApplyAppUpdate == (on != 0));
 	}
 
-	// T17m -- the beta line. Same shape of case as AutoApplyAppUpdate above and
-	// for the same reason: OFF by default is the whole point, because the beta
-	// line offers GitHub prereleases and nobody should be on it unasked.
+	// T17m -- the beta line (GitHub prereleases). Default OFF.
 	DeleteFileW(ini.c_str());
 	write(L"PobTools", { { L"Game", L"poe1" } });
 	check("T17m BetaChannel defaults to OFF", !LoadLauncherConfig(ini).betaChannel);
@@ -1368,9 +1323,7 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		      LoadLauncherConfig(ini).betaChannel == (on != 0));
 	}
 
-	// T17f -- the watchdog escape hatch. Default must be ON: an install that
-	// silently stopped explaining its own freezes would look exactly like one
-	// that never froze.
+	// T17f -- the watchdog escape hatch. Default ON.
 	DeleteFileW(ini.c_str());
 	write(L"PobTools", { { L"Game", L"poe1" } });
 	check("T17f HangWatch defaults to on", LoadLauncherConfig(ini).hangWatch);
@@ -1628,9 +1581,8 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		          r.modernLook[1].look.background == L"a.png" && r.fontSize == 17);
 	}
 
-	// T18..T25 -- ResolveDictDir against synthetic folders. Every failure mode has
-	// to land on the built-in folder: a bad setting must never leave POB with no
-	// translations at all.
+	// T18..T25 -- ResolveDictDir against synthetic folders: every failure mode
+	// must land on the built-in folder, never leave POB without translations.
 	{
 		const std::wstring box = std::wstring(tmp) + L"pobtools_dd_st\\";
 		auto rmtree = [](const std::wstring& d) { remove_tree(d); };
@@ -1686,14 +1638,14 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		check("T21 pointing at the locale folder reports WrongShape and suggests going up",
 		      deep.status == DataDirStatus::WrongShape && deep.root == builtin1 &&
 		          deep.suggestion == box + L"ext\\",
-		      narrow_utf8(deep.suggestion));
+		      narrow(deep.suggestion));
 
 		// One level too SHALLOW: the user picked the Data folder, which holds poe1\.
 		DictDirInfo shallow = ResolveDictDir(exe, DictSlot::Poe1, exe + L"Data");
 		check("T21b pointing at the Data folder reports TooShallow and suggests going down",
 		      shallow.status == DataDirStatus::TooShallow && shallow.root == builtin1 &&
 		          shallow.suggestion == exe + L"Data\\poe1\\",
-		      narrow_utf8(shallow.suggestion));
+		      narrow(shallow.suggestion));
 
 		DictDirInfo ok = ResolveDictDir(exe, DictSlot::Poe1, box + L"ext");
 		check("T22 a correctly shaped external copy is used",
@@ -1718,9 +1670,7 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		check("T24 an external folder under the install is flagged as overwritable",
 		      in.insideInstall && !ok.insideInstall);
 
-		// T25 -- the copy button has to produce a layout ResolveDictDir accepts,
-		// end to end. Anything less and the feature needs a manual explanation of
-		// which folder level to point at, which is exactly what it exists to avoid.
+		// T25 -- the copy button has to produce a layout ResolveDictDir accepts, end to end.
 		{
 			const std::wstring fresh = box + L"copied\\";
 			check("T25a nothing there before the copy", !DictionariesPresentAt(fresh));
@@ -1734,9 +1684,7 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 			check("T25c the copy is detected as populated afterwards", DictionariesPresentAt(fresh));
 		}
 
-		// T27..T29 -- the language list comes from disk. Before this, the two
-		// hardcoded strings made every added folder unreachable, so these assert
-		// discovery rather than a fixed list.
+		// T27..T29 -- the language list comes from disk; assert discovery, not a fixed list.
 		{
 			// poe1 gets ja-JP (with a display name), poe2 gets ko-KR (without one).
 			mkdir_p(box + L"exe\\Data\\poe1\\ja-JP");
@@ -1801,8 +1749,7 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 			      jaGone && le.size() >= 2, std::to_string(le.size()) + " found");
 		}
 
-		// T26 -- three independent paths. Setting one must not disturb the others,
-		// which is the entire behavioural difference from the single shared root.
+		// T26 -- three independent paths. Setting one must not disturb the others.
 		{
 			DeleteFileW(ini.c_str());
 			LauncherConfig c;

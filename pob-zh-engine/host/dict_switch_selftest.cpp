@@ -87,7 +87,7 @@ int RunDictSwitchSelfTest(const std::wstring& exeDir)
 	CreateDirectoryW(box.c_str(), nullptr);
 	CreateDirectoryW(leaf.c_str(), nullptr);
 
-	// --- 1. ini <-> config ----------------------------------------------------
+	// 1. ini <-> config
 	printf("\n--- pob-zh.ini ---\n");
 	{
 		const std::wstring ini = box + L"pob-zh.ini";
@@ -103,7 +103,7 @@ int RunDictSwitchSelfTest(const std::wstring& exeDir)
 		DeleteFileW(ini.c_str());
 	}
 
-	// --- 2. config -> env -------------------------------------------------------
+	// 2. config -> env
 	printf("\n--- POB_ZH_DICT_SWITCHES ---\n");
 	{
 		LauncherConfig c;
@@ -112,7 +112,7 @@ int RunDictSwitchSelfTest(const std::wstring& exeDir)
 		check(DictSwitchesEnv(c) == L"ui_tooltips.json=0", "S6 關掉時傳給引擎 ui_tooltips.json=0");
 	}
 
-	// --- 3. the engine's loader ---------------------------------------------
+	// 3. the engine's loader
 	printf("\n--- engine loader ---\n");
 	{
 		// base.json and ui_tooltips.json share one key; the tooltip file is last,
@@ -158,7 +158,7 @@ int RunDictSwitchSelfTest(const std::wstring& exeDir)
 	RemoveDirectoryW(leaf.c_str());
 	RemoveDirectoryW(box.c_str());
 
-	// --- 4. shipped data ----------------------------------------------------
+	// 4. shipped data
 	printf("\n--- shipped Data\\poe1\\zh-rTW ---\n");
 	{
 		const std::wstring dir = exeDir + L"Data\\poe1\\zh-rTW\\";

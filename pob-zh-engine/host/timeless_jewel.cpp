@@ -21,7 +21,7 @@
 
 using nlohmann::json;
 
-// ---- file IO ------------------------------------------------------------------
+// file IO
 
 static bool read_file_bytes(const std::wstring& path, std::string& out)
 {
@@ -55,7 +55,7 @@ static uint64_t file_mtime(const std::wstring& path)
 	return ((uint64_t)fad.ftLastWriteTime.dwHighDateTime << 32) | fad.ftLastWriteTime.dwLowDateTime;
 }
 
-// ---- dataset ------------------------------------------------------------------
+// dataset
 
 static TJEntry parse_entry(const json& e)
 {
@@ -152,7 +152,7 @@ int TJDataset::L2G(int jewelType, int localId) const
 	return localId; // identity when not remapped
 }
 
-// ---- LUT read -----------------------------------------------------------------
+// LUT read
 
 static inline int ub(const std::string& s, size_t i)
 {
@@ -216,7 +216,7 @@ std::vector<int> TJReadLUT(const TJDataset& ds, const std::string& blob,
 	return result;
 }
 
-// ---- transform application ----------------------------------------------------
+// transform application
 
 static std::string fmt_num(double v)
 {
@@ -631,7 +631,7 @@ TJTransform TJApply(const TJDataset& ds, const std::string& blob,
 	return out;
 }
 
-// ---- seed search --------------------------------------------------------------
+// seed search
 
 std::string TJNormalizeStat(const std::string& s)
 {
@@ -789,7 +789,7 @@ std::vector<TJSeedHit> TJSearch(const TJDataset& ds, const std::string& blob,
 	return hits;
 }
 
-// ---- bin loading --------------------------------------------------------------
+// bin loading
 
 bool TJLoadBin(const std::wstring& exeDir, const TJDataset& ds, int jewelType,
                std::string& out, std::string* err)
@@ -854,7 +854,7 @@ bool TJLoadBin(const std::wstring& exeDir, const TJDataset& ds, int jewelType,
 	return false;
 }
 
-// ---- CLIs ---------------------------------------------------------------------
+// CLIs
 
 static void ensure_console()
 {
@@ -980,7 +980,7 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		check(!hits.empty() && has500, "search BR poison finds seed 500",
 		      std::to_string(hits.size()) + " hits in " + std::to_string(dt) + " ms");
 
-		// --- the minimum and the weight have to actually do something ---------
+		// the minimum and the weight have to actually do something
 		// A minimum above every roll of that stat must empty the result set; if
 		// it does not, the "minimum" is decorative and the ranking is noise.
 		{
@@ -1073,10 +1073,8 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 			      std::to_string(floored.size()) + " of " + std::to_string(all.size()) +
 			      " above " + std::to_string(qt.minTotalWeight));
 
-			// --- picking two stats has to mean BOTH -------------------------
-			// The reported symptom: with two stats picked, a seed carrying the
-			// first one three times scored the same as a seed carrying both, and
-			// was listed as an equal hit.
+			// picking two stats has to mean BOTH: a seed carrying only the first
+			// one three times must not score the same as one carrying both.
 			{
 				TJSearchQuery q2;
 				q2.jewelType = 3;
@@ -1134,10 +1132,8 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 			check(ordered, "results are ordered by weight");
 		}
 
-		// --- display and search must agree on what counts as a hit -----------
-		// The UI used to compare templates only, so a roll under 最小值 was still
-		// drawn as a match. Both sides now go through TJWantMatcher; this checks
-		// the matcher enforces exactly what the search counted.
+		// display and search must agree on what counts as a hit: both go through
+		// TJWantMatcher; this checks it enforces exactly what the search counted.
 		{
 			std::vector<TJWantStat> w{ { "#% increased Damage with Poison", 25.0, 1.0 } };
 			TJWantMatcher m(w);
@@ -1178,7 +1174,7 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		check(false, "load BrutalRestraint.bin", err);
 	}
 
-	// --- 搜尋可保護大點:被保護的大點被替換的種子一律剔除(T1-T6) ---
+	// 搜尋可保護大點:被保護的大點被替換的種子一律剔除(T1-T6)
 	{
 		std::string mf, merr;
 		const std::string devo = "+# to Devotion";
@@ -1315,12 +1311,10 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// --- Glorious Vanity is the only Legion jewel that rolls a value into a
-	// notable, so it is the only one where the "g"-format unit scaling can show.
-	// Nothing used to exercise this path end to end: --tj-verify compares LUT
-	// bytes, not rendered lines, so "Regenerate 60% of Life per second" would
-	// have passed every check we had. Assert the printed number lands inside the
-	// range its own template declares.
+	// Glorious Vanity is the only Legion jewel that rolls a value into a
+	// notable, so the only one where "g"-format unit scaling shows. --tj-verify
+	// compares LUT bytes, not rendered lines; assert the printed number lands
+	// inside the range its own template declares.
 	{
 		std::string gv;
 		std::string gerr;
@@ -1347,8 +1341,7 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 					}
 				}
 				if (found.empty()) {
-					// Say so rather than passing: a scan that found no case has
-					// tested nothing, and silence here is what let the bug live.
+					// Fail rather than pass: a scan that found no case tested nothing.
 					check(false, "found a Ritual of Flesh roll to check",
 					      std::to_string(scanned) + " transforms scanned, none matched");
 				} else {
@@ -1537,10 +1530,9 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// Regression: an addition must leave the node itself alone (PoB appends the
-	// stat instead of replacing the node), and index==sizeNotable is past the
-	// last LUT row — treating it as a notable used to read a phantom byte 0 and
-	// turn a small passive into a keystone.
+	// An addition must leave the node itself alone (PoB appends the stat), and
+	// index==sizeNotable is past the last LUT row — treating it as a notable
+	// would read a phantom byte 0 and turn a small passive into a keystone.
 	std::string lp;
 	if (TJLoadBin(exeDir, ds, 2, lp, &err)) {
 		auto lut = TJReadLUT(ds, lp, 2, 12637, 21435); // Cloth and Chain
@@ -1603,11 +1595,9 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 	std::string zorath;
 	if (TJLoadBin(exeDir, ds, 11, zorath, &err)) {
 		// Zorath ships as "ABYN": one block per passive node plus an "ASCS"
-		// section. Every passive has an answer for every seed; which of them
-		// apply follows the allocated path from the socket to the class start,
-		// which PobTools cannot know. Offered anyway on the user's call, with the
-		// estimate labelled where it is shown. The reader's own checks live in
-		// --abyss-selftest; what is pinned here is only the boundary.
+		// section. Which answers apply depends on the allocated path from the
+		// socket to the class start, which PobTools cannot know, so the result
+		// is shown labelled as an estimate. Reader checks live in --abyss-selftest.
 		const std::string zmagic = zorath.substr(0, (std::min)((size_t)4, zorath.size()));
 		check(zmagic == "ABYN", "Zorath ships as an ABYN container", zmagic);
 		check(TJIsZorath(11) && TJAbyssUsable(11),
@@ -1617,7 +1607,7 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		check(false, "load AbyssZorath LUT", err);
 	}
 
-	// --- trade search URL assembly -------------------------------------------
+	// trade search URL assembly
 	// The query JSON is language-independent, so the ONLY thing that changes
 	// between regions is the host + league. Golden strings here because the
 	// international URL must not move a byte when a region is added.
@@ -1768,7 +1758,7 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		      std::to_string(consoleRealms) + " with consoles");
 	}
 
-	std::string tail = failures == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(failures) + "\n";
+	std::string tail = failures == 0 ? "\nRESULT PASS\n" : "\nRESULT FAIL\n";
 	report += tail;
 	printf("%s", tail.c_str());
 

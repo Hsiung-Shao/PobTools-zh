@@ -2,6 +2,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "win_util.h"
 
 #include <cstdio>
 #include <string>
@@ -13,31 +14,6 @@
 using nlohmann::ordered_json;
 
 namespace {
-
-std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w((size_t)n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
-
-bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 26)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
 
 bool write_file_bytes(const std::wstring& path, const std::string& data)
 {
@@ -128,12 +104,9 @@ int RunLauncherStringsExport(const std::wstring& exeDir, const std::wstring& loc
 	CreateDirectoryW((exeDir + L"Data\\launcher").c_str(), nullptr);
 	CreateDirectoryW(dir.c_str(), nullptr);
 
-	// ⚠ MERGE, never overwrite. package_release.ps1 runs this on EVERY package,
-	// and launcher.json is now a file an outside translator owns and edits — a
-	// straight regeneration would mean "releasing the program silently reverts
-	// the translator's work", once per release, with no diff to notice it by.
-	// So: existing values win, the compiled zh-rTW string is only used to fill in
-	// a key the file does not have yet.
+	// ⚠ MERGE, never overwrite. package_release.ps1 runs this on EVERY package and
+	// launcher.json is owned by outside translators: existing values win, the
+	// compiled zh-rTW string only fills a key the file does not have yet.
 	ordered_json existing = ordered_json::object();
 	{
 		std::string content;
@@ -165,10 +138,8 @@ int RunLauncherStringsExport(const std::wstring& exeDir, const std::wstring& loc
 			added++;
 		}
 	}
-	// Keys the binary no longer knows: an English string was edited, so this
-	// entry is now an orphan. Carried over rather than dropped — the translation
-	// in it is somebody's work, and deleting it is not this script's call. They
-	// go last so the live entries stay in table order.
+	// Orphans (English string edited since): carried over, not dropped -- the
+	// translation is somebody's work. Written last to keep live entries in table order.
 	int orphans = 0;
 	for (auto it = existing.begin(); it != existing.end(); ++it) {
 		if (entries.contains(it.key())) continue;
@@ -182,11 +153,8 @@ int RunLauncherStringsExport(const std::wstring& exeDir, const std::wstring& loc
 	ordered_json meta = ordered_json::object();
 	meta["version"] = "1.0.0";
 	meta["locale"] = localeUtf8;
-	// What the launcher's language picker shows. Optional: a folder without it
-	// falls back to its own name, which is how a translator can add a language
-	// with nothing but a folder and a load_order. Only zh-rTW's is known here;
-	// another language's meta.json is left alone if it already exists (the
-	// translator wrote its display_name), and gets the folder name otherwise.
+	// Language picker label. Optional (falls back to the folder name). Only
+	// zh-rTW's is known here; an existing meta.json of another language is left alone.
 	meta["display_name"] = compiled ? std::string(u8"繁體中文") : localeUtf8;
 	meta["source"] = "launcher";
 	meta["load_order"] = ordered_json::array({ "launcher.json" });
@@ -195,9 +163,8 @@ int RunLauncherStringsExport(const std::wstring& exeDir, const std::wstring& loc
 	std::string metaExisting;
 	if (ok && (compiled || !read_file_utf8(dir + L"meta.json", metaExisting)))
 		ok = write_file_bytes(dir + L"meta.json", to_crlf(meta.dump(2) + "\n"));
-	// Deliberately NO MessageBox on failure: the selftest calls this function, and
-	// a modal dialog turns a headless check into a hang with no output. Exit code
-	// and stdout only.
+	// Deliberately NO MessageBox on failure: the selftest calls this, and a modal
+	// dialog would hang a headless check. Exit code and stdout only.
 	printf(ok ? "launcher strings exported to Data\\launcher\\%s\\ (%d entries: %d kept, "
 	            "%d filled in, %d orphaned)\n"
 	          : "launcher strings export FAILED for Data\\launcher\\%s\\ (%d entries prepared: %d kept, %d filled in, "
@@ -206,7 +173,7 @@ int RunLauncherStringsExport(const std::wstring& exeDir, const std::wstring& loc
 	return ok ? 0 : 1;
 }
 
-// ---- selftest ---------------------------------------------------------------
+// selftest
 
 namespace {
 
@@ -255,9 +222,7 @@ int RunLauncherStringsSelfTest(const std::wstring& exeDir)
 	// The slot root: the folder that directly holds the <locale> sub-folders.
 	const std::wstring root = sandbox + L"\\launcher\\";
 
-	// L1 -- the JSON keys off the English string, so two fields sharing one English
-	// string would be silently forced to share a translation. Catch it here rather
-	// than from a screenshot.
+	// L1 -- two fields sharing one English string would be forced to share a translation.
 	{
 		std::unordered_set<std::string> seen;
 		std::string dup;
@@ -320,10 +285,8 @@ int RunLauncherStringsSelfTest(const std::wstring& exeDir)
 		      st.overridden == 0 && st.s.close == STR_ZHTW.close && st.s.font == STR_ZHTW.font);
 	}
 
-	// L6 -- POINTER LIFETIME. Override every field, then read them all back. The
-	// store hands out raw pointers into its own container; if that container ever
-	// moved its elements (a std::vector would, on growth) the earlier fields would
-	// now point at freed memory and this comparison reads garbage.
+	// L6 -- POINTER LIFETIME. The store hands out raw pointers into its container;
+	// if it ever moved elements (std::vector on growth) earlier fields would dangle.
 	{
 		ordered_json e = ordered_json::object();
 		std::vector<std::string> expect(kLauncherStringsFields);
@@ -353,9 +316,7 @@ int RunLauncherStringsSelfTest(const std::wstring& exeDir)
 		      st.fileFound && st.overridden == 0 && st.s.title == STR_ZHTW.title);
 	}
 
-	// L8 -- export round-trip: what --launcher-strings-export writes must read back
-	// as exactly the compiled table, which is what stops the shipped JSON from
-	// drifting away from the binary.
+	// L8 -- export round-trip: the exported JSON must read back as exactly the compiled table.
 	{
 		std::wstring exportRoot = sandbox + L"\\export\\";
 		CreateDirectoryW((sandbox + L"\\export").c_str(), nullptr);
@@ -380,12 +341,8 @@ int RunLauncherStringsSelfTest(const std::wstring& exeDir)
 		check("L9 exported meta.json carries load_order and is CRLF like the others", metaOk);
 	}
 
-	// L10 -- re-exporting must NOT revert a translator's edits. The packaging
-	// script runs the export on every release, so an overwriting export would
-	// quietly undo外部翻譯者的修改 once per version, and the only evidence would
-	// be a JSON diff nobody reads. Also asserts the two things that make merging
-	// safe to run blind: a key the file lacks is still filled in, and an orphaned
-	// key (English string edited since) is carried over rather than deleted.
+	// L10 -- re-exporting must NOT revert a translator's edits; a missing key is
+	// still filled in and an orphaned key is carried over, not deleted.
 	{
 		std::wstring exportRoot = sandbox + L"\\export2\\";
 		CreateDirectoryW((sandbox + L"\\export2").c_str(), nullptr);
@@ -428,10 +385,8 @@ int RunLauncherStringsSelfTest(const std::wstring& exeDir)
 		      ok && why.empty(), why);
 	}
 
-	// L11 -- exporting a language the binary does not compile in (ko-KR here)
-	// writes a template: every key present, every value the English key itself,
-	// and a meta.json whose display_name is the folder name (a translator fills
-	// both in). Nothing zh-rTW-specific may leak into it.
+	// L11 -- exporting a non-compiled language (ko-KR) writes a template: every
+	// value the English key, meta.json display_name = folder name; no zh-rTW leakage.
 	{
 		std::wstring exportRoot = sandbox + L"\\export3\\";
 		CreateDirectoryW((sandbox + L"\\export3").c_str(), nullptr);
@@ -464,9 +419,7 @@ int RunLauncherStringsSelfTest(const std::wstring& exeDir)
 		check("L11 exporting an uncompiled locale writes an English template + folder-named meta",
 		      ok && why.empty(), why.empty() ? ("rc=" + std::to_string(rc)) : why);
 
-		// L12 -- a translator's meta.json (display_name 한국어) and values survive
-		// a re-export; only missing keys are filled in. Same contract as L10, for
-		// the locale the packaging script never touches.
+		// L12 -- a translator's meta.json and values survive a re-export (L10's contract).
 		bool ok2 = ok;
 		if (ok2) {
 			doc["entries"][STR_EN.tabHome] = u8"홈";

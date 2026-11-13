@@ -27,8 +27,8 @@ static_assert(std::is_same<ImWchar, unsigned short>::value, "SymbolGlyphRanges a
 const unsigned short* SymbolGlyphRanges()
 {
 	static const ImWchar ranges[] = {
-		0x2190, 0x21FF,   // Arrows (⇐ in the regex conflict list)
-		0x2200, 0x22FF,   // Mathematical Operators (≥ ≤ in the regex tool)
+		0x2190, 0x21FF,   // Arrows (→ ⇐)
+		0x2200, 0x22FF,   // Mathematical Operators (− ≥ ≤)
 		0,
 	};
 	return ranges;
@@ -41,16 +41,10 @@ void ApplyTheme(float scale, Density density)
 
 void BuildStyle(::ImGuiStyle& s, float scale, Density density)
 {
-	// Into `s`, not the active style: this has to be usable on a style the caller
-	// keeps on the side.
-	//
-	// The default-constructed assignment is what makes the result independent of
-	// what `s` held before, and StyleColorsDark alone is NOT enough for that -- it
-	// writes Colors and nothing else. The fields this function never mentions
-	// (WindowMinSize, ColumnsMinSpacing, TouchExtraPadding, ...) are still scaled by
-	// ScaleAllSizes below, so without a real reset they would grow by `scale` on
-	// every call. Harmless when the theme was applied once at start-up; not harmless
-	// now that a style is rebuilt per tab.
+	// Into `s`, not the active style (usable on a style the caller keeps aside). The default-constructed assignment
+	// makes the result independent of what `s` held: StyleColorsDark alone writes only Colors, and the fields never
+	// mentioned here (WindowMinSize, ColumnsMinSpacing, TouchExtraPadding, ...) are still scaled by ScaleAllSizes,
+	// so without a real reset they would grow by `scale` on every call.
 	s = ImGuiStyle();
 	ImGui::StyleColorsDark(&s);
 	ImVec4* c = s.Colors;
@@ -139,27 +133,6 @@ void BuildStyle(::ImGuiStyle& s, float scale, Density density)
 	s.ScaleAllSizes(scale);
 }
 
-void PushPrimaryButton()
-{
-	ImGui::PushStyleColor(ImGuiCol_Button, Rgba(55, 48, 137));
-	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Rgba(79, 70, 229));
-	ImGui::PushStyleColor(ImGuiCol_ButtonActive, Rgba(49, 46, 129));
-	ImGui::PushStyleColor(ImGuiCol_Text, Rgba(248, 252, 251));
-}
-
-void PushDangerButton()
-{
-	ImGui::PushStyleColor(ImGuiCol_Button, Rgba(101, 43, 47));
-	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Rgba(133, 51, 57));
-	ImGui::PushStyleColor(ImGuiCol_ButtonActive, Rgba(79, 34, 38));
-	ImGui::PushStyleColor(ImGuiCol_Text, Rgba(255, 235, 236));
-}
-
-void PopButtonStyle()
-{
-	ImGui::PopStyleColor(4);
-}
-
 std::uint32_t TreeKindColor(TreeKind kind)
 {
 	switch (kind) {
@@ -212,9 +185,7 @@ bool RunThemeSelfTest()
 	ok = ok && Near(second.FrameRounding, 7.0f) && Near(second.WindowPadding.x, 24.0f) &&
 		Near(second.FramePadding.y, 7.0f) && Near(second.ScrollbarSize, 18.0f);
 
-	// Field by field, NOT memcmp: ImGuiStyle has padding bytes between its bools and
-	// the floats after them, and those are never initialised -- a memcmp compares
-	// them too and fails for reasons that have nothing to do with the style.
+	// Field by field, NOT memcmp: ImGuiStyle's padding bytes between its bools and floats are never initialised.
 	auto sameStyle = [](const ImGuiStyle& a, const ImGuiStyle& b) {
 		if (!Near(a.WindowPadding.x, b.WindowPadding.x) ||
 		    !Near(a.WindowPadding.y, b.WindowPadding.y) ||
@@ -229,11 +200,8 @@ bool RunThemeSelfTest()
 		    !Near(a.ScrollbarSize, b.ScrollbarSize) ||
 		    !Near(a.IndentSpacing, b.IndentSpacing) ||
 		    !Near(a.FrameBorderSize, b.FrameBorderSize) ||
-		    // The fields BuildStyle never assigns but ScaleAllSizes still scales.
-		    // These are the ONLY ones that can reveal a missing reset -- everything
-		    // above is overwritten on each call and looks identical either way. An
-		    // earlier version of this check omitted them and passed happily against a
-		    // BuildStyle that did not reset at all.
+		    // The fields BuildStyle never assigns but ScaleAllSizes still scales: the ONLY ones that can reveal a missing
+		    // reset (everything above is overwritten on each call).
 		    !Near(a.WindowMinSize.x, b.WindowMinSize.x) ||
 		    !Near(a.ColumnsMinSpacing, b.ColumnsMinSpacing) ||
 		    !Near(a.TouchExtraPadding.x, b.TouchExtraPadding.x))
@@ -261,10 +229,8 @@ bool RunThemeSelfTest()
 		ok = ok && swapped && sameStyle(ImGui::GetStyle(), keep);
 	}
 
-	// BuildStyle must not read what is already there. ApplyTheme ends in
-	// ScaleAllSizes, which COMPOUNDS -- so a version that scaled in place would give
-	// a different answer the second time, and a per-frame swap would inflate every
-	// padding without bound.
+	// BuildStyle must not read what is already there: ScaleAllSizes COMPOUNDS, so scaling in place would answer
+	// differently the second time and a per-frame swap would inflate every padding.
 	{
 		ImGuiStyle a, b;
 		BuildStyle(a, 1.25f, Density::Canvas);
@@ -272,9 +238,7 @@ bool RunThemeSelfTest()
 		BuildStyle(b, 1.25f, Density::Canvas);
 		ok = ok && sameStyle(a, b);
 	}
-	// The tokens are the colours BuildStyle already used for the same jobs: a
-	// drift between the two would mean a card drawn from the tokens no longer
-	// matches the child window it sits next to.
+	// The tokens are the colours BuildStyle already used for the same jobs; drift would make a token-drawn card mismatch its child window.
 	{
 		ImGuiStyle t;
 		BuildStyle(t, 1.0f, Density::Comfortable);

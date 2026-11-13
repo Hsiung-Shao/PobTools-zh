@@ -15,28 +15,22 @@
 
 using nlohmann::ordered_json;
 
-// ---- catalogue ---------------------------------------------------------------
+// catalogue
 //
-// Generated once from the 3.29.1 atlastree-export (mastery names + icon tokens)
-// joined to the local GGPK 3.29.0.4.2:
+// Generated from the 3.29.1 atlastree-export (mastery names + icon tokens) joined to the local GGPK:
 //   id  = PassiveSkills.AtlasGroup -> AtlasPassiveSkillTreeGroupType.Id
 //   zh  = the Traditional-Chinese PassiveSkills table at the SAME row index
-//         (the locale tables are row-aligned; this is the join gen_scarabs.py
-//         already relies on -- never a text match)
-// Where a mechanic has several mastery rows the shortest zh wins; the longer
-// ones are league-variant labels ("獸獵聯盟 （標準）") and every one of them was
-// verified to start with the short form, so this is a rule, not a pick.
+//         (locale tables are row-aligned, as gen_scarabs.py relies on -- never a text match)
+// With several mastery rows the shortest zh wins; the longer ones are league-variant labels that
+// all start with the short form.
 //
-// 3.30 (2026-11-12): nine mechanics below are `provisional` -- taken from the
-// 3.30.0 tree export before any 3.30 game files existed. Their id is the mastery
-// icon token and their zh is the English name. Redo them from GGPK -- and
-// regenerate every season's atlas_mechanics.json in the same change: those files
-// store these ids, and a group whose id is no longer in the catalogue vanishes.
+// ⚠ Nine mechanics are `provisional` (from the 3.30.0 tree export, before 3.30 game files existed):
+// id = mastery icon token, zh = English name. Redo them from GGPK AND regenerate every season's
+// atlas_mechanics.json in the same change: those files store these ids, and a group whose id is no
+// longer in the catalogue vanishes.
 //
-// ⚠ "Labyrinth" really is 帝王迷宮機率 in the game files -- GGG named that single
-// mastery row after the stat rather than the mechanic. Left verbatim: the game
-// shows that string, and inventing 帝王迷宮 would be exactly the kind of guess
-// this project does not make.
+// ⚠ "Labyrinth" really is 帝王迷宮機率 in the game files (GGG named that mastery row after the
+// stat). Left verbatim; don't invent 帝王迷宮.
 static const std::vector<AtlasMechanicDef>& catalogue()
 {
 	static const std::vector<AtlasMechanicDef> kDefs = {
@@ -85,11 +79,8 @@ static const std::vector<AtlasMechanicDef>& catalogue()
 	return kDefs;
 }
 
-// Extra icon-filename spellings for rule 2. GGG does not always name a node's
-// icon after the mastery icon (Settlers nodes are KalguurNode, Bestiary notables
-// are AtlasEinharNotable), so these map the alternative spellings onto the same
-// mechanic. Matched case-sensitively, which is what keeps three-letter tokens
-// like "Map" from firing inside unrelated lowercase names.
+// Extra icon-filename spellings for rule 2 (e.g. Settlers nodes are KalguurNode). Matched
+// case-sensitively so three-letter tokens like "Map" don't fire inside unrelated lowercase names.
 struct MechAlias { const char* token; const char* id; };
 static const MechAlias kAliases[] = {
 	{ "Kalguur", "Kalguur" },
@@ -103,21 +94,17 @@ static const MechAlias kAliases[] = {
 	{ "Memory", "Memory" },
 	{ "Mercenary", "Mercenary" },
 	{ "DivinationCard", "Divination" },
-	// 3.30: the node icons spell these differently from the mastery icon
-	// (AtlasUniquemonstersNode, AtlasMagicmonsters1, SentinelNode vs ...Sentinek).
+	// node icons that spell these differently from the mastery icon (SentinelNode vs ...Sentinek)
 	{ "Uniquemonsters", "UniqueMonsters" },
 	{ "Magicmonsters", "MagicMonsters" },
 	{ "Sentinel", "Sentinek" },
 };
 
-// A mastery the game renamed while keeping its icon: the same mechanic under a
-// new English name. 3.30 calls the Harvest clusters "Sacred Flora".
+// A mastery the game renamed while keeping its icon (Harvest clusters are now "Sacred Flora").
 struct MechRename { const char* en; const char* id; };
 static const MechRename kRenames[] = {
 	{ "Sacred Flora", "Harvest" },
 };
-
-const std::vector<AtlasMechanicDef>& AtlasMechanicCatalogue() { return catalogue(); }
 
 const AtlasMechanicDef* AtlasMechanicById(const std::string& id)
 {
@@ -137,7 +124,7 @@ const AtlasMechanicDef* AtlasMechanicByEn(const std::string& en)
 
 double AtlasMechanicBacktestGate() { return 93.0; }
 
-// ---- classification ----------------------------------------------------------
+// classification
 
 // "Art/2DArt/SkillIcons/passives/AtlasTrees/NewBreachNode.png" -> "NewBreachNode"
 static std::string icon_stem(const std::string& path)
@@ -148,13 +135,10 @@ static std::string icon_stem(const std::string& path)
 	return dot == std::string::npos ? base : base.substr(0, dot);
 }
 
-// Rule 2. Returns "" when no token matches or when two different mechanics do --
-// an ambiguous icon (ScarabLeaguesRitual is both) is left unassigned rather than
-// resolved by coin flip.
+// Rule 2. Returns "" when no token matches or two different mechanics do (ambiguous icons stay unassigned).
 static std::string mechanic_from_icon(const std::string& stem)
 {
-	// Scarabs were removed for 3.30; a scarab node's icon also names its league
-	// (ScarabLeaguesRitual) and must not be credited to that league instead.
+	// A scarab node's icon also names its league (ScarabLeaguesRitual) and must not be credited to that league.
 	if (stem.find("Scarab") != std::string::npos) return std::string();
 	std::string hit;
 	for (const AtlasMechanicDef& d : catalogue()) {
@@ -345,15 +329,14 @@ std::string AtlasMechanicMapReport(const AtlasMechanicMap& m)
 	return rep;
 }
 
-// ---- runtime db ---------------------------------------------------------------
+// runtime db
 
 bool AtlasMechanicDb::Load(const std::wstring& exeDir, const std::string& tag)
 {
 	borrowedFrom_.clear();
 	if (loadOne(exeDir, tag)) return true;
-	// Fall back to the newest season that has a map. Everything is keyed by GGG
-	// skill id, which is stable across seasons, so a borrowed map is correct for
-	// every node that existed then and simply silent about the rest.
+	// Fall back to the newest season that has a map (keyed by GGG skill id, stable across seasons;
+	// silent about nodes that did not exist then).
 	AtlasVersionIndex idx;
 	idx.Load(exeDir);
 	for (const std::string& t : idx.TagsNewestFirst()) {
@@ -398,14 +381,13 @@ bool AtlasMechanicDb::loadOne(const std::wstring& exeDir, const std::string& tag
 		entries_.clear();
 		return false;
 	}
-	// Chinese display order is not something we can collate properly, so sort by
-	// the stable English name -- the same order in every language.
+	// Sort by the stable English name (Chinese cannot be collated properly; same order in every language).
 	std::sort(entries_.begin(), entries_.end(),
 	          [](const Entry& a, const Entry& b) { return a.def->en < b.def->en; });
 	return !entries_.empty();
 }
 
-// ---- maintainer CLI ------------------------------------------------------------
+// maintainer CLI
 
 int RunAtlasMechanicBuild(const std::wstring& dataJsonPath, const std::string& tag,
                           const std::wstring& destDir)
@@ -414,8 +396,7 @@ int RunAtlasMechanicBuild(const std::wstring& dataJsonPath, const std::string& t
 		FILE* f = nullptr;
 		freopen_s(&f, "CONOUT$", "w", stdout);
 	}
-	// A WIN32-subsystem exe cannot be piped, so the report also lands in a file
-	// next to the data.json -- same convention as every selftest here.
+	// A WIN32-subsystem exe cannot be piped, so the report also lands in a file next to the data.json.
 	std::string rep;
 	auto finish = [&](int code) {
 		printf("%s", rep.c_str());
@@ -445,7 +426,7 @@ int RunAtlasMechanicBuild(const std::wstring& dataJsonPath, const std::string& t
 	return finish(0);
 }
 
-// ---- self-test ------------------------------------------------------------------
+// self-test
 
 int RunAtlasMechanicSelfTest(const std::wstring& exeDir, std::string& out)
 {
@@ -458,7 +439,7 @@ int RunAtlasMechanicSelfTest(const std::wstring& exeDir, std::string& out)
 		if (!ok) fails++;
 	};
 
-	// --- the compiled catalogue -------------------------------------------------
+	// the compiled catalogue
 	const std::vector<AtlasMechanicDef>& defs = catalogue();
 	check(defs.size() >= 30, "mechanic catalogue is populated", std::to_string(defs.size()) + " mechanics");
 	std::set<std::string> ids, ens, tokens;
@@ -492,7 +473,7 @@ int RunAtlasMechanicSelfTest(const std::wstring& exeDir, std::string& out)
 	check(mechanic_from_icon("ModifierTier").empty(), "a generic icon is left unassigned");
 	check(mechanic_from_icon("newbreachnode").empty(), "matching is case-sensitive (CamelCase boundary)");
 
-	// --- against the season files actually installed -----------------------------
+	// against the season files actually installed
 	AtlasVersionIndex idx;
 	idx.Load(exeDir);
 	std::vector<std::string> tags = idx.TagsNewestFirst();
@@ -506,8 +487,7 @@ int RunAtlasMechanicSelfTest(const std::wstring& exeDir, std::string& out)
 			continue;
 		}
 		if (!db.BorrowedFrom().empty()) {
-			// Nothing to assert against this season's tree: the map is another
-			// season's, deliberately. Say so instead of testing the wrong thing.
+			// Nothing to assert against this season's tree: the map is another season's, deliberately.
 			out += "      " + tag + ": no map of its own, borrowing " + db.BorrowedFrom() + "\n";
 			continue;
 		}
@@ -536,17 +516,15 @@ int RunAtlasMechanicSelfTest(const std::wstring& exeDir, std::string& out)
 		if (haveTree) {
 			check(unknownIds == 0, tag + ": every listed node id exists in that season's tree",
 			      std::to_string(unknownIds) + " unknown of " + std::to_string(total));
-			// Coverage is expected to be partial (groups without a mastery), but a
-			// collapse would mean the classifier silently stopped working.
+			// Coverage is partial by design (groups without a mastery); a collapse means the classifier stopped working.
 			int nodes = (int)d.nodes.size();
 			bool sane = nodes > 0 && total * 100 / nodes >= 70;
 			check(sane, tag + ": mechanic coverage is plausible",
 			      std::to_string(total) + "/" + std::to_string(nodes) + " nodes");
-			// Every mastery icon on the tree should resolve to a catalogue entry,
-			// otherwise the canvas has clickable markers with no mechanic behind them.
+			// Every mastery icon should resolve to a catalogue entry (else clickable markers with no mechanic).
 			int orphanMastery = 0;
 			for (const AtlasDeco& m : d.masteries)
-				if (!AtlasMechanicByEn(m.name) && m.name != "Scarabs") orphanMastery++; // removed for 3.30
+				if (!AtlasMechanicByEn(m.name) && m.name != "Scarabs") orphanMastery++;
 			check(orphanMastery == 0, tag + ": every mastery icon maps to a known mechanic",
 			      std::to_string(orphanMastery) + " orphaned");
 		}

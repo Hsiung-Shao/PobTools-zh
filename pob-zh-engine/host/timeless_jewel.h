@@ -58,7 +58,6 @@ struct TJDataset {
 
 	bool Load(const std::wstring& jsonPath, std::string* err);
 	int L2G(int jewelType, int localId) const;
-	bool HasNode(int nodeId) const { return nodeIndex.count(nodeId) != 0; }
 };
 
 // What a pasted jewel (game Ctrl+C text) resolved to; jewelType 0 = not found.
@@ -100,7 +99,7 @@ struct TJTransform {
 std::vector<int> TJReadLUT(const TJDataset& ds, const std::string& binBlob,
                            int jewelType, int seed, int nodeId);
 
-// ---- shared with the Abyss engine (timeless_jewel_abyss.cpp) ------------------
+// shared with the Abyss engine (timeless_jewel_abyss.cpp)
 
 // Substitute a rolled value into one stat template, mirroring PoB's
 // replaceHelperFunc — including the unit scaling it applies to "g"-format
@@ -123,7 +122,7 @@ TJTransform TJApply(const TJDataset& ds, const std::string& binBlob,
                     const std::string& conquerorType = "", const std::string& conquerorId = "",
                     const std::string& nodeName = "");
 
-// ---- seed search (batch query) ------------------------------------------------
+// seed search (batch query)
 
 // Normalize a rolled stat line to a template by turning number runs into '#'
 // (e.g. "20% increased Damage with Poison" -> "#% increased Damage with Poison").
@@ -139,19 +138,16 @@ struct TJWantStat {
 // The number a rolled line contributes, for the per-stat minimum. This is a
 // magnitude WITHIN the line's own template, not a signed quantity: a leading '-'
 // survives TJNormalizeStat ("-#% to all maximum Elemental Resistances"), so the
-// sign belongs to the identity of the stat and the digits after it are what
-// actually varies. Reading it as signed would make the one reachable negative
-// keystone fail its own default minimum of 0.
+// sign belongs to the stat's identity. Reading it as signed would make the one
+// reachable negative keystone fail its own default minimum of 0.
 double TJStatValue(const std::string& line);
 
 // Decides whether one rolled line satisfies one of the wanted stats — template
 // equal AND value at least minValue.
 //
-// This is deliberately the ONLY implementation of that rule. The search and
-// every place the UI shows or highlights a line as a hit both go through it, so
-// what the user sees marked as matched is exactly what the ranking counted.
-// They used to be written separately and the display side ignored minValue
-// entirely, which showed under-minimum rolls as hits.
+// Deliberately the ONLY implementation of that rule: the search and every place
+// the UI marks a line as a hit go through it, so what is shown as matched is
+// exactly what the ranking counted.
 class TJWantMatcher {
 public:
 	TJWantMatcher() = default;
@@ -173,9 +169,8 @@ struct TJSearchQuery {
 	std::vector<TJWantStat> wants;
 	double minTotalWeight = 0.0;
 	// Every wanted stat must appear on the seed, not just enough of ANY of them
-	// to clear the weight. Summing weight alone lets a seed carrying one stat
-	// three times score the same as a seed carrying all three, which is not what
-	// picking several stats means. Turn off for an "any of these" search.
+	// to clear the weight (one stat three times must not equal all three).
+	// Turn off for an "any of these" search.
 	bool requireAll = true;
 	// Restrict evaluation to these node ids (a jewel socket's in-radius nodes).
 	// Empty = every indexed node in scope (global search). Node type (notable vs

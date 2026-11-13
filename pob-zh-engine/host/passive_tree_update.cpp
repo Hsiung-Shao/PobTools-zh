@@ -1,5 +1,4 @@
 #include "passive_tree_update.h"
-#include "error_log.h"
 #include "passive_import.h"
 #include "launcher_config.h" // FindPoe1Dir
 #include "http_client.h"
@@ -8,6 +7,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <shlobj.h>
+#include "win_util.h"
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 
@@ -37,49 +37,7 @@ static const char* kUsedCats[] = {
 };
 static const char* kZoom = "0.3835";
 
-// ---- small helpers (same conventions as atlas_update.cpp) -------------------
-
-static bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 30)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
-
-static bool write_file_utf8(const std::wstring& path, const std::string& content)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	DWORD written = 0;
-	bool ok = content.empty() ||
-		(WriteFile(h, content.data(), (DWORD)content.size(), &written, nullptr) && written == content.size());
-	CloseHandle(h);
-	return ok;
-}
-
-static std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
-
-static bool file_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
-}
+// small helpers (same conventions as atlas_update.cpp)
 
 // "3.28.0" -> {3,28,0}; rejects suffixed variants ("3.25.0-ruthless")
 static bool parse_semver(const std::string& s, std::tuple<int, int, int>* out)
@@ -135,14 +93,6 @@ static void remove_cache_dir(const std::wstring& dir)
 	RemoveDirectoryW(dir.c_str());
 }
 
-static long long now_filetime()
-{
-	FILETIME ft{};
-	GetSystemTimeAsFileTime(&ft);
-	ULARGE_INTEGER u{ ft.dwLowDateTime, ft.dwHighDateTime };
-	return (long long)u.QuadPart;
-}
-
 // Bundled tree's "treeVersion" without a full 1MB JSON parse: both writers
 // (gen_passive_tree.py and passive_import.cpp) emit it as the second field, so
 // a bounded search over the head of the file is reliable.
@@ -180,11 +130,10 @@ static std::pair<int, int> newest_pob_tree_version(const std::wstring& exeDir)
 	return best;
 }
 
-// ---- PassiveTreeUpdater -----------------------------------------------------
+// PassiveTreeUpdater
 
-void PassiveTreeUpdater::Init(const std::wstring& exeDir)
+void PassiveTreeUpdater::loadRecord()
 {
-	exeDir_ = exeDir;
 	currentVer_ = read_bundled_tree_version(exeDir_);
 
 	std::string content;
@@ -194,92 +143,6 @@ void PassiveTreeUpdater::Init(const std::wstring& exeDir)
 			lastCheckUtc_ = v.value("lastCheckUtc", 0ll);
 		} catch (...) {
 			lastCheckUtc_ = 0;
-		}
-	}
-	worker_ = std::thread(&PassiveTreeUpdater::workerLoop, this);
-}
-
-void PassiveTreeUpdater::Shutdown()
-{
-	if (worker_.joinable()) {
-		{
-			std::lock_guard<std::mutex> lk(cmdMx_);
-			stop_.store(true);
-		}
-		cmdCv_.notify_all();
-		worker_.join();
-	}
-}
-
-void PassiveTreeUpdater::RequestCheck(bool force)
-{
-	if (!worker_.joinable()) return;
-	static const long long kDay = 24ll * 3600 * 10'000'000; // FILETIME is 100ns units
-	if (!force && lastCheckUtc_ > 0 && now_filetime() - lastCheckUtc_ < kDay)
-		return;
-	{
-		std::lock_guard<std::mutex> lk(cmdMx_);
-		cmdQ_.push_back(Cmd::Check);
-	}
-	cmdCv_.notify_one();
-}
-
-void PassiveTreeUpdater::StartUpdate()
-{
-	if (!worker_.joinable()) return;
-	{
-		std::lock_guard<std::mutex> lk(cmdMx_);
-		cmdQ_.push_back(Cmd::Update);
-	}
-	cmdCv_.notify_one();
-}
-
-PassiveTreeUpdater::Status PassiveTreeUpdater::Poll()
-{
-	std::lock_guard<std::mutex> lk(stMx_);
-	return st_;
-}
-
-void PassiveTreeUpdater::AckReload()
-{
-	std::lock_guard<std::mutex> lk(stMx_);
-	st_.reloadPending = false;
-	st_.phase = PassiveUpdatePhase::Idle;
-	st_.message.clear();
-}
-
-void PassiveTreeUpdater::setPhase(PassiveUpdatePhase p, const std::string& msg)
-{
-	std::lock_guard<std::mutex> lk(stMx_);
-	st_.phase = p;
-	st_.message = msg;
-}
-
-void PassiveTreeUpdater::workerLoop()
-{
-	for (;;) {
-		Cmd cmd;
-		{
-			std::unique_lock<std::mutex> lk(cmdMx_);
-			cmdCv_.wait(lk, [&] { return stop_.load() || !cmdQ_.empty(); });
-			if (stop_.load()) break;
-			cmd = cmdQ_.front();
-			cmdQ_.pop_front();
-		}
-		std::string err;
-		if (cmd == Cmd::Check) {
-			if (!doCheck(&err)) {
-				// Quiet on screen (nobody asked, and the network comes back on its
-				// own) but never quiet in the log -- this is the same shape that
-				// made "check for updates does nothing" unreportable in v0.27.0.
-				PobLog::Error("tree", "check failed: " + err);
-				setPhase(PassiveUpdatePhase::Idle, "");
-			}
-		} else {
-			if (!doUpdate(&err)) {
-				PobLog::Error("tree", "update failed: " + err);
-				setPhase(PassiveUpdatePhase::Error, err);
-			}
 		}
 	}
 }
@@ -297,8 +160,10 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 	// b. GitHub skilltree-export tags (best-effort; local result stands alone)
 	std::pair<int, int> remoteBest{ 0, 0 };
 	std::string remoteFullTag;
+	std::string tagsErr;
+	bool remoteOk = false;
 	{
-		std::string tagsBody, tagsErr;
+		std::string tagsBody;
 		HttpsClient api(kApiHost);
 		if (api.GetString(kTagsPath, tagsBody, &tagsErr, &stop_)) {
 			try {
@@ -310,8 +175,10 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 					if (!parse_semver(name, &v)) continue;
 					if (v > best) { best = v; remoteFullTag = name; }
 				}
-				if (!remoteFullTag.empty())
+				if (!remoteFullTag.empty()) {
 					remoteBest = { std::get<0>(best), std::get<1>(best) };
+					remoteOk = true; // a 200 that is not a tag list (proxy page, truncated) is no answer
+				}
 			} catch (...) {
 			}
 		}
@@ -319,10 +186,17 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 
 	std::pair<int, int> newest = std::max(localBest, remoteBest);
 	if (newest <= current || newest == std::make_pair(0, 0)) {
+		// GitHub unreachable and nothing newer locally: not a completed check, so it
+		// must not start the daily throttle (same rule as AtlasUpdater).
+		if (!remoteOk) {
+			if (err) *err = tagsErr.empty() ? u8"GitHub 回應中找不到正式版 tag" : tagsErr;
+			return false;
+		}
+		// record first: Poll() readers treat the phase change as "check finished"
+		lastCheckUtc_ = DataUpdaterNowFiletime();
+		saveRecord();
 		setPhase(PassiveUpdatePhase::UpToDate,
 			currentVer_.empty() ? u8"天賦樹資料未知版本" : u8"天賦樹資料已是最新（" + currentVer_ + u8"）");
-		lastCheckUtc_ = now_filetime();
-		saveRecord();
 		return true;
 	}
 
@@ -336,13 +210,12 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 		std::lock_guard<std::mutex> lk(stMx_);
 		st_.latestVer = latestVer_;
 	}
+	lastCheckUtc_ = DataUpdaterNowFiletime();
+	saveRecord();
 	setPhase(PassiveUpdatePhase::UpdateAvailable,
 		u8"發現新賽季天賦樹 " + latestVer_ +
 		(currentVer_.empty() ? "" : u8"（目前 " + currentVer_ + u8"）") +
 		(localBest == newest ? u8"｜POB 已更新，圖集可直接取用" : ""));
-
-	lastCheckUtc_ = now_filetime();
-	saveRecord();
 	return true;
 }
 
@@ -398,8 +271,7 @@ bool PassiveTreeUpdater::doUpdate(std::string* err)
 			std::vector<unsigned char> bytes;
 			std::wstring path = std::wstring(kRawBase) + widen(tag) + L"/assets/" + widen(base);
 			if (!raw.Get(path, bytes, err, &stop_)) return false;
-			std::string body((const char*)bytes.data(), bytes.size());
-			if (!write_file_utf8(dst, body))
+			if (!DataUpdaterWriteCacheFile(dst, bytes))
 				{ if (err) *err = u8"寫入圖集快取失敗: " + base; return false; }
 		}
 		done++;
@@ -412,7 +284,7 @@ bool PassiveTreeUpdater::doUpdate(std::string* err)
 	if (!ImportPassiveTreeData(cacheDir + L"data.json", ver, exeDir_, err, &sum)) return false;
 
 	currentVer_ = ver;
-	lastCheckUtc_ = now_filetime();
+	lastCheckUtc_ = DataUpdaterNowFiletime();
 	saveRecord();
 	remove_cache_dir(cacheDir); // best-effort
 
@@ -433,7 +305,7 @@ void PassiveTreeUpdater::saveRecord()
 	write_file_utf8(exeDir_ + L"Data\\passive_update.json", v.dump());
 }
 
-// ---- CLI --------------------------------------------------------------------
+// CLI
 
 int RunPassiveTreeUpdateCli(const std::wstring& exeDir)
 {

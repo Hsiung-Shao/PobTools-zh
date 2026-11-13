@@ -1,8 +1,6 @@
 // --frame-pacing-selftest: the pacing rules as a table, checked without a
-// window. What matters is what the launcher would DO with the answer: a frame
-// that is not presented stays on screen from the previous present, so "no"
-// must only ever be said for a picture that really is the same, and "yes"
-// must come back the moment anything -- input, a restore, a refresh -- means
+// window. "No" (skip the present) must only be said for a picture that really is
+// the same; "yes" must come back the moment input, a restore or a refresh means
 // the screen and the draw data may disagree.
 
 #include "frame_pacing.h"

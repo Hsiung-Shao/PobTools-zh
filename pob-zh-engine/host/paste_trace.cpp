@@ -1,23 +1,14 @@
 // Diagnostics for the Chinese paste path: make the engine say what it did.
 //
-// reverse_one_line() is a chain of ~15 fallback rules over a dictionary merged
-// from eight files, last file wins. From outside you see only "Chinese in,
-// something out", so every question about coverage has to be answered by
-// inference -- and inference kept being wrong: in one session three separate
-// coverage figures were produced and all three were measuring something other
-// than what they claimed (a fixture that silently excluded literal-number
-// entries, a de-duplicated fixture that made a collision check vacuously true,
-// and a Python re-implementation of the engine's hashing that did not match it).
-//
-// The fix is not a better inference. It is to have the engine emit, per line,
-// which rule fired and which file's copy of the key won. Two entry points:
+// reverse_one_line() is a chain of ~15 fallback rules over a dictionary merged from eight files (last wins); from
+// outside only "Chinese in, something out" is visible, and inference-based coverage figures kept measuring the wrong
+// thing (fixtures excluding literal-number entries, de-duplicated fixtures, a Python re-implementation of the hashing
+// that did not match). So the engine emits, per line, which rule fired and which file's copy of the key won:
 //
 //   --paste-trace <in.txt> [out.tsv]   one item, line by line
 //   --paste-census [out.tsv]           every dictionary entry's Chinese
 //
-// The census deliberately makes no pass/fail judgement. It records rule +
-// winning file + output and leaves the classifying to analysis, because a
-// premature pass/fail criterion is exactly what produced the wrong numbers.
+// The census deliberately makes no pass/fail judgement: it records rule + winning file + output for analysis.
 
 #include "paste_trace.h"
 
@@ -31,26 +22,9 @@
 
 #include "editor_data.h"
 #include "../translate/translation_manager.h"
+#include "win_util.h"
 
 namespace {
-
-std::wstring exe_dir()
-{
-	wchar_t path[MAX_PATH];
-	GetModuleFileNameW(nullptr, path, MAX_PATH);
-	std::wstring s(path);
-	size_t slash = s.find_last_of(L'\\');
-	return slash == std::wstring::npos ? L"" : s.substr(0, slash + 1);
-}
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s((size_t)n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
 
 std::string tsv_safe(const std::string& s)
 {
@@ -60,12 +34,9 @@ std::string tsv_safe(const std::string& s)
 	return r;
 }
 
-// Replace {N} / {N:+d} with a value. Two shapes are probed because the
-// dictionary is inconsistent about where the percent sign lives: some templates
-// read "{0}% chance" and others "{0} chance" with the percent inside the value.
-// Substituting the wrong shape changes the hashed key and would be reported as
-// a miss that does not exist -- the same class of instrumentation artefact this
-// tool exists to eliminate, so both are emitted and analysis takes the better.
+// Replace {N} / {N:+d} with a value. Two shapes are probed because the dictionary is inconsistent about where the
+// percent sign lives ("{0}% chance" vs "{0} chance" with % in the value); the wrong shape changes the hashed key and
+// reports a nonexistent miss, so both are emitted and analysis takes the better.
 std::string fill_placeholders(const std::string& s, const char* value)
 {
 	std::string out;
@@ -154,8 +125,7 @@ int RunPasteCensus(const std::wstring& outPath, const std::string& shell)
 	SetEnvironmentVariableA("POB_LOCALE", "zh-rTW");
 	translation_init();
 
-	// The census is a statement about the SHIPPED dictionary, so it always reads
-	// the built-in root regardless of any configured external one.
+	// The census is about the SHIPPED dictionary: it always reads the built-in root, not a configured external one.
 	EditorModel model = LoadModel(exe_dir() + L"Data\\poe1\\", "zh-rTW");
 	if (!model.localeExists) {
 		printf("no poe1/zh-rTW dictionary next to the exe\n");
@@ -164,10 +134,7 @@ int RunPasteCensus(const std::wstring& outPath, const std::string& shell)
 	printf("census over %d entries in %d files\n",
 	       (int)model.entries.size(), (int)model.files.size());
 
-	// `id` is the entry's index in the model. Without it the two probe shapes of
-	// one entry have to be re-associated downstream by string surgery, and that
-	// surgery has already produced one wrong figure -- the sentinel and the
-	// template's own '%' are indistinguishable after the fact.
+	// `id` is the entry's index in the model; without it the two probe shapes of one entry need error-prone string surgery downstream.
 	FILE* f = open_out(outPath.c_str(),
 	                   "id\tsrc_file\tshape\trule\tkind\twinner_file\tmatched_key\tprobe\town_en\tgot_en\n");
 	if (!f) {
@@ -175,15 +142,10 @@ int RunPasteCensus(const std::wstring& outPath, const std::string& shell)
 		return 2;
 	}
 
-	// A modifier never arrives alone: reverse_one_line's rarity/name handling and
-	// the flavour pass both need context, so each probe is wrapped in the minimal
-	// item shell a real paste would have.
-	//
-	// Which shell matters now that section kind drives the rules. The default one
-	// has no Item Level line, so the grammar declines to label anything and every
-	// probe runs the Unknown path -- that is deliberate: comparing this census
-	// across two builds is what proves "Unknown means unchanged behaviour" over
-	// the whole dictionary. `shell` picks a different context to measure instead:
+	// A modifier never arrives alone (rarity/name handling and the flavour pass need context), so each probe is wrapped
+	// in the minimal item shell a real paste has. The default shell has no Item Level line, so the grammar labels
+	// nothing and every probe runs the Unknown path -- deliberate: comparing censuses across builds proves "Unknown
+	// means unchanged behaviour". `shell` picks a different context instead:
 	//
 	//   plain     (default) no Item Level -> every line Unknown
 	//   mods      probe sits in an annotated modifier section
@@ -204,12 +166,8 @@ int RunPasteCensus(const std::wstring& outPath, const std::string& shell)
 		id++;
 		if (raw.value.empty() || raw.key.empty()) continue;
 
-		// The dictionary stores GGG's "[Attack|攻擊]" markup verbatim, but the
-		// game renders it away before the text ever reaches a clipboard. Probing
-		// with the markup left in reported 6,439 entries as unmatched that a real
-		// paste would never present that way -- an artefact of the instrument,
-		// not a defect in the engine. Rendered here with the ENGINE's own
-		// function so the probe cannot drift from what it is measuring.
+		// The dictionary stores GGG's "[Attack|攻擊]" markup verbatim, but the game renders it away before the clipboard;
+		// probing with it left in reported 6,439 bogus misses. Rendered here with the ENGINE's own function so the probe cannot drift.
 		EditorEntry e = raw;
 		e.value = translation_strip_ggg_markup(raw.value.c_str());
 		e.key = translation_strip_ggg_markup(raw.key.c_str());
@@ -222,15 +180,11 @@ int RunPasteCensus(const std::wstring& outPath, const std::string& shell)
 		for (int si = 0; si < nShapes; si++) {
 			std::string probe = ph ? fill_placeholders(e.value, shapes[si]) : e.value;
 			std::string ownEn = ph ? fill_placeholders(e.key, shapes[si]) : e.key;
-			// A dictionary value may hold GGG's own "\n" (497 of them do). The game
-			// renders those as two separate lines, so there is no single paste line
-			// they correspond to and no single row that could describe one. Skipped
-			// rather than folded into one line, and counted, because a census that
-			// quietly drops rows reads as coverage it does not have.
+			// A value may hold GGG's own "\n" (497 do); the game renders two lines, so no single paste line or row
+			// describes one. Skipped (not folded) and counted: a census that quietly drops rows overstates coverage.
 			if (probe.find('\n') != std::string::npos) { skippedMultiline++; continue; }
 
-			// The probe is not always the last line, so its row index is counted
-			// from the shell rather than assumed -- one trace row per input line.
+			// The probe is not always the last line: its row index is counted from the shell (one trace row per input line).
 			std::string text = std::string(kShellHead) + kShellName;   // 4 lines
 			size_t probeRow = 4;
 			if (shell == "mods") {

@@ -2,9 +2,7 @@
 //
 // Every size here is written in DESIGN pixels -- the design system draws at a
 // 16 px body -- and converted with D(): design px x 19/16 x the launcher scale
-// (monitor DPI x the font-size zoom). So a 36 px button is 36 x 19/16 = 42.75 px
-// at the default font size on a 100% monitor, the same proportion to the 19 px
-// body face that 36 is to 16 in the design.
+// (monitor DPI x the font-size zoom).
 //
 // ImGui 1.90 WIP: no ImGuiChildFlags, so cards are a BeginGroup whose background
 // is drawn afterwards into an earlier draw-list channel (an ImDrawListSplitter
@@ -62,7 +60,7 @@ bool ToolDensity();
 void PushControlFrame();
 void PopControlFrame();
 
-// ---- text ---------------------------------------------------------------
+// text
 // Heading-size text as one item (card titles, the tool header's name).
 void Heading(const char* text, std::uint32_t col = 0);
 void Hint(const char* text, float wrapWidth = 0.0f, std::uint32_t col = 0);   // small, text-muted
@@ -80,7 +78,7 @@ void InfoTip(const char* text);
 // Muted link that turns accent-text and underlined on hover; true on click.
 bool Link(const char* label, std::uint32_t col = 0);
 
-// ---- icons --------------------------------------------------------------
+// icons
 // Inline icon (one of PobIcon::*). With no icon font it draws nothing and takes
 // no space.
 void Icon(const char* icon, std::uint32_t col, float px = 0.0f);
@@ -88,7 +86,7 @@ void IconAt(ImDrawList* dl, const ImVec2& pos, const char* icon, std::uint32_t c
 // Width of the icon at px, 0 without the icon font.
 float IconWidth(const char* icon, float px);
 
-// ---- actions ------------------------------------------------------------
+// actions
 enum class BtnKind { Primary, Secondary, Ghost, Danger, Update };
 enum class BtnSize { Sm, Md, Lg };
 bool Button(const char* label, BtnKind kind = BtnKind::Secondary, BtnSize size = BtnSize::Md,
@@ -145,7 +143,7 @@ SliderResult SliderWithReset(const char* id, int* edit, int min, int max, int de
                              float trackWidth);
 float SliderWithResetWidth(float trackWidth, const char* resetLabel);
 
-// ---- status -------------------------------------------------------------
+// status
 enum class Tone { Ok, Run, Warn, Bad, Idle };
 void StatusPill(Tone tone, const char* text);
 float PillWidth(const char* text);
@@ -160,7 +158,7 @@ BannerResult Banner(const char* id, BannerTone tone, const char* icon, const cha
 
 void ProgressBar(float fraction, float width);
 
-// ---- layout -------------------------------------------------------------
+// layout
 // Page tabs (Tabs, underline style): label row + 1 px border, the selected tab
 // underlined in accent. Returns the selection after this frame's click.
 int PageTabs(const char* id, int selected, const char* const* labels, int count, float width = 0.0f);
@@ -234,7 +232,7 @@ int EmptyStateEx(const char* id, const char* icon, const char* title, const char
 // The height EmptyState needs for this content at this width (no minimum).
 float EmptyStateHeight(const char* title, const char* hint, bool action, float width);
 
-// ---- transient ----------------------------------------------------------
+// transient
 // Bottom-right toast, 4 s, one at a time (a new one replaces the old).
 void ShowToast(const char* text, Tone tone = Tone::Ok);
 // Call once per frame after the main window has ended.

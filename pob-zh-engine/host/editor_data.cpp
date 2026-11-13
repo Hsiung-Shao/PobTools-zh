@@ -3,6 +3,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "win_util.h"
 
 #include <algorithm>
 #include <unordered_set>
@@ -12,50 +13,6 @@ using nlohmann::ordered_json;
 // Structured-entry translation key "翻譯" (UTF-8 E7 BF BB E8 AD AF), spelled as
 // bytes so it matches regardless of how this file's encoding is interpreted.
 static const char* kTransKey = "\xe7\xbf\xbb\xe8\xad\xaf";
-
-// ---- small Win32 / encoding helpers ---------------------------------------
-
-static std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
-
-static std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-	return s;
-}
-
-static bool dir_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
-}
-
-// Read a whole file into a UTF-8 string using a wide path (the exe may live in
-// a non-ASCII directory). Returns false if the file cannot be opened.
-static bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 30)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
 
 // Atomic write: write a temp file next to the target, then rename over it.
 static bool write_file_atomic(const std::wstring& path, const std::string& data)
@@ -92,21 +49,17 @@ static std::string strip_color_codes(const std::string& s)
 	return out;
 }
 
-// ---- model loading ---------------------------------------------------------
+// model loading
 
-// slotRoot is the folder holding the <locale> sub-folders, WITH its trailing
-// backslash -- <exeDir>Data\poe1\ for the built-in PoE1 dictionaries, or a
-// translator's external copy of them. It is deliberately NOT the exe directory
-// and NOT a Data root: the editor has to write to whatever the engine reads, or
-// "I changed it and nothing happened" is the result.
+// slotRoot is the folder holding the <locale> sub-folders, WITH its trailing backslash (<exeDir>Data\poe1\ or an
+// external copy). Deliberately NOT the exe directory or a Data root: the editor must write what the engine reads.
 static std::wstring locale_dir(const std::wstring& slotRoot, const std::string& locale)
 {
 	return slotRoot + widen(locale) + L"\\";
 }
 
-// meta.json's load_order. It is deliberately NOT part of the model's file list
-// (it has no "entries" object), but the engine merges dictionaries in this order
-// and the last file to define a key wins, so the editor has to read it anyway.
+// meta.json's load_order: not in the model's file list (no "entries" object), but the engine merges in this order
+// (last file wins), so the editor must read it.
 static std::vector<std::string> read_load_order(const std::wstring& dataDir, const char* field = "load_order")
 {
 	std::vector<std::string> order;
@@ -119,8 +72,7 @@ static std::vector<std::string> read_load_order(const std::wstring& dataDir, con
 				if (v.is_string()) order.push_back(v.get<std::string>());
 		}
 	} catch (...) {
-		// A broken meta.json leaves order empty: every file gets rank -1 and the
-		// UI says "not in load_order" rather than inventing an order.
+		// A broken meta.json leaves order empty: every file gets rank -1 ("not in load_order") rather than an invented order.
 	}
 	return order;
 }
@@ -165,8 +117,7 @@ EditorModel LoadModel(const std::wstring& slotRoot, const std::string& locale)
 		EditorFile ef;
 		ef.name = narrow(wname);
 		ef.path = model.dataDir + wname;
-		// Decided by the FIRST line break, not by "contains a CRLF anywhere": a
-		// mostly-LF file with one stray CRLF must not be rewritten as all-CRLF.
+		// Decided by the FIRST line break, not "contains a CRLF anywhere": a mostly-LF file with one stray CRLF must not become all-CRLF.
 		{
 			size_t nl = content.find('\n');
 			ef.crlf = (nl != std::string::npos && nl > 0 && content[nl - 1] == '\r');
@@ -209,8 +160,7 @@ EditorModel LoadModel(const std::wstring& slotRoot, const std::string& locale)
 		f.order = -1;
 		for (size_t i = 0; i < model.loadOrder.size(); i++)
 			if (model.loadOrder[i] == f.name) { f.order = (int)i; break; }
-		// Id-keyed dictionaries: keys are GraphIds / mod Ids / stat ids that the
-		// engine matches by id, not English a translator could type.
+		// Id-keyed dictionaries: keys are GraphIds / mod Ids / stat ids the engine matches by id, not typable English.
 		f.readOnly = f.name.size() > kIdSuffix.size() &&
 		             f.name.compare(f.name.size() - kIdSuffix.size(), kIdSuffix.size(), kIdSuffix) == 0;
 	}
@@ -292,9 +242,7 @@ int WinnerFileIdx(const EditorModel& model, const std::string& key)
 {
 	int best = -1, bestOrder = -2;
 	for (int f : FilesContaining(model, key)) {
-		// An unlisted file (-1) is never loaded, so it can only win when it is
-		// the only holder -- and even then the engine would not see it. Rank it
-		// below every listed file but above "nothing found".
+		// An unlisted file (-1) is never loaded (the engine would not see it even as sole holder): rank it below every listed file but above "nothing found".
 		const int o = model.files[f].order;
 		if (o > bestOrder) { bestOrder = o; best = f; }
 	}
@@ -410,13 +358,8 @@ bool SaveFile(EditorFile& file, std::string* err)
 	}
 	out.push_back('\n'); // trailing newline, matches typical JSON files
 
-	// Restore the file's original line ending. dump() only emits '\n', so saving
-	// once used to rewrite a CRLF file end to end as LF.
-	//
-	// Expanding every '\n' is safe: nlohmann escapes control characters inside
-	// string VALUES even with ensure_ascii=false (a newline in a translation is
-	// written as the two characters '\' 'n'), so every raw '\n' in the output is
-	// structural, and there are no raw '\r' to double up.
+	// Restore the file's original line ending (dump() only emits '\n'). Expanding every '\n' is safe: nlohmann escapes
+	// control characters inside string VALUES even with ensure_ascii=false, so every raw '\n' is structural and no raw '\r' doubles up.
 	if (file.crlf) {
 		std::string crlf;
 		crlf.reserve(out.size() + out.size() / 8);
@@ -469,10 +412,8 @@ int SaveAll(EditorModel& model, std::string* err, std::vector<std::string>* fail
 		} else {
 			failed++;
 			if (failedFiles) failedFiles->push_back(model.files[i].name);
-			// Per file, not just the first one: the caller only surfaces the
-			// first error, and "3 of 8 files did not save" is a different story
-			// from "one did". What is at stake is somebody's hand-written
-			// translation, which exists nowhere else.
+			// Per file, not just the first: the caller surfaces only the first error, and "3 of 8 files did not save"
+			// differs from "one did" (hand-written translation exists nowhere else).
 			PobLog::Error("save", "dictionary file did not save: " +
 			                          narrow(model.files[i].path) + ": " + fileErr);
 			if (err && err->empty()) *err = fileErr;
@@ -507,8 +448,7 @@ std::string LocaleDisplayName(const std::wstring& slotRoot, const std::string& l
 		if (meta.contains("display_name") && meta["display_name"].is_string())
 			return meta["display_name"].get<std::string>();
 	} catch (...) {
-		// A broken meta.json just has no display name: the caller (localeLabel)
-		// falls back to the locale code instead.
+		// A broken meta.json just has no display name: the caller (localeLabel) falls back to the locale code.
 	}
 	return std::string();
 }
@@ -567,9 +507,7 @@ std::vector<MissEntry> ScanMisses(const std::wstring& exeDir, const EditorModel&
 		MissEntry m;
 		m.text = text;
 		m.tag = tag;
-		// Only MISS is a forward miss (English the dictionaries lack). REV, and the
-		// paste grammar's FLAVOUR / PROPERTY drops, are Chinese lines from a pasted
-		// item -- see MissEntry.
+		// Only MISS is a forward miss (English the dictionaries lack); REV and the paste grammar's FLAVOUR / PROPERTY drops are Chinese pasted lines (see MissEntry).
 		m.reverse = (tag != "MISS");
 		out.push_back(std::move(m));
 	}

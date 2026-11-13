@@ -9,42 +9,15 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX          // keep std::min/std::max usable (windows.h defines min/max macros)
 #include <windows.h>
+#include "win_util.h"
+#include "selftest_report.h"
 
 #include <algorithm>
 #include <cstdio>
 #include <unordered_map>
 #include <unordered_set>
 
-// ---- file helper (report output) --------------------------------------------
-
-static bool write_file_utf8(const std::wstring& path, const std::string& content)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	DWORD written = 0;
-	bool ok = content.empty() ||
-		(WriteFile(h, content.data(), (DWORD)content.size(), &written, nullptr) && written == content.size());
-	CloseHandle(h);
-	return ok;
-}
-
-static bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 30)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
-
-// ---- stat-line normalization ------------------------------------------------
+// stat-line normalization
 
 namespace {
 
@@ -135,7 +108,7 @@ void DiffStats(const std::vector<std::string>& oldStats, const std::vector<std::
 
 } // namespace
 
-// ---- compute ----------------------------------------------------------------
+// compute
 
 AtlasTreeDiff ComputeAtlasTreeDiff(const AtlasTreeData& oldTree, const AtlasTreeData& newTree,
                                    const AtlasI18n* i18nOld, const AtlasI18n* i18nNew,
@@ -202,7 +175,7 @@ AtlasTreeDiff ComputeAtlasTreeDiff(const AtlasTreeData& oldTree, const AtlasTree
 	return diff;
 }
 
-// ---- cross-season TC backfill -----------------------------------------------
+// cross-season TC backfill
 
 int BackfillAtlasI18n(AtlasI18n& newI18n, const AtlasTreeData& newTree,
                       const AtlasI18n& oldI18n, const AtlasTreeData& oldTree)
@@ -270,7 +243,7 @@ int PruneStaleTranslations(AtlasI18n& newI18n, const AtlasTreeData& newTree, con
 	return dropped;
 }
 
-// ---- report -----------------------------------------------------------------
+// report
 
 static const char* KindTag(int k)
 {
@@ -324,7 +297,7 @@ std::string FormatAtlasTreeDiffReport(const AtlasTreeDiff& diff)
 	return s;
 }
 
-// ---- self-test (--atlas-diff-selftest) --------------------------------------
+// self-test (--atlas-diff-selftest)
 
 namespace {
 
@@ -344,14 +317,8 @@ int RunAtlasDiffSelfTest(const std::wstring& exeDir)
 		freopen_s(&f, "CONOUT$", "w", stdout);
 	}
 
-	std::string rep;
-	int failures = 0;
-	auto check = [&](bool ok, const char* what) {
-		rep += ok ? "PASS  " : "FAIL  ";
-		rep += what;
-		rep += "\n";
-		if (!ok) failures++;
-	};
+	TestReport rep;
+	auto check = [&](bool ok, const char* what) { rep.check(ok, what); };
 
 	AtlasTreeData oldT, newT;
 	// id 100: value change 15 -> 20
@@ -537,14 +504,11 @@ int RunAtlasDiffSelfTest(const std::wstring& exeDir)
 		RemoveDirectoryW(dir.c_str());
 	}
 
-	rep += failures == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(failures) + "\n";
-	rep += "\n--- sample report ---\n" + FormatAtlasTreeDiffReport(d);
-	printf("%s", rep.c_str());
-	write_file_utf8(exeDir + L"atlas_diff_selftest.txt", rep);
-	return failures == 0 ? 0 : 1;
+	rep.text += "\n--- sample report ---\n" + FormatAtlasTreeDiffReport(d);
+	return rep.finish(exeDir + L"atlas_diff_selftest.txt");
 }
 
-// ---- CLI (--atlas-diff <oldVer> <newVer>) -----------------------------------
+// CLI (--atlas-diff <oldVer> <newVer>)
 
 int RunAtlasDiffCli(const std::wstring& oldVer, const std::wstring& newVer, const std::wstring& exeDir)
 {

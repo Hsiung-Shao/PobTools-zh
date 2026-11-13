@@ -1,11 +1,7 @@
-// PobTools sound library service (音效管理), modelled on POE-Filter-Audio-Manager:
-// scan a folder of alert sounds, preview them, manage naming rules (saved to
-// Data\sound_rules.json), batch-rename by rule with a dry-run plan, and keep the
-// open filter's CustomAlertSound references in sync when files are renamed.
-//
-// UI-free data layer shared by the 音效管理 section and the CustomAlertSound
-// card's sound-library popup. Folder persistence stays in pob-zh.ini
-// (Get/SetSoundFolder from sound_manager.h).
+// PobTools sound library service (音效管理): scan a folder of alert sounds, preview, naming rules (Data\sound_rules.json),
+// batch-rename with a dry-run plan, and keep the open filter's CustomAlertSound references in sync on rename.
+// UI-free data layer shared by the 音效管理 section and the CustomAlertSound popup; folder persistence stays in
+// pob-zh.ini (Get/SetSoundFolder from sound_manager.h).
 #pragma once
 
 #include "filter_doc_editor.h"

@@ -17,7 +17,7 @@
 --      a control's private fields to reconstruct what its Draw would show.
 --   3. Intercept with a wrapper (call the original, observe, hand back its
 --      result), the same way poecharm_inject.lua does -- never a rewrite.
---   4. Every POB surface touched is registered in `probes`, and self_check runs
+--   4. Every POB surface touched is registered in `probes`, and run_probes runs
 --      them all. The host refuses to open the new UI on a failed gate and
 --      falls back to the classic window, so an upstream refactor is a banner,
 --      not a silent wrong number.
@@ -43,11 +43,10 @@ local function tr(s)
 	return zh or s
 end
 
--- Names by language-independent id (使用者核准 2026-10-28): a gem / skill by its
--- GrantedEffects id, an ascendancy by its Ascendancy id ("Raider" = Warden),
--- through the inject's PobToolsGemNameZh / PobToolsAscendancyNameZh -- the
--- same words the classic window draws. They answer only when the id table's
--- English is the name shown; otherwise (or with an older inject) tr() as before.
+-- Names by language-independent id (gem / skill by GrantedEffects id, ascendancy by Ascendancy
+-- id) through the inject's PobToolsGemNameZh / PobToolsAscendancyNameZh, the same words the
+-- classic window draws. They answer only when the id table's English is the name shown;
+-- otherwise (or with an older inject) tr().
 local function gem_tr(id, name)
 	local zh = id ~= nil and type(PobToolsGemNameZh) == "function" and PobToolsGemNameZh(id, name) or nil
 	return zh or tr(name)
@@ -73,10 +72,8 @@ local function group_name_map(groups)
 	return type(PobToolsSocketGroupNameMap) == "function" and PobToolsSocketGroupNameMap(groups) or nil
 end
 
--- Which game this POB is for. The engine names it (PobToolsGame: the game whose
--- rules the translation and the inject run, 使用者裁定 2026-10-30); an engine
--- older than this data pack has no PobToolsGame, so then the host's POB_GAME,
--- and PoE2's POB numbering its tree versions from 0_1 settles the rest.
+-- Which game this POB is for: the engine names it (PobToolsGame); an older engine has none, so
+-- then the host's POB_GAME, and PoE2's POB numbering its tree versions from 0_1 settles the rest.
 local GAME = type(PobToolsGame) == "function" and PobToolsGame()
 if GAME ~= "poe1" and GAME ~= "poe2" then
 	GAME = os.getenv("POB_GAME") == "poe2" and "poe2"
@@ -88,17 +85,13 @@ local function log_error(msg)
 	if PobToolsLogError then PobToolsLogError("bridge", msg) end
 end
 
--- ---------------------------------------------------------------------------
 -- Probes: every POB surface the bridge depends on, each checked by name.
--- ---------------------------------------------------------------------------
 
 local probes = {}
--- probe(name, fn[, cap]): without `cap` a failure fails the gate (the new UI
--- falls back to the classic window); with one, the failure only switches that
--- capability off (capabilities()) and the page hides the feature. PoE2's
--- Path of Building is a fork that never gained some PoE1 surfaces (item
--- influences, enchant/crucible dialogs, the account-name import); those are
--- capabilities, not reasons to refuse the whole interface.
+-- probe(name, fn[, cap]): without `cap` a failure fails the gate (the new UI falls back to the
+-- classic window); with one it only switches that capability off and the page hides the
+-- feature (PoE2's POB never gained some PoE1 surfaces: influences, enchant/crucible dialogs,
+-- the account-name import).
 local function probe(name, fn, cap) probes[#probes + 1] = { name = name, fn = fn, cap = cap } end
 
 local function nparams(fn)
@@ -143,10 +136,9 @@ local function class_of(name)
 	end
 	return c
 end
--- POB's object construction differs between branches: master 2.67.2 runs the
--- class constructor inside new(className, ...); beta returns the bare object
--- and the caller runs it (new("X"):X(...)). make() uses whichever form this
--- POB's own new() has, so every object is built the way POB builds it.
+-- POB's object construction differs between branches: master 2.67.2 runs the constructor
+-- inside new(className, ...); beta returns the bare object and the caller runs it. make() uses
+-- whichever form this POB's own new() has.
 local function make(className, ...)
 	local info = debug.getinfo(new, "u")
 	if info and info.isvararg then
@@ -169,10 +161,8 @@ probe("classes.PassiveSpec.CountAllocNodes", function() local c = class_of("Pass
 probe("classes.PassiveSpec.AllocNode", function() local c = class_of("PassiveSpec"); return type(c) == "table" and type(c.AllocNode) == "function" and type(c.DeallocNode) == "function" end)
 probe("UpdateCheck.lua present", function() local f = io.open("UpdateCheck.lua", "r"); if f then f:close() return true end return false end)
 
--- What this POB offers beyond the gate. A missing capability turns one
--- feature off on the page instead of refusing the whole interface: the
--- sidebar breakdown (Build.lua GetSidebarBreakdown) is on the beta branch
--- only, so on master the rows simply have no breakdown to open.
+-- What this POB offers beyond the gate. A missing capability turns one feature off on the page
+-- (e.g. the sidebar breakdown, GetSidebarBreakdown, exists on the beta branch only).
 local capMissing = {}
 local function capabilities()
 	local B = launch and launch.main and launch.main.modes and launch.main.modes.BUILD
@@ -212,9 +202,7 @@ local function run_probes()
 	return gate
 end
 
--- ---------------------------------------------------------------------------
 -- Helpers
--- ---------------------------------------------------------------------------
 
 local function main() return launch.main end
 local function build()
@@ -241,11 +229,9 @@ local function is_scalar(v)
 	return t == "number" or t == "string" or t == "boolean"
 end
 
--- Sidebar rows carry only text. Wrapping AddDisplayStatList (rule 3) feeds it
--- one stat entry at a time and tags every row that appended with the entry's
--- stat key and the actor, so the UI can group by key and never has to read
--- "^7Minion:" (rule 5). POB's own spacer logic only looks at the previous row,
--- so splitting the list changes nothing it produces.
+-- Sidebar rows carry only text. Wrapping AddDisplayStatList (rule 3) feeds it one stat entry
+-- at a time and tags each appended row with the stat key and actor, so the UI groups by key
+-- and never reads "^7Minion:" (rule 5). Splitting the list changes nothing POB produces.
 local wrapped = false
 local function wrap_add_display_stat_list()
 	local B = build()
@@ -280,19 +266,12 @@ local function wrap_add_display_stat_list()
 	wrapped = true
 end
 
--- ---------------------------------------------------------------------------
 -- Methods
--- ---------------------------------------------------------------------------
 
 local M = {}
 
-function M.ping() return { pong = true } end
-
--- pump{seconds}: run POB's frame loop for a while and answer. POB's downloads
--- (character import, trade, update check) finish on later frames, so a test --
--- or a page that would rather wait than poll -- needs a way to give them time
--- inside one call. Capped: the host has its own timeout and a bridge call that
--- never returns is worse than one that returns early.
+-- pump{seconds}: run POB's frame loop for a while and answer (its downloads finish on later
+-- frames). Capped: the host has its own timeout and a call that never returns is worse.
 function M.pump(p)
 	local secs = tonumber(p and p.seconds) or 1
 	if secs < 0 then secs = 0 elseif secs > 60 then secs = 60 end
@@ -311,12 +290,10 @@ local function translate_state()
 	return PobToolsGetTranslate() and true or false
 end
 
--- set_translate{enabled}: the same switch the classic window's F2 flips
--- (ui_main.cpp KEY_F2 -> translation_set_enabled). tr() above goes through
--- PobToolsTranslateDisplay, whose first act is to check that flag, so turning
--- it off makes EVERY string this bridge answers with come back in POB's own
--- English -- including the ones that have no separate English field (sidebar
--- and calcs breakdowns, mastery effects). The page then re-reads what it shows.
+-- set_translate{enabled}: the classic window's F2 switch (translation_set_enabled). tr() goes
+-- through PobToolsTranslateDisplay, which checks that flag first, so turning it off returns
+-- EVERY bridge string in POB's own English (also those with no separate English field). The
+-- page then re-reads what it shows.
 function M.set_translate(p)
 	if not (PobToolsSetTranslate and PobToolsGetTranslate) then
 		error("this engine has no translation switch", 0)
@@ -347,10 +324,6 @@ function M.version()
 		-- UI must not assume it starts empty.
 		buildLoaded = (build() and build().calcsTab and build().calcsTab.mainOutput) and true or false,
 	}
-end
-
-function M.self_check()
-	return run_probes()
 end
 
 -- load_build_file{path=...}: an absolute path under main.buildPath (POB
@@ -450,10 +423,12 @@ function M.get_sidebar()
 	return { rows = rows, warnings = warnings, rev = b.outputRevision, outputRevision = b.outputRevision }
 end
 
--- The breakdown POB shows when a sidebar row is hovered: same three calls the
--- classic window makes (Build.lua ShowDisplayStat -> GetSidebarBreakdown ->
--- CalcBreakdownControl:SetBreakdownData), then read the control's section
--- list and clear it again. rowIndex is 1-based into get_sidebar's rows.
+-- The breakdown POB shows on sidebar hover: the classic window's three calls (ShowDisplayStat ->
+-- GetSidebarBreakdown -> CalcBreakdownControl:SetBreakdownData), then read the section list and
+-- clear it. rowIndex is 1-based into get_sidebar's rows.
+-- Defined after tooltip_lines (a local function declared below its caller is a nil upvalue).
+local breakdown_tips, breakdown_tip
+
 local function cell_text(v)
 	if type(v) == "number" then
 		if v == math.floor(v) then return tostring(math.floor(v)) end
@@ -474,10 +449,11 @@ function M.sidebar_breakdown(p)
 	end
 	local ctl = b.controls.breakdown
 	local data = b:GetSidebarBreakdown(line.breakdown, line.modNames, line.ignoredSections, line.actorName)
-	local sections = {}
+	local sections, tipOut = {}, nil
 	local ok, err = pcall(function()
 		ctl:SetBreakdownData(data, false, line.actorName)
-		for _, s in ipairs(ctl.sectionList or {}) do
+		if p.tip then tipOut = breakdown_tip(ctl, p.tip) return end
+		for _si, s in ipairs(ctl.sectionList or {}) do
 			if s.type == "TEXT" then
 				local lines = {}
 				for i, l in ipairs(s.lines) do lines[i] = tr(l) end
@@ -494,12 +470,14 @@ function M.sidebar_breakdown(p)
 					end
 					rows[i] = setmetatable(row, { __object = true })
 				end
+				local tips = breakdown_tips(_si, s)
 				sections[#sections + 1] = {
 					type = "table",
 					label = s.label and tr(s.label) or nil,
 					footer = s.footer and tr(s.footer) or nil,
 					cols = cols,
 					rows = rows,
+					tips = tips,
 				}
 			elseif s.type == "RADIUS" then
 				sections[#sections + 1] = { type = "radius", radius = s.radius }
@@ -508,15 +486,15 @@ function M.sidebar_breakdown(p)
 	end)
 	ctl:SetBreakdownData() -- always clear, the classic window does too (ClearDisplayStat)
 	if not ok then error(err, 0) end
+	if tipOut then return tipOut end
 	return { sections = sections, rev = b.outputRevision }
 end
 
 -- Builds under main.buildPath, scanned/filtered/sorted by POB's own helpers
 -- (Modules/BuildListHelpers: the same index the classic build list shows).
--- list_builds{subPath, filter?, sortMode?}: the build list screen. `filter`
--- is its search box (main.filterBuildList: PoE1 matches words and class:x
--- across the subfolders, PoE2 globs file names in this folder), `sortMode`
--- its sort drop-down (main.buildSortMode, which POB keeps in Settings.xml).
+-- list_builds{subPath, filter?, sortMode?}: `filter` is the search box (main.filterBuildList:
+-- PoE1 matches words and class:x across subfolders, PoE2 globs file names in this folder),
+-- `sortMode` the sort drop-down (main.buildSortMode, kept in Settings.xml).
 function M.list_builds(p)
 	local subPath = p and p.subPath or ""
 	local helpers = require("Modules.BuildListHelpers")
@@ -577,10 +555,8 @@ function M.get_build_info()
 	local pd = b.controls.pointDisplay
 	local usedMax, ascMax, ws
 	if pd and type(pd.str) == "string" then
-		-- Build.lua's pointDisplay. PoE1: "used / max   asc / max". PoE2 has four
-		-- pairs: passives, weapon set 1, weapon set 2, ascendancy -- reading only
-		-- the first two took weapon set 1's cap for the ascendancy cap (3/24 shown
-		-- where POB says 3/8), and counted weapon-set points as ordinary ones.
+		-- Build.lua's pointDisplay. PoE1: "used / max   asc / max". PoE2 has four pairs:
+		-- passives, weapon set 1, weapon set 2, ascendancy (reading only two mixes up the caps).
 		local pairs_ = {}
 		for u, m in strip_escapes(pd.str):gmatch("(%d+)%s*/%s*(%d+)") do
 			pairs_[#pairs_ + 1] = { tonumber(u), tonumber(m) }
@@ -660,9 +636,7 @@ function M.apply_update(p)
 	return { applied = mode }
 end
 
--- ---------------------------------------------------------------------------
 -- Passive tree
--- ---------------------------------------------------------------------------
 
 local function as_object(t)
 	return setmetatable(t, { __object = true })
@@ -683,12 +657,10 @@ local function current_tree_version(p)
 	return v
 end
 
--- The tree as POB has already laid it out: PassiveTree:PassiveTree() computed
--- every node's x/y from group + orbit (ProcessNode), built the connector list
--- (BuildConnector: straight line, or an arc around the group centre) and
--- decided which frame art each node type uses (nodeOverlay). All of that is
--- read here and handed over; nothing about the tree's geometry is recomputed
--- on the page. Frame names follow PassiveTreeView.lua's rule per state.
+-- The tree as POB has laid it out: PassiveTree:PassiveTree() computed node x/y (ProcessNode),
+-- the connector list (BuildConnector: line or arc) and the frame art per node type
+-- (nodeOverlay). All read here and handed over; the page recomputes no geometry. Frame names
+-- follow PassiveTreeView.lua's rule per state.
 local FRAME_STATES = { "alloc", "path", "unalloc" }
 local CLASS_ART = { -- PassiveTreeView.lua: the class illustration, fixed per class id
 	[1] = { name = "BackgroundStr", x = -2750, y = 1600 },
@@ -1238,12 +1210,10 @@ function M.node_hover(p)
 	return { id = id, allocated = node.alloc and true or false, path = path, depends = depends, cost = cost }
 end
 
--- The tooltip POB draws for a node, as lines. Wraps the viewer's own
--- AddNodeTooltip (returnEarly: no stat-difference pass, which costs two full
--- calculations per hover). AddNodeTooltip sets maxWidth=800 and the tooltip
--- then wraps lines through main:WrapString, which needs real font metrics we
--- do not have headless -- swap it for identity during the call and let the
--- page wrap.
+-- The tooltip POB draws for a node, as lines. Wraps the viewer's own AddNodeTooltip (returnEarly:
+-- no stat-difference pass, which costs two full calculations per hover). The tooltip wraps lines
+-- through main:WrapString, which needs font metrics we lack headless: swap it for identity during
+-- the call and let the page wrap.
 function M.node_info(p)
 	local b = ensure_build()
 	local id = p and tonumber(p.id)
@@ -1255,13 +1225,10 @@ function M.node_info(p)
 	local savedWrap, savedDiff = main().WrapString, viewer.showStatDifferences
 	main().WrapString = function(_, s) return { s } end
 	viewer.showStatDifferences = (p.diff and true) or false
-	-- The 4th argument differs between the games. PoE1: returnEarly, which stops
-	-- before the allocation part (the stat differences among it). PoE2:
-	-- incSmallPassiveSkillEffect, a NUMBER that PassiveTreeView:Draw sums over the
-	-- allocated nodes -- passing PoE1's boolean made every PoE2 hover fail
-	-- (arithmetic on a boolean), so the page fell back to its cached text and
-	-- F2 could not reach tree tooltips. PoE2 has no returnEarly; the stat
-	-- difference pass follows showStatDifferences, set above.
+	-- The 4th argument differs between the games. PoE1: returnEarly (stops before the stat
+	-- differences). PoE2: incSmallPassiveSkillEffect, a NUMBER that PassiveTreeView:Draw sums
+	-- over the allocated nodes -- PoE1's boolean makes every PoE2 hover fail (arithmetic on a
+	-- boolean). PoE2 has no returnEarly; its stat difference pass follows showStatDifferences.
 	local fourth = not p.diff
 	if GAME == "poe2" then
 		fourth = 0
@@ -1275,10 +1242,9 @@ function M.node_info(p)
 	if not ok then error(err, 0) end
 	local src = tt.lines or {}
 	if GAME == "poe2" and not p.diff then
-		-- PoE2's stand-in for returnEarly: with stat differences off, what follows
-		-- the flavour text starts with a separator and the "enable stat
-		-- differences" tip (then path length, gold, classic-window key tips).
-		-- The page has its own footer for those; cut there, as PoE1 does.
+		-- PoE2's stand-in for returnEarly: with stat differences off, what follows the flavour
+		-- text starts with a separator and the "enable stat differences" tip; cut there (the
+		-- page has its own footer).
 		for i, l in ipairs(src) do
 			if type(l.text) == "string" and l.text:find("Tip: Press Ctrl+D to enable", 1, true) then
 				local cut = (i > 1 and src[i - 1].text == nil) and i - 1 or i
@@ -1331,11 +1297,9 @@ function M.node_info(p)
 	}
 end
 
--- POB takes the undo base state in PassiveSpec:Load, before PostLoad builds
--- the cluster-jewel subgraphs, so undoing back to the start of the session
--- drops every cluster node (and the sockets inside them) in classic POB too.
--- While nothing has been changed yet the stack is that single stale entry;
--- retaking it from the now-complete spec costs nothing and fixes the base.
+-- POB takes the undo base state in PassiveSpec:Load, before PostLoad builds the cluster-jewel
+-- subgraphs, so undoing to the session start drops every cluster node. While nothing has
+-- changed the stack is that single stale entry; retaking it from the complete spec fixes the base.
 local function ensure_undo_base(spec)
 	if spec.undo and #spec.undo <= 1 and (not spec.redo or #spec.redo == 0) then
 		spec:ResetUndo()
@@ -1553,13 +1517,11 @@ function M.set_alloc_mode(p)
 	return M.get_tree_state()
 end
 
--- Choosing a mastery effect: TreeTab:SaveMasteryPopup does the whole
--- sequence (stats swap, ProcessStats, masterySelections, AllocNode,
--- AddUndoState); it only wants a list control with a selection and closes a
--- popup we never opened, so hand it a stand-in and mute ClosePopup.
--- mastery_options{id}: the effect list for a mastery that is ALREADY allocated
--- (PassiveTreeView: right-click on it opens OpenMasteryPopup to change the
--- effect). tree_click only offers the list while allocating.
+-- Choosing a mastery effect: TreeTab:SaveMasteryPopup does the whole sequence (stats swap,
+-- ProcessStats, masterySelections, AllocNode, AddUndoState); it wants a list control with a
+-- selection and closes a popup we never opened, so hand it a stand-in and mute ClosePopup.
+-- mastery_options{id}: the effect list for an ALREADY allocated mastery (tree_click only offers
+-- the list while allocating).
 function M.mastery_options(p)
 	local b = ensure_build()
 	local id = p and tonumber(p.id)
@@ -1589,11 +1551,9 @@ function M.select_mastery(p)
 	return M.get_tree_state()
 end
 
--- Undo/redo restore through ImportFromNodeList, which parks cluster-jewel
--- node ids whose subgraph is currently gone (the dealloc that disconnected
--- the socket removed it) in allocSubgraphNodes and leaves them there until
--- the next BuildClusterJewelGraphs. Classic POB shows the cluster nodes as
--- lost until a jewel is touched; we finish the restore right away.
+-- Undo/redo restore through ImportFromNodeList, which parks cluster-jewel node ids whose subgraph
+-- is gone in allocSubgraphNodes until the next BuildClusterJewelGraphs (classic POB shows them
+-- lost until a jewel is touched); we finish the restore right away.
 local function after_undo(b)
 	local spec = b.spec
 	if spec.allocSubgraphNodes and #spec.allocSubgraphNodes > 0 then
@@ -1668,10 +1628,8 @@ probe("classes.PassiveSpec.BuildClusterJewelGraphs + subGraphs shape", function(
 	return type(c) == "table" and type(c.BuildClusterJewelGraphs) == "function" and type(c.BuildSubgraph) == "function"
 end)
 
--- ---------------------------------------------------------------------------
 -- Class / ascendancy switching (Build.lua's classDrop / ascendDrop /
 -- secondaryAscendDrop callbacks, :259-300)
--- ---------------------------------------------------------------------------
 
 -- The lists those dropdowns are built from (UpdateClassDropdowns :1553 and
 -- UpdateSecondaryAscendancyDropdown :1113), ids being what Select* takes:
@@ -1785,20 +1743,14 @@ probe("tree.classes[id].classes[0..n] + alternate_ascendancies", function()
 	return type(c) == "table" and type(c.classes) == "table" and type(c.classes[0]) == "table" and type(c.classes[0].name) == "string"
 end)
 
--- ---------------------------------------------------------------------------
 -- Build header (top bar), save, import / export
--- ---------------------------------------------------------------------------
 
--- Every mutation on the build ends the way POB's own control callbacks do:
--- modFlag + buildFlag, then one frame so mainOutput and the sidebar catch up.
--- ---- Item / skill / config set order lists ---------------------------------
--- POB2's NewItemSet / NewSkillSet / NewConfigSet append the new id to the order
--- list themselves; POB1's do not. The bridge used to append unconditionally, so
--- under POB2 every new set was listed twice ("預設" three times after one +).
--- Deleting then removed one copy and the set itself, leaving an id with no set,
--- and POB2's SyncLoadouts (Build.lua:668, identifyLinks) indexed nil on it
--- (field report 2026-09-25). These helpers append once, remove every copy, and
--- repair lists an older bridge already wrote that way.
+-- Every mutation on the build ends the way POB's own control callbacks do: modFlag + buildFlag,
+-- then one frame so mainOutput and the sidebar catch up.
+-- Item / skill / config set order lists: POB2's NewItemSet / NewSkillSet / NewConfigSet append
+-- the new id to the order list themselves; POB1's do not. Appending unconditionally lists every
+-- set twice under POB2 and a delete then leaves an id with no set (SyncLoadouts, Build.lua:668).
+-- These helpers append once, remove every copy, and repair lists written that way.
 local function order_add(list, id)
 	for _, v in ipairs(list) do if v == id then return end end
 	list[#list + 1] = id
@@ -1989,7 +1941,6 @@ function M.set_build_field(p)
 	return commit(b)
 end
 
--- --- save -------------------------------------------------------------------
 
 local function norm_path(s)
 	return (tostring(s or ""):gsub("\\", "/"):lower())
@@ -2048,15 +1999,6 @@ function M.save_build_as(p)
 	frame()
 	return { dbFileName = b.dbFileName, buildName = b.buildName, subPath = b.dbFileSubPath, unsaved = b.unsaved and true or false, rev = b.outputRevision }
 end
-
--- Reloads the file on disk, throwing away unsaved changes.
-function M.revert_build()
-	local b = ensure_build()
-	if not b.dbFileName then error("build has no file to revert to", 0) end
-	return M.load_build_file({ path = b.dbFileName })
-end
-
--- --- share codes ------------------------------------------------------------
 
 -- ImportTab's "Generate" button, one line.
 function M.export_code()
@@ -2159,58 +2101,11 @@ function M.import_code(p)
 	return after_reinit()
 end
 
--- import_character{items=<get-items JSON text>, passives=<get-passive-skills
--- JSON text>, importTree, importItems, deleteJewels, clearItems, clearSkills,
--- ignoreWeaponSwap}: the two site-import buttons, fed pasted responses
--- instead of a download. charData is assembled the way ImportTab's callbacks
--- assemble it (character block + passives + jewels / equipment + guardian).
-function M.import_character(p)
-	local b = ensure_build()
-	local dkjson = require("dkjson")
-	local itemsJson, passivesJson
-	if p.items and p.items ~= "" then
-		local v, _, err = dkjson.decode(p.items)
-		if not v then error("items JSON: " .. tostring(err), 0) end
-		itemsJson = v
-	end
-	if p.passives and p.passives ~= "" then
-		local v, _, err = dkjson.decode(p.passives)
-		if not v then error("passives JSON: " .. tostring(err), 0) end
-		passivesJson = v
-	end
-	local charData = copyTable((itemsJson and itemsJson.character) or (passivesJson and passivesJson.character) or {})
-	charData.class = charData.class or (b.spec and b.spec.curClassName)
-	charData.level = charData.level or b.characterLevel
-	charData.name = charData.name or b.buildName
-	charData.league = charData.league or ""
-	local did = {}
-	if p.importTree ~= false and passivesJson then
-		if not passivesJson.hashes then error("passives JSON has no hashes", 0) end
-		charData.passives = passivesJson
-		charData.jewels = passivesJson.items
-		b.importTab:ImportPassiveTreeAndJewels(charData, p.deleteJewels and true or false)
-		did[#did + 1] = "tree"
-	end
-	if p.importItems ~= false and itemsJson then
-		if not itemsJson.items then error("items JSON has no items", 0) end
-		charData.equipment = itemsJson.items
-		charData.guardian = itemsJson.guardian
-		b.importTab:ImportItemsAndSkills(charData, p.clearItems and true or false, p.clearSkills and true or false, p.ignoreWeaponSwap and true or false)
-		did[#did + 1] = "items"
-	end
-	if #did == 0 then error("nothing to import: give items and/or passives JSON", 0) end
-	local r = commit(b)
-	r.imported = did
-	return r
-end
-
--- ---------------------------------------------------------------------------
 -- Account import (ImportTab.lua:24-471): the OAuth flow (PoEAPI + the
 -- LaunchServer.lua loopback subscript) and the account-name flow
 -- (character-window/get-*). Both download through POB's subscripts, whose
 -- callbacks land on later engine frames, so every starter returns at once
 -- and the page polls import_status for the outcome.
--- ---------------------------------------------------------------------------
 
 -- Headless there is no window to bring forward, and the URL the OAuth
 -- subscript opens is worth showing on the page (OnSubCall resolves these
@@ -2253,22 +2148,14 @@ local function hook_import_counters(tab)
 	end
 end
 
--- The two POBs import characters through DIFFERENT shapes, and only one of
--- them can be driven the way this bridge drives everything else.
---
--- PoE1 (beta) splits the tab in two: an OAuth section that leaves the fetched
--- list in `characterList[realmCode]`, and an account-name section whose own
--- controls are prefixed `site...`. Its PoEAPI hands the callback a DECODED
--- table, and a rate limit arrives as (nil, "Response code: 429", timeNext).
---
--- PoE2 has one section and does the whole job itself: ImportTab
--- DownloadCharacterList / DownloadPassiveTree / DownloadItems read its own
--- controls, decode the body, set charImportStatus and handle 401/403/404/429.
--- Its PoEAPI hands the callback a RAW JSON STRING, and a rate limit arrives as
--- (timeNext, "Response code: 429") -- different argument, different position.
---
--- So on PoE2 we call POB's own functions instead of repeating any of that.
--- Detected by the function, never by the game name (rule 2).
+-- The two POBs import characters through DIFFERENT shapes.
+-- PoE1 (beta): an OAuth section that leaves the list in `characterList[realmCode]`, and an
+-- account-name section whose controls are prefixed `site...`. Its PoEAPI hands the callback a
+-- DECODED table; a rate limit arrives as (nil, "Response code: 429", timeNext).
+-- PoE2: one section that does the whole job itself (ImportTab DownloadCharacterList /
+-- DownloadPassiveTree / DownloadItems, status and 401/403/404/429 included). Its PoEAPI hands
+-- the callback a RAW JSON STRING; a rate limit arrives as (timeNext, "Response code: 429").
+-- So on PoE2 we call POB's own functions. Detected by the function, never by the game name (rule 2).
 local function import_self_driving(tab)
 	return type(tab.DownloadCharacterList) == "function"
 end
@@ -2345,10 +2232,8 @@ function M.import_status()
 		commit(b)
 		recalculated = true
 	end
-	-- On PoE2 the progress and the errors live in POB's own charImportMode /
-	-- charImportStatus, so map them onto the same two fields the page watches
-	-- (otherwise it would poll a "loading" flag nothing ever sets, which is
-	-- exactly how a fetch looked like it hung forever).
+	-- On PoE2 progress and errors live in POB's own charImportMode / charImportStatus: map them
+	-- onto the two fields the page watches (else it polls a "loading" flag nothing sets).
 	local statusText = import_status_text(tab.charImportStatus)
 	local loading = tab.oauthLoading and true or false
 	local errCode = tab.oauthErrCode
@@ -2451,11 +2336,8 @@ function M.fetch_characters(p)
 	local api = main().api
 	if not api or not api.authToken then error("not authorized", 0) end
 	if import_self_driving(tab) then
-		-- PoE2: press its own Start. It reads the realm dropdown, calls the
-		-- API, decodes the body (a raw JSON string there, not a table) and
-		-- fills charSelect / lastCharList / charImportStatus itself -- including
-		-- the 401/403/404/429 messages, which arrive in a different shape than
-		-- PoE1's and used to be dropped on the floor here.
+		-- PoE2: press its own Start; it reads the realm dropdown, calls the API, decodes the
+		-- body and fills charSelect / lastCharList / charImportStatus (error messages too).
 		tab.controls.accountRealm:SelByValue(realm.id, "id")
 		tab:DownloadCharacterList()
 		return { started = true, mode = tab.charImportMode }
@@ -2592,10 +2474,8 @@ probe("classes.ImportTab.DownloadPassiveTree/DownloadItems/BuildCharacterList", 
 	return type(c) == "table" and type(c.DownloadPassiveTree) == "function"
 		and type(c.DownloadItems) == "function" and type(c.BuildCharacterList) == "function"
 end)
--- One of the two import shapes must be whole: PoE2's self-driving
--- DownloadCharacterList + its own controls, or PoE1's characterList + site
--- controls. Half of either is an upstream rename, and the import is the one
--- feature where a silent half-match looks like "it just never finds anything".
+-- One of the two import shapes must be whole (PoE2's DownloadCharacterList + own controls, or
+-- PoE1's characterList + site controls); half of either is an upstream rename.
 probe("ImportTab drives its own import (PoE2) or exposes the OAuth list (PoE1)", function()
 	local b = build()
 	if not (b and b.importTab and b.importTab.controls) then return true end
@@ -2618,11 +2498,9 @@ probe("LaunchServer.lua present (OAuth loopback)", function()
 	return false
 end)
 
--- ---------------------------------------------------------------------------
 -- Build list management (Modules/BuildList.lua buttons, BuildListControl's
 -- NewFolder / RenameBuild / DeleteBuild). File operations stay under
 -- main.buildPath; the popups' inputs arrive as params.
--- ---------------------------------------------------------------------------
 
 local function build_root()
 	local r = tostring(main().buildPath or "")
@@ -2791,9 +2669,7 @@ probe("classes.ImportTab.ImportPassiveTreeAndJewels/ImportItemsAndSkills", funct
 end)
 probe("main.buildPath + MakeDir", function() return type(launch.main.buildPath) == "string" and type(MakeDir) == "function" end)
 
--- ---------------------------------------------------------------------------
 -- Items
--- ---------------------------------------------------------------------------
 
 -- A Tooltip's lines, the shape node_info hands out.
 local function tooltip_lines(tt)
@@ -2816,6 +2692,40 @@ local function without_wrap(fn)
 	local ok, err = pcall(fn)
 	m.WrapString = savedWrap
 	if not ok then error(err, 0) end
+end
+
+-- Cells of a breakdown table POB gives a hover tooltip (CalcBreakdownControl's
+-- table draw: row[key.."Tooltip"], or row[key.."Node"] for a passive), listed so
+-- the page can ask for one: {s = section, r = row, k = column key}.
+breakdown_tips = function(si, s)
+	local tips = {}
+	for ri, r in ipairs(s.rowList or {}) do
+		for _, c in ipairs(s.colList or {}) do
+			local k = tostring(c.key)
+			if type(r[k .. "Tooltip"]) == "function" or type(r[k .. "Node"]) == "table" then
+				tips[#tips + 1] = { s = si, r = ri, k = k }
+			end
+		end
+	end
+	return #tips > 0 and tips or nil
+end
+
+-- One of those cells: POB's own tooltip function run into a Tooltip, or the
+-- passive node's id (the page shows node_info for it, as the tree does).
+breakdown_tip = function(ctl, tip)
+	local s = ctl.sectionList and ctl.sectionList[tonumber(tip.s) or 0]
+	local r = s and s.rowList and s.rowList[tonumber(tip.r) or 0]
+	local k = tostring(tip.k or "")
+	if not r then error("no such breakdown cell", 0) end
+	local fn, node = r[k .. "Tooltip"], r[k .. "Node"]
+	if type(fn) == "function" then
+		local tt = make("Tooltip")
+		without_wrap(function() fn(tt) end)
+		return { lines = tooltip_lines(tt) }
+	elseif type(node) == "table" and node.id then
+		return { node = node.id }
+	end
+	error("that breakdown cell has no tooltip", 0)
 end
 
 local influence_keys = { "shaper", "elder", "adjudicator", "basilisk", "crusader", "eyrie", "cleansing", "tangle" }
@@ -2926,10 +2836,8 @@ function M.list_items()
 	}
 end
 
--- Item text copied from the Chinese game client -> English, the way the
--- engine's Paste() hook treats clipboard text in the classic window.
--- PobToolsReverseText is that same reverse translator exposed to Lua; an
--- older engine DLL without it passes the text through untouched.
+-- Item text copied from the Chinese game client -> English, as the engine's Paste() hook does in
+-- the classic window (PobToolsReverseText); an older engine DLL without it passes text through.
 local function normalize_item_text(raw)
 	if type(raw) ~= "string" or not raw:find("[\128-\255]") then return raw, false end
 	if type(PobToolsReverseText) ~= "function" then return raw, false end
@@ -3197,14 +3105,9 @@ probe("classes.Item(raw)/BuildRaw/GetPrimarySlot", function()
 end)
 probe("main.uniqueDB/rareDB", function() return type(launch.main.uniqueDB) == "table" and type(launch.main.rareDB) == "table" end)
 
--- ---------------------------------------------------------------------------
--- Items: the editing session (POB's own ItemsTab.displayItem and controls)
--- ---------------------------------------------------------------------------
--- Classic POB edits one item at a time in `itemsTab.displayItem`; every
--- control on that panel (sockets, quality, influence, affix dropdowns, range
--- sliders, custom-mod Remove buttons) is a real control object that exists
--- headless too, so the page drives those controls' own callbacks instead of
--- re-implementing what they do. Nothing recalculates until AddDisplayItem.
+-- Items: the editing session (POB's own ItemsTab.displayItem and controls). Every control on
+-- that panel is a real object that exists headless too, so the page drives their own
+-- callbacks instead of re-implementing them. Nothing recalculates until AddDisplayItem.
 
 local function edit_item()
 	local b = ensure_build()
@@ -3238,22 +3141,17 @@ local function dd_options(ctl)
 	return out
 end
 
--- The ItemsTab dialogs (Craft / Edit text / Enchant / Anoint / Corrupt / Add
--- modifier / Crucible) keep their logic in closures over a `controls` table
--- handed to main:OpenPopup. This runs `fn` with OpenPopup swapped for one
--- that keeps that table and installs a stand-in popup (the corrupt dialog
--- writes main.popups[1].height), with ClosePopup muted. With `keep` the
--- stand-in stays in main.popups until popup_discard; otherwise it is removed
--- again before returning.
+-- The ItemsTab dialogs (Craft / Edit text / Enchant / Anoint / Corrupt / Add modifier /
+-- Crucible) keep their logic in closures over a `controls` table handed to main:OpenPopup.
+-- This runs `fn` with OpenPopup swapped for one that keeps that table and installs a stand-in
+-- popup, ClosePopup muted. With `keep` the stand-in stays in main.popups until popup_discard.
 local function capture_popup(fn, keep)
 	local m = main()
 	local savedOpen, savedClose = m.OpenPopup, m.ClosePopup
 	local captured
 	m.OpenPopup = function(self, width, height, title, controls)
-		-- main:OnFrame calls popups[1]:ProcessInput every frame; a captured
-		-- popup that is kept on the stack has to answer it, or that error ends
-		-- the frame before POB gets to its onFrameFuncs (the trade query and
-		-- anything else it drives per frame would never run).
+		-- main:OnFrame calls popups[1]:ProcessInput every frame; a kept popup has to answer it, or
+		-- the error ends the frame before POB runs its onFrameFuncs (trade query etc.).
 		captured = {
 			controls = controls or {},
 			title = title,
@@ -3291,11 +3189,9 @@ local function with_popup(fn)
 	return capture_popup(fn, false)
 end
 
--- ---------------------------------------------------------------------------
 -- Passive trees of the build: TreeTab's tree selector and "Manage Passive
 -- Trees" (PassiveSpecListControl), Reset Tree / Remove All Tattoos, the tree
 -- link import/export dialogs and the version converter.
--- ---------------------------------------------------------------------------
 
 -- The confirm button of main:OpenConfirmPopup: the button labelled confirmLabel.
 local function popup_button(cap, label)
@@ -3687,13 +3583,9 @@ end)
 
 -- ---- Build sites: import from a link, share a build (Modules/BuildSiteTools)
 
--- POB does these in a background script and finishes from its frame loop; the
--- bridge pumps frames until the callback has fired (or it gives up).
--- Waits inside one request for POB's background work. The finished-subscript
--- callbacks (OnSubFinished -> the upload/download callback) are delivered by
--- the engine's subscript pass, which the frame loop only runs BETWEEN requests;
--- PumpSubScripts (engine 1.7.7+) runs it here. Without it every Share and every
--- import from a build-site link waited the full time and failed.
+-- Waits inside one request for POB's background work (it finishes from its frame loop). The
+-- finished-subscript callbacks (OnSubFinished) are delivered by the engine's subscript pass,
+-- which the frame loop only runs BETWEEN requests; PumpSubScripts (engine 1.7.7+) runs it here.
 local function pump_until(done, seconds)
 	local deadline = os.time() + (seconds or 30)
 	while not done() do
@@ -3740,12 +3632,10 @@ function M.import_from_url(p)
 	return { site = site.id, label = site.label, code = result }
 end
 
--- import_from_uri{uri}: an "Open in PoB" link (pob://<site>/<id>, PoE2
--- pob2://...) the host received from the browser -- what POB's Main.lua does
--- with arg[1] at startup: DownloadBuild without a site, so POB itself maps the
--- scheme and site id to its download URL. Returns the raw build code (what
--- import_code then takes). The host has already whitelisted the URI; it is
--- checked again here because the page could send anything.
+-- import_from_uri{uri}: an "Open in PoB" link (pob://<site>/<id>, PoE2 pob2://...) from the
+-- browser, handled as POB's Main.lua does with arg[1]: DownloadBuild without a site, so POB
+-- maps scheme and site id to its URL. Returns the raw build code (what import_code takes).
+-- The host already whitelisted the URI; checked again here because the page could send anything.
 -- Same grammar as the host's PobProtocol::ParsePobUri (normalized form):
 -- pob[2]://<site>/<seg>(/<seg>)*[?k=v(&k=v)*], values unreserved or %XX.
 local function valid_pob_uri(uri)
@@ -4130,22 +4020,6 @@ function M.compare_remove(p)
 	local i = tonumber(p and p.index)
 	if not i or not ct.compareEntries[i] then error("no comparison build " .. tostring(p and p.index), 0) end
 	ct:RemoveBuild(i)
-	return M.compare_state()
-end
-
--- compare_set{spec?, itemSet?, skillSet?, configSet?, mainSocketGroup?}: the
--- comparison build's own set selectors.
-function M.compare_set(p)
-	local b = ensure_build()
-	local ct, e = compare_entry(b)
-	p = p or {}
-	if p.spec ~= nil then e:SetActiveSpec(tonumber(p.spec) or 1) end
-	if p.itemSet ~= nil then e:SetActiveItemSet(tonumber(p.itemSet)) end
-	if p.skillSet ~= nil then e:SetActiveSkillSet(tonumber(p.skillSet)) end
-	if p.configSet ~= nil and e.configTab and e.configTab.SetActiveConfigSet then e.configTab:SetActiveConfigSet(tonumber(p.configSet)) end
-	if p.mainSocketGroup ~= nil then e:SetMainSocketGroup(tonumber(p.mainSocketGroup) or 1) end
-	e:Rebuild()
-	frame()
 	return M.compare_state()
 end
 
@@ -4796,14 +4670,11 @@ probe("ItemsTab.tradeQuery (TradeQuery:PriceItem) + TradeQueryRequests/Generator
 		and type(class_of("TradeQueryRequests")) == "table" and type(class_of("TradeQueryGenerator")) == "table"
 end, "tradeQuery")
 
--- What "Find best" actually rides on: RequestQuery opens the Query Options
--- dialog, its Execute calls StartQuery, and OnFrame resumes the coroutine until
--- FinishQuery writes the URL. ItemsTab:UpdateSockets is in here too because
--- PriceItem reads socket state that only Draw would otherwise have computed.
--- (The Query Options dialog's own control keys are checked when that dialog is
--- opened, not here: it only exists once a row's Find best is pressed, and that
--- row only exists after PriceItem has opened the trade pane -- which talks to
--- the trade site. A probe must never do that.)
+-- What "Find best" rides on: RequestQuery opens the Query Options dialog, its Execute calls
+-- StartQuery, and OnFrame resumes the coroutine until FinishQuery writes the URL.
+-- ItemsTab:UpdateSockets is here too (PriceItem reads socket state only Draw would compute).
+-- The dialog's own control keys are checked when it opens, not here: it only exists after
+-- PriceItem opened the trade pane, which talks to the trade site, and a probe must never do that.
 probe("TradeQueryGenerator RequestQuery/StartQuery/OnFrame/FinishQuery + ItemsTab:UpdateSockets", function()
 	local c = class_of("TradeQueryGenerator")
 	if type(c) ~= "table" then return false end
@@ -5235,11 +5106,9 @@ end
 
 -- Every mod line of the item, in the order ItemsTab draws them (its own list
 -- at Classes/ItemsTab.lua: buff, enchant, scourge, implicit, explicit,
--- crucible). Reporting only the explicit ones -- which is what this did until
--- 2026-09-19 -- loses the implicit entirely: the panel showed four lines for an
--- item that has five, and the one missing was the one the tooltip prints above
--- the separator. The state and item_edit_set share this function so an index
--- means the same thing on both sides.
+-- crucible). Reporting only the explicit ones would lose the implicit, which the
+-- tooltip prints above the separator. The state and item_edit_set share this
+-- function so an index means the same thing on both sides.
 local function edit_mod_lines(it)
 	local out = {}
 	-- A unique's list holds one line per variant; only the chosen one is part of
@@ -5323,13 +5192,11 @@ local function edit_state(p)
 		versions = { options = dd_options(c.displayItemVersion), sel = c.displayItemVersion.selIndex or 1 }
 	end
 
-	-- affixes (crafted items): POB's dropdowns after UpdateAffixControls.
-	-- A hybrid affix is listed as its stat lines joined with "/" ("#% increased
-	-- Physical Damage/+# to Accuracy Rating"), which no dictionary has as one key:
-	-- translate each line on its own and join them back the same way.
-	-- PoE2 radius jewels: POB shortens "Notable Passive Skills in Radius also
-	-- grant X" to "Notable: X" for the list (ItemsTab), a form no dictionary has.
-	-- Translate the full official line, then shorten the Chinese the same way.
+	-- affixes (crafted items): POB's dropdowns after UpdateAffixControls. A hybrid affix is its
+	-- stat lines joined with "/", which no dictionary has as one key: translate each line on its
+	-- own and join them back. PoE2 radius jewels: POB shortens "Notable Passive Skills in Radius
+	-- also grant X" to "Notable: X" for the list, a form no dictionary has: translate the full
+	-- official line, then shorten the Chinese the same way.
 	local RADIUS_ZH = { Small = "小型天賦", Notable = "核心天賦" }
 	local function tr_radius(l)
 		local kind, rest = l:match("^(%a+): (.+)$")
@@ -5382,9 +5249,8 @@ local function edit_state(p)
 	end
 
 	-- Range lines (uniques/rares with rolled values, foulborn mutations).
-	-- ⚠ Read from the ITEM, not from displayItemRangeLine.list: that control's
-	-- list is plain strings (UpdateDisplayItemRangeLines inserts modLine.line),
-	-- so `e.label` and `e.modLine` were both nil and every row came out blank.
+	-- ⚠ Read from the ITEM, not from displayItemRangeLine.list: that list is plain strings, so
+	-- `e.label` / `e.modLine` are nil.
 	local ranges = {}
 	for i, ml in ipairs(it.rangeLineList or {}) do
 		local label = tostring(ml.line or "")
@@ -5656,11 +5522,9 @@ function M.item_edit_set(p)
 			c.displayItemMutatedCheckbox.changeFunc(p.range.mutate and true or false)
 		else
 			local v = math.max(0, math.min(1, tonumber(p.range.value) or 0))
-			-- ⚠ Two different sliders draw this, and only one of them works at a
-			-- time: with "show all affixes" on, a unique gets one stacked slider
-			-- per line and displayItemRangeSlider's own callback bails out (it
-			-- looks the line up through the drop-down, which is hidden then), so
-			-- driving that one silently did nothing.
+			-- ⚠ Two different sliders draw this, only one works at a time: with "show all
+			-- affixes" on, a unique gets one stacked slider per line and
+			-- displayItemRangeSlider's own callback bails out (its drop-down is hidden).
 			local stacked = c["displayItemStackedRangeSlider" .. i]
 			local ctl = (stacked and ctl_shown(stacked)) and stacked or c.displayItemRangeSlider
 			ctl.val = v
@@ -5881,9 +5745,7 @@ function M.item_edit_popup(p)
 	error("unknown action " .. tostring(action), 0)
 end
 
--- ---------------------------------------------------------------------------
 -- Items: list management (ItemListControl's own buttons) and the databases
--- ---------------------------------------------------------------------------
 
 local function item_list_control(tab)
 	local ctl = tab.controls.itemList
@@ -6104,15 +5966,10 @@ probe("classes.DropDownControl.SetSel/SelByValue + EditControl.SetText + ListCon
 		and type(e) == "table" and type(e.SetText) == "function" and type(l) == "table" and type(l.SelectIndex) == "function"
 end)
 
--- ---------------------------------------------------------------------------
--- POB's own Options dialog and update dialog
--- ---------------------------------------------------------------------------
--- main:OpenOptionsPopup builds every option as a control whose callback writes
--- the setting on `main`; its Save button applies the proxy/build path, writes
--- the manifest branch (the weekly-beta opt-in) and SaveSettings(). The page
--- reads those controls and hands back only the values the user changed; they
--- go through the same callbacks and the same Save. Nothing here knows what an
--- option means.
+-- POB's own Options dialog and update dialog: main:OpenOptionsPopup builds every option as a
+-- control whose callback writes the setting on `main`; Save applies the proxy/build path, writes
+-- the manifest branch (weekly-beta opt-in) and SaveSettings(). The page hands back only the
+-- changed values, through the same callbacks and Save; nothing here knows what an option means.
 
 -- POB's DPI override reopens the dialog from its callback and scales the
 -- classic window; the new window has its own zoom, so it is not offered.
@@ -6281,9 +6138,7 @@ probe("main.OpenOptionsPopup/SaveSettings/SetManifestBranch/OpenUpdatePopup + la
 		and type(m.OpenUpdatePopup) == "function" and type(launch.CheckForUpdate) == "function" and type(launch.ApplyUpdate) == "function"
 end)
 
--- ---------------------------------------------------------------------------
 -- Skills (socket groups, gems, skill sets)
--- ---------------------------------------------------------------------------
 
 -- The socket-group slot dropdown POB offers (SkillsTab's groupSlotDropList is
 -- file-local; these are the item slots a group can be tied to).
@@ -6415,10 +6270,8 @@ function M.delete_group(p)
 	table.remove(tab.socketGroupList, i)
 	if tab.RebuildImbuedSupportBySlot then tab:RebuildImbuedSupportBySlot() end
 	if tab.displayGroup == g and tab.SetDisplayGroup then pcall(tab.SetDisplayGroup, tab, nil) end
-	-- SkillListControl:OnSelDelete: a group after the deleted one moves up one
-	-- place, so do the indexes that point at it. Only clamping to the new length
-	-- (what this did before) left the main skill on whichever group slid into
-	-- its old slot.
+	-- SkillListControl:OnSelDelete: a group after the deleted one moves up one place, so do the
+	-- indexes that point at it (clamping alone leaves the main skill on whichever group slid in).
 	if b.mainSocketGroup and b.mainSocketGroup > i then b.mainSocketGroup = b.mainSocketGroup - 1 end
 	local input = b.calcsTab and b.calcsTab.input
 	if input and type(input.skill_number) == "number" and input.skill_number > i then
@@ -7101,9 +6954,7 @@ probe("data.gems / gemForSkill", function()
 	return type(data) == "table" and type(data.gems) == "table" and type(data.gemForSkill) == "table"
 end)
 
--- ---------------------------------------------------------------------------
 -- Configuration
--- ---------------------------------------------------------------------------
 
 local function config_var_list()
 	local ok, list = pcall(require, "Modules.ConfigOptions")
@@ -7176,14 +7027,12 @@ function M.list_config()
 	return { sections = sections, customMods = custom, configSets = sets, activeConfigSetId = tab.activeConfigSetId, rev = b.outputRevision }
 end
 
--- config_tooltip{var, index?}: the tooltip POB draws for that option -- its control's
--- tooltipFunc, which ConfigTab wraps (ConfigTab.lua "control.tooltipFunc = ...") to add
--- each list option's own text, "Toggling/Selecting this option will give you:" stat
--- differences, and the invalid-option warning. Called with the arguments the control
--- itself passes: a drop-down ("HOVER", i, list[i]) for an option pointed at in the open
--- list, ("BODY", selIndex, list[selIndex]) otherwise; a check box (state); others none.
--- The wrapper previews the other value by changing input and restoring it (buildFlag too),
--- so nothing is committed here.
+-- config_tooltip{var, index?}: the tooltip POB draws for that option -- its control's tooltipFunc,
+-- which ConfigTab wraps to add each list option's text, the "Toggling/Selecting this option will
+-- give you:" stat differences and the invalid-option warning. Called with the control's own
+-- arguments: a drop-down ("HOVER", i, list[i]) for an option pointed at in the open list,
+-- ("BODY", selIndex, list[selIndex]) otherwise; a check box (state); others none. The wrapper
+-- previews the other value by changing input and restoring it (buildFlag too): nothing committed.
 function M.config_tooltip(p)
 	local b = ensure_build()
 	local tab = b.configTab
@@ -7264,15 +7113,6 @@ function M.set_config(p)
 	-- read back, so a caller can tell an applied change from a silent no-op
 	if type(r) == "table" then r.var, r.type, r.before, r.after = vd.var, vd.type, before, set.input[vd.var] end
 	return r
-end
-
--- set_config_placeholder{var, value}: the grey "what the build implies" number.
-function M.set_config_placeholder(p)
-	local b = ensure_build()
-	local set = config_set(b.configTab)
-	local vd = find_var(p and p.var)
-	set.placeholder[vd.var] = (p.value ~= nil and p.value ~= "") and tonumber(p.value) or nil
-	return config_committed(b)
 end
 
 -- reset_config{var}: back to what NewConfigSet would have put there.
@@ -7419,17 +7259,16 @@ function M.delete_config_set(p)
 	return commit(b)
 end
 
--- ---------------------------------------------------------------------------
 -- Calcs
--- ---------------------------------------------------------------------------
 
 -- The breakdown control's sections as data (shared by the sidebar and the
 -- calcs page): SetBreakdownData fills ctl.sectionList, we read it, then clear.
-local function breakdown_sections(ctl, fill)
-	local sections = {}
+local function breakdown_sections(ctl, fill, tip)
+	local sections, tipOut = {}, nil
 	local ok, err = pcall(function()
 		fill()
-		for _, s in ipairs(ctl.sectionList or {}) do
+		if tip then tipOut = breakdown_tip(ctl, tip) return end
+		for _si, s in ipairs(ctl.sectionList or {}) do
 			if s.type == "TEXT" then
 				local lines = {}
 				for i, l in ipairs(s.lines) do lines[i] = tr(l) end
@@ -7446,7 +7285,8 @@ local function breakdown_sections(ctl, fill)
 					end
 					rows[i] = setmetatable(row, { __object = true })
 				end
-				sections[#sections + 1] = { type = "table", label = s.label and tr(s.label) or nil, footer = s.footer and tr(s.footer) or nil, cols = cols, rows = rows }
+				local tips = breakdown_tips(_si, s)
+				sections[#sections + 1] = { type = "table", label = s.label and tr(s.label) or nil, footer = s.footer and tr(s.footer) or nil, cols = cols, rows = rows, tips = tips }
 			elseif s.type == "RADIUS" then
 				sections[#sections + 1] = { type = "radius", radius = s.radius }
 			end
@@ -7454,7 +7294,7 @@ local function breakdown_sections(ctl, fill)
 	end)
 	ctl:SetBreakdownData()
 	if not ok then error(err, 0) end
-	return sections
+	return tipOut or sections
 end
 
 local function calcs_actor(tab)
@@ -7462,12 +7302,9 @@ local function calcs_actor(tab)
 	return tab.input.showMinion and tab.calcsEnv.minion or tab.calcsEnv.player
 end
 
--- A control POB draws inside a Calcs row (the "View Skill Details" section:
--- socket group, active skill, stat set, part, stages, mines, minion, minion
--- skill, calculation mode, the libraries), described so the page can draw its
--- own widget and hand the choice back to set_calcs_control, which runs the
--- control's own callback -- every selector POB has, in both games, without the
--- bridge knowing what each one does.
+-- A control POB draws inside a Calcs row ("View Skill Details": socket group, active skill, part,
+-- stages, minion, calculation mode...), described so the page draws its own widget and hands the
+-- choice back to set_calcs_control, which runs the control's own callback.
 local function calcs_widget(c)
 	if type(c) ~= "table" then return nil end
 	local enabled = c.enabled
@@ -7494,12 +7331,10 @@ local function calcs_widget(c)
 	return w
 end
 
--- The controls inside a Calcs section ("View Skill Details") are shown only
--- when their row is enabled, and POB computes the row's `enabled` (and runs
--- the section's updateFunc, which refreshes those selectors) only in
--- CalcSectionControl:UpdateSize, which it calls from Draw. Headless nothing
--- draws, so every such control read as hidden. UpdateSize itself only lays
--- out (GetPos/GetSize), so running it here is safe.
+-- The controls inside a Calcs section ("View Skill Details") show only when their row is enabled,
+-- and POB computes `enabled` (and runs the section's updateFunc) only in
+-- CalcSectionControl:UpdateSize, called from Draw. Headless nothing draws, so they read as hidden.
+-- UpdateSize only lays out (GetPos/GetSize), so running it here is safe.
 local function calcs_update_control_sections(tab)
 	for _, sec in ipairs(tab.sectionList or {}) do
 		if sec.hasControls and type(sec.UpdateSize) == "function" then
@@ -7660,7 +7495,8 @@ function M.calcs_breakdown(p)
 	local col = row and row[tonumber(p.ci or 0)]
 	if not col then error("no such cell", 0) end
 	local ctl = tab.controls.breakdown
-	local sections = breakdown_sections(ctl, function() ctl:SetBreakdownData(col, false) end)
+	local sections = breakdown_sections(ctl, function() ctl:SetBreakdownData(col, false) end, p.tip)
+	if p.tip then return sections end
 	return { sections = sections, rev = b.outputRevision }
 end
 
@@ -7694,9 +7530,7 @@ probe("classes.CalcsTab.CheckFlag + sectionList + formatCalcStr", function()
 	return type(c) == "table" and type(c.CheckFlag) == "function" and type(formatCalcStr) == "function"
 end)
 
--- ---------------------------------------------------------------------------
 -- Notes, Party
--- ---------------------------------------------------------------------------
 
 -- NotesTab keeps the text only in its edit control and works out modFlag in
 -- Draw (never called headless), so both are handled here explicitly.
@@ -7960,9 +7794,7 @@ do
 	end
 end
 
--- ---------------------------------------------------------------------------
 -- Wire-up
--- ---------------------------------------------------------------------------
 
 setDispatcher(function(method, params)
 	local fn = M[method]

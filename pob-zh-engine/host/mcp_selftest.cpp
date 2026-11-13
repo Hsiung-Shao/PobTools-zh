@@ -14,6 +14,7 @@
 #include <winioctl.h>
 #include <shlobj.h>
 #include <knownfolders.h>
+#include "win_util.h"
 
 #include <json.hpp>
 
@@ -39,7 +40,7 @@ using json = nlohmann::json;
 
 namespace {
 
-// ---------------------------------------------------------------- 報告
+// 報告
 
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
@@ -89,27 +90,12 @@ const char* const kTitles[40] = {
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
 
-// ---------------------------------------------------------------- 小工具
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
+// 小工具
 
 bool IsDir(const std::wstring& p)
 {
 	DWORD a = GetFileAttributesW(p.c_str());
 	return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
-}
-
-bool FileExists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
 std::string ReadFileA(const std::wstring& path)
@@ -163,10 +149,10 @@ bool NonEmptyStr(const json& j, const char* key)
 	return j.is_object() && j.contains(key) && j[key].is_string() && !j[key].get<std::string>().empty();
 }
 
-// ---------------------------------------------------------------- MCP 子行程
+// MCP 子行程
 
 struct ToolRes {
-	bool transportOk = false;   // 有收到對應的 JSON-RPC 回應
+	bool transportOk = false;
 	std::string transportErr;
 	bool rpcError = false;      // 回應是 JSON-RPC error
 	int rpcCode = 0;
@@ -194,7 +180,7 @@ public:
 	bool Start(const std::wstring& exeDir, const std::wstring& pobDir, std::string& err)
 	{
 		const std::wstring exe = exeDir + L"pob-zh.exe";
-		if (!FileExists(exe)) { err = "找不到 " + narrow(exe); return false; }
+		if (!file_exists(exe)) { err = "找不到 " + narrow(exe); return false; }
 
 		SECURITY_ATTRIBUTES sa{};
 		sa.nLength = sizeof(sa);
@@ -448,7 +434,7 @@ private:
 
 constexpr unsigned kSlowMs = 180000;
 
-// ---------------------------------------------------------------- 契約資料
+// 契約資料
 
 const char* const kContractTools[] = {
 	"load_build", "list_my_builds", "new_build", "export_code", "build_summary", "stat_breakdown",
@@ -457,7 +443,7 @@ const char* const kContractTools[] = {
 	"equip_item", "unequip_item", "get_config", "set_config", "what_if", "build_guide",
 };
 
-// ---------------------------------------------------------------- 範例建置
+// 範例建置
 
 std::vector<std::pair<std::string, std::string>> ParsePlayerStats(const std::string& xml)
 {
@@ -526,7 +512,7 @@ bool FindSampleBuild(const std::wstring& buildsDir, std::wstring& rel, std::stri
 	return false;
 }
 
-// ---------------------------------------------------------------- M9:資料夾快照
+// M9:資料夾快照
 
 struct FileInfo { ULONGLONG size = 0; ULONGLONG mtime = 0; bool dir = false; };
 using Snap = std::map<std::wstring, FileInfo>;
@@ -564,7 +550,7 @@ void Snapshot(const std::wstring& dir, const std::wstring& rel, Snap& out)
 	FindClose(h);
 }
 
-// ---------------------------------------------------------------- 共用查詢
+// 共用查詢
 
 bool GetStats(McpProc& s, json& stats, std::string& err)
 {
@@ -598,7 +584,7 @@ std::string JoinFirst(const std::vector<std::string>& v, size_t n)
 	return out;
 }
 
-// ---------------------------------------------------------------- 測試本體
+// 測試本體
 
 struct Ctx {
 	McpProc* s = nullptr;
@@ -1193,7 +1179,7 @@ void TestM21(Ctx& c)
 	Record(21, bad.empty(), bad.empty() ? d : JoinFirst(bad, 6) + " (" + d + ")");
 }
 
-// ---------------------------------------------------------------- M22-M25:沙盒與資料夾工具
+// M22-M25:沙盒與資料夾工具
 
 struct DirEnt { std::wstring name; DWORD attr; ULONGLONG size; };
 
@@ -1605,7 +1591,7 @@ void TestM25(const Ctx& c, const PobCounts& before)
 	Record(25, bad.empty(), bad.empty() ? d : JoinFirst(bad, 6) + " (" + d + ")");
 }
 
-// ---------------------------------------------------------------- M26:永恆珠寶不寫回使用者資料
+// M26:永恆珠寶不寫回使用者資料
 
 struct JewelDef { const wchar_t* stem; const char* unique; };
 
@@ -1958,7 +1944,7 @@ void TestM26(const Ctx& c, const PobCounts& cntBefore)
 			if (t.triggered) break;
 		}
 		// 覆蓋層的沙盒裡有沒有出現該 .bin(只印不判)。
-		sandboxBin = FileExists(SandboxDir(c.exeDir, q.Pid()) + L"\\Data\\TimelessJewelData\\" + oi.stem + L".bin");
+		sandboxBin = file_exists(SandboxDir(c.exeDir, q.Pid()) + L"\\Data\\TimelessJewelData\\" + oi.stem + L".bin");
 	} while (false);
 	q.Close();
 	{
@@ -2068,7 +2054,7 @@ void TestM27(const Ctx& c)
 	Record(27, bad.empty(), bad.empty() ? d + ", 結束後 pid 資料夾已清掉" : JoinFirst(bad, 6) + " (" + d + ")");
 }
 
-// ---------------------------------------------------------------- M28-M32:錯誤記錄檔與 report_problem
+// M28-M32:錯誤記錄檔與 report_problem
 
 // 當天(本機時間)的錯誤記錄檔 <exeDir>PobTools\logs\error-YYYY-MM-DD.log
 std::wstring ErrorLogPath(const std::wstring& exeDir)
@@ -2527,7 +2513,7 @@ void TestM35(const Ctx& c)
 	Record(35, bad.empty(), bad.empty() ? d : JoinFirst(bad, 6));
 }
 
-// ---------------------------------------------------------------- M36-M39:set_config 回報、rank_supports、rank_anoints
+// M36-M39:set_config 回報、rank_supports、rank_anoints
 
 // 起一個行程並讀入範例建置;oc 是給 LoadSample 用的 Ctx。
 bool BootSampleProc(McpProc& p, Ctx& oc, const Ctx& c, std::string& err)
@@ -2830,7 +2816,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	if (pobDir.empty() || !IsDir(pobDir)) {
 		failAll("找不到 PoE1 的 POB 資料夾: " + narrow(pobDir) + "(請把資料夾當第二個參數傳入)");
-	} else if (!FileExists(exeDir + L"pob-zh.exe")) {
+	} else if (!file_exists(exeDir + L"pob-zh.exe")) {
 		failAll("找不到 " + narrow(exeDir) + "pob-zh.exe");
 	} else {
 		Snapshot(pobDir, L"", snapBefore);
@@ -2923,7 +2909,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 		Guard(23, [&] { TestM23(hashBefore, hashBeforeOk, pobDir); });
 	}
 
-	// --- 報告:每項一行,最後一行總計 ------------------------------------
+	// 報告:每項一行,最後一行總計
 	std::string rep;
 	int pass = 0, fail = 0;
 	for (int n = 1; n <= 39; n++) {
@@ -2931,7 +2917,8 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";
 	}
-	rep += "總計 PASS " + std::to_string(pass) + " FAIL " + std::to_string(fail) + (fail == 0 ? " ALL PASS" : " FAILURES") + "\r\n";
+	rep += "總計 PASS " + std::to_string(pass) + " FAIL " + std::to_string(fail) + "\r\n";
+	rep += fail == 0 ? "RESULT PASS\r\n" : "RESULT FAIL\r\n";
 
 	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
 		FILE* f = nullptr;

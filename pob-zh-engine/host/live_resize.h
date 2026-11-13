@@ -1,14 +1,11 @@
 // Drawing while the window is being dragged to a new size.
 //
-// Dragging a border on Windows runs the system's own modal size loop inside
-// DefWindowProc, i.e. inside the glfwPollEvents / glfwWaitEventsTimeout the
-// frame loop is sitting in, and that call does not return until the mouse is
-// let go. Until then the loop draws nothing: the old picture is stretched or
-// cropped by the compositor and the layout only catches up on release.
+// Dragging a border runs the system's modal size loop inside DefWindowProc, i.e.
+// inside glfwPollEvents / glfwWaitEventsTimeout, which does not return until the
+// mouse is let go; the layout would only catch up on release.
 //
-// What does keep arriving during that loop is WM_PAINT for the newly exposed
-// area, which GLFW reports through the window-refresh callback. So the
-// launcher and the tool window hand this module their frame function and it
+// WM_PAINT keeps arriving during that loop (GLFW's window-refresh callback), so
+// the launcher and the tool window hand this module their frame function and it
 // calls it from that callback -- but only when it is safe to:
 //
 //   * only inside a move/size loop (GUI_INMOVESIZE). Any other refresh just
@@ -20,11 +17,9 @@
 //   * never inside a live frame already running.
 //
 // The frame function is called with live = true and must then skip anything
-// that changes what exists -- closing, reaping, switching, dialogs, deferred
-// work -- and leave that to the main loop's next pass, which follows the
-// moment the mouse is let go. It still runs the frame pacer, so the frame it
-// presents is the one the pacer remembers and the main loop does not present
-// the same picture again.
+// that changes what exists (closing, reaping, switching, dialogs, deferred
+// work) and leave it to the main loop's next pass. It still runs the frame
+// pacer, so the main loop does not present the same picture again.
 //
 // Only the refresh callback draws. The framebuffer-size callback that comes
 // with every step of the drag just marks the frame dirty; drawing from both

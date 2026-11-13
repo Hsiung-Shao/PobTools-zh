@@ -1,13 +1,9 @@
 // PobTools filter editor: undo / redo for every kind of edit.
 //
-// Edits happen in many places (cards, batch, look paste, sound reference
-// replace, the doc editor's structural mutations) and all of them end up in
-// FilterFile::lines. So instead of every call site recording a command, the
-// editor calls Capture() once per frame when no widget is active: the lines are
-// compared with a shadow copy taken at the previous step, and only the changed
-// range (from the first differing line to the last) is stored. Lines keep their
-// uid through undo/redo, so the baseline's 已修改 markers stay right.
-//
+// Every edit (cards, batch, look paste, sound reference replace, doc editor mutations) ends up in FilterFile::lines,
+// so instead of per-call-site commands the editor calls Capture() once per frame when no widget is active: lines are
+// compared with a shadow copy from the previous step and only the changed range (first to last differing line) is
+// stored. Lines keep their uid through undo/redo, so the baseline's 已修改 markers stay right.
 // Pure data: no ImGui, no file access. The caller rebuilds blocks afterwards.
 #pragma once
 

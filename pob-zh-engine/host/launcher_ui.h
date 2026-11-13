@@ -23,11 +23,9 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
                             AppUpdater* appUpd = nullptr);
 
 // Headless check that EVERY shipped font can draw EVERY character the launcher
-// puts on screen. ImGui silently substitutes '?' for a glyph the font lacks, so
-// a missing character is invisible until someone screenshots it -- which is how
-// the version-history bullet ("・", U+30FB) shipped unreadable on FZ_ZY.ttf
-// while looking fine on the default Noto Sans TC. Returns 0 when every font
-// covers every character. Lives here because the text sources are all in scope.
+// puts on screen (ImGui silently substitutes '?' for a missing glyph). Returns 0
+// when every font covers every character. Lives here because the text sources
+// are all in scope.
 int RunFontCoverageSelftest(const std::wstring& exeDir);
 
 // Does the atlas the launcher really builds fit on the GPU, and does it carry the

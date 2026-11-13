@@ -1,11 +1,14 @@
 #include "passive_import.h"
 #include "error_log.h"
+#include "data_updater.h" // DataUpdaterWriteCacheFile
 #include "launcher_config.h" // FindPoe1Dir
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 #include <shlobj.h> // SHCreateDirectoryExW
+#include "win_util.h"
+#include "selftest_report.h"
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 
@@ -32,49 +35,7 @@ static const int kGlesMax = 4096;        // texture dimension ceiling
 // kind values shared with host/passive_tree_data.h
 enum { K_NORMAL = 0, K_NOTABLE = 1, K_KEYSTONE = 2, K_SOCKET = 3 };
 
-// ---- small helpers (same conventions as atlas_import.cpp) -------------------
-
-static bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 30)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
-
-static bool write_file_utf8(const std::wstring& path, const std::string& content)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	DWORD written = 0;
-	bool ok = content.empty() ||
-		(WriteFile(h, content.data(), (DWORD)content.size(), &written, nullptr) && written == content.size());
-	CloseHandle(h);
-	return ok;
-}
-
-static std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
-
-static bool file_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
-}
+// small helpers (same conventions as atlas_import.cpp)
 
 static double r2(double v) { return std::round(v * 100.0) / 100.0; }
 static double r5(double v) { return std::round(v * 100000.0) / 100000.0; }
@@ -117,15 +78,11 @@ static std::string unescape_newlines(std::string s)
 	return s;
 }
 
-// ---- Traditional-Chinese template translator --------------------------------
-// KEEP IN SYNC with gen_passive_tree.py's Translator/_normalize/_TOKEN: numeric
-// tokens (ranges first) become '#' for the lookup key; the zh template's "{N}"
-// placeholders are refilled with the English line's tokens in order.
-//
-// Hand-rolled scanners instead of std::regex: MSVC's regex is pathologically
-// slow over the multi-MB dictionaries (minutes vs milliseconds). Each helper
-// mirrors one Python pattern exactly; all matched bytes are ASCII, so scanning
-// UTF-8 byte-wise is safe (CJK bytes are >= 0x80 and never match).
+// Traditional-Chinese template translator. KEEP IN SYNC with gen_passive_tree.py's Translator/_normalize/_TOKEN:
+// numeric tokens (ranges first) become '#' for the lookup key; the zh template's "{N}" placeholders are refilled
+// with the English line's tokens in order.
+// Hand-rolled scanners, not std::regex (MSVC's is minutes vs milliseconds over the multi-MB dictionaries); each
+// mirrors one Python pattern, and all matched bytes are ASCII so byte-wise UTF-8 scanning is safe.
 
 namespace {
 
@@ -276,7 +233,7 @@ struct ZhTranslator {
 	}
 };
 
-// ---- sprite sheet index (zoom-tier section already selected) ----------------
+// sprite sheet index (zoom-tier section already selected)
 
 struct SheetIndex {
 	const ordered_json& sprites;                // data.json "sprites" (zoom dicts)
@@ -362,7 +319,7 @@ bool is_skipped(const ordered_json& v)
 
 } // namespace
 
-// ---- conversion (port of gen_passive_tree.py --ggg main()) ------------------
+// conversion (port of gen_passive_tree.py --ggg main())
 
 bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& ver,
                            const std::wstring& exeDir, std::string* err, std::string* summary)
@@ -627,7 +584,7 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 			outGroupBg.push_back(std::move(g));
 		}
 
-		// ---- assemble output (field order mirrors the Python generator) -----
+		// assemble output (field order mirrors the Python generator)
 		ordered_json out;
 		out["version"] = ver + "/" + std::to_string(newNodes.size()) + "n";
 		out["treeVersion"] = ver;
@@ -655,9 +612,8 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 		out["masteries"] = std::move(outMast);
 		out["groupbg"] = std::move(outGroupBg);
 
-		// ---- everything validated: bundle sheets, then overwrite the JSON ----
-		// sheet source: local PoB TreeData/<ver>/ when that league exists (no
-		// download needed), else the assets/ directory next to data.json
+		// everything validated: bundle sheets, then overwrite the JSON. Sheet source: local PoB TreeData/<ver>/ when
+		// that league exists (no download), else the assets/ directory next to data.json
 		std::wstring srcDir = dataJsonPath;
 		size_t slash = srcDir.find_last_of(L"\\/");
 		srcDir = (slash == std::wstring::npos) ? L"" : srcDir.substr(0, slash + 1);
@@ -672,7 +628,10 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 			if (!CopyFileW(src.c_str(), dst.c_str(), FALSE))
 				return fail(u8"複製圖集失敗: " + base);
 		}
-		if (!write_file_utf8(exeDir + L"Data\\passive_tree_poe1.json", out.dump()))
+		// .part then rename: a half-written tree would still report the new treeVersion (read from the file head),
+		// so the updater would call it current while the tree itself no longer parses
+		const std::string text = out.dump();
+		if (!DataUpdaterWriteCacheFile(exeDir + L"Data\\passive_tree_poe1.json", { text.begin(), text.end() }))
 			return fail(u8"寫入 Data/passive_tree_poe1.json 失敗");
 
 		if (summary) {
@@ -710,9 +669,8 @@ int RunPassiveImportCli(const std::wstring& dataJsonPath, const std::wstring& ve
 	return ok ? 0 : 1;
 }
 
-// ---- self-test (--pt-import-selftest) ---------------------------------------
-// Regression guard for the hand-rolled scanner port of the Python regexes; the
-// full pipeline is separately parity-tested against gen_passive_tree.py output.
+// self-test (--pt-import-selftest): regression guard for the hand-rolled scanner port of the Python regexes
+// (the full pipeline is parity-tested separately against gen_passive_tree.py output).
 
 int RunPassiveImportSelfTest(const std::wstring& exeDir)
 {
@@ -720,14 +678,8 @@ int RunPassiveImportSelfTest(const std::wstring& exeDir)
 		FILE* f = nullptr;
 		freopen_s(&f, "CONOUT$", "w", stdout);
 	}
-	std::string rep;
-	int fails = 0;
-	auto check = [&](bool ok, const char* what) {
-		rep += ok ? "PASS  " : "FAIL  ";
-		rep += what;
-		rep += "\n";
-		if (!ok) fails++;
-	};
+	TestReport rep;
+	auto check = [&](bool ok, const char* what) { rep.check(ok, what); };
 
 	// tr_normalize: {N} / ranges / numbers each collapse to '#'
 	check(tr_normalize("8% increased Lightning Damage") == "#% increased Lightning Damage",
@@ -767,8 +719,5 @@ int RunPassiveImportSelfTest(const std::wstring& exeDir)
 	check(escape_newlines("a\nb") == "a\\nb" && unescape_newlines("a\\nb") == "a\nb",
 	      "newline escape round-trip");
 
-	rep += fails == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(fails) + "\n";
-	printf("%s", rep.c_str());
-	write_file_utf8(exeDir + L"pt_import_selftest.txt", rep);
-	return fails == 0 ? 0 : 1;
+	return rep.finish(exeDir + L"pt_import_selftest.txt");
 }

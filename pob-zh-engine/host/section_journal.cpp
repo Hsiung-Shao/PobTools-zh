@@ -227,7 +227,7 @@ void DrawJournalBanner(EditorShell& s)
 
 void DrawJournalDialog(EditorShell& s)
 {
-	// ---- 從訂閱建立可編輯的本機檔 ----
+	// 從訂閱建立可編輯的本機檔
 	if (s.wantOnlineDialog) {
 		s.wantOnlineDialog = false;
 		if (!s.testMode) s.onlineList = ListOnlineFilters();
@@ -279,7 +279,7 @@ void DrawJournalDialog(EditorShell& s)
 		}
 		PobUi::EndDialog();
 	}
-	// ---- 更新並保留修改 ----
+	// 更新並保留修改
 	if (PobUi::BeginDialog(u8"##feonlineupd", &s.onlineConfirmOpen, u8"用訂閱的新版更新這個檔？",
 	                       u8"這份本機檔會換成訂閱的新版內容（原檔備份成 .bak），接著把你的修改套回去，可以逐處確認。",
 	                       nullptr, 480.0f)) {

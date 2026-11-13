@@ -1,17 +1,12 @@
-// Docking other processes' windows into a container window, WITHOUT making them
-// child windows.
+// Docking other processes' windows into a container window, WITHOUT making them child windows.
 //
-// Why not child windows: SetParent across processes attaches the two threads'
-// input queues, which makes every cross-process window call synchronous
-// (SWP_ASYNCWINDOWPOS stops working) and deadlocks the container on the first
-// resize. Setting the container as OWNER instead is no better -- it crashes
-// GLFW's message handling on the very next poll. Both measured 2026-08-05; see
-// agent-data error_setparent_cross_process_embed_deadlock.md.
+// Why not: SetParent across processes attaches the two threads' input queues (every cross-process
+// window call becomes synchronous, SWP_ASYNCWINDOWPOS stops working, the container deadlocks on
+// resize); setting the container as OWNER crashes GLFW's message handling on the next poll.
+// See agent-data error_setparent_cross_process_embed_deadlock.md.
 //
-// So docked windows stay top-level. They are stripped of their frame and kept
-// glued to the container's client area, and the container sinks itself below the
-// active one to keep the z-order right. The engine is not modified for any of
-// this: everything is done from outside, to windows POB opened normally.
+// So docked windows stay top-level: frame stripped, glued to the container's client area, and the
+// container sinks itself below the active one. Everything is done from outside; the engine is untouched.
 #pragma once
 
 #include <string>
@@ -19,38 +14,29 @@
 
 namespace WindowDock {
 
-// A window this container is managing. `pid` is known as soon as the process is
-// spawned; `hwnd` appears some time later, once it has created its window.
+// A window this container is managing. `pid` is known at spawn; `hwnd` appears later.
 struct Tab {
 	unsigned long pid = 0;
 	void*         hwnd = nullptr;     // HWND, null until the window shows up
 	std::wstring  label;              // what the tab strip shows
 	bool          docked = false;     // frame stripped and being positioned
 
-	// POB starts maximized, and a maximized window ignores SetWindowPos's size.
-	// Un-maximising it is asynchronous, so adoption waits a frame or two for that
-	// to land before stripping the frame -- doing both at once wrote the old style
-	// (WS_MAXIMIZE included) straight back over the restore.
+	// POB starts maximized, and a maximized window ignores SetWindowPos's size. Un-maximising is
+	// asynchronous, so adoption waits a frame or two before stripping the frame (doing both at once
+	// wrote the old style, WS_MAXIMIZE included, back over the restore).
 	bool          awaitingRestore = false;
 
-	// The label the tab was created with, kept so a window whose title cannot be
-	// read falls back to something rather than to an empty tab.
+	// The label the tab was created with: fallback when the window title cannot be read.
 	std::wstring  baseLabel;
 
-	// Bring this tab to the front once, then clear.
-	//
-	// A newly started tool used to appear as a tab the user was not on, and the
-	// dock -- correctly -- hides any tab that is not the active one. So the window
-	// flashed up, vanished, and left a tab to be found. Embedded panels focus
-	// themselves on open; a docked one has to as well, or the two behave
-	// differently for no reason the user can see.
+	// Bring this tab to the front once, then clear. A newly started tool otherwise flashes up and is
+	// hidden (the dock hides non-active tabs); embedded panels focus themselves on open, so docked ones must too.
 	bool          wantFocus = true;
 };
 
 // Manages every docked window for one container.
 //
-// Non-copyable: it holds window state that must not be duplicated, and the
-// callbacks below capture a pointer to it.
+// Non-copyable: callbacks below capture a pointer to it.
 class Dock {
 public:
 	Dock() = default;
@@ -72,10 +58,8 @@ public:
 	// rest, and keeps the z-order and minimise state in step.
 	void Update(int stripH, int activeIndex);
 
-	// Called from the container's GLFW move/size callbacks. Dragging a window
-	// puts Windows into a modal message loop during which glfwPollEvents never
-	// returns, so without these the docked window is left behind for the whole
-	// drag.
+	// Called from the container's GLFW move/size callbacks (dragging puts Windows into a modal loop
+	// where glfwPollEvents never returns, so the docked window would be left behind).
 	void OnHostMoved();
 	void OnHostFocused();
 
@@ -100,9 +84,8 @@ private:
 	void Position(Tab& t, bool force);
 	void FixZOrder(Tab& t);
 
-	// What the window looked like before the dock touched it. `captured` exists
-	// because adoption may run more than once (it waits for an un-maximise), and
-	// only the FIRST pass sees the untouched window.
+	// What the window looked like before the dock touched it. `captured`: adoption may run more than
+	// once, and only the FIRST pass sees the untouched window.
 	struct Original {
 		long long style = 0, exStyle = 0;
 		int x = 0, y = 0, w = 0, h = 0;
@@ -116,26 +99,17 @@ private:
 	int               active_ = -1;
 	bool              droppedOwnButton_ = false;
 	unsigned long long lastFind_ = 0, lastKeep_ = 0, lastSwitch_ = 0, lastTitle_ = 0;
-	// Rate limit for the move callback. A drag fires it far more often than any
-	// window can repaint, and every one of those is a cross-process request.
+	// Rate limit for the move callback (a drag fires it faster than a window can repaint; each is a cross-process request).
 	unsigned long long lastDragPos_ = 0;
-	// Last logged container minimise state. The log is the only record of what
-	// happened during a minimise, and it has to be written on the EDGE -- a
-	// per-frame line at vsync would bury the one transition that matters.
+	// Last logged container minimise state: logged on the EDGE only (a per-frame line would bury the transition).
 	int               loggedHostMin_ = -1;
 };
-
-// Feasibility run, opened with --dock-spike. Kept because it is the smallest
-// thing that exercises the whole path end to end.
-int RunDockSpike(const std::wstring& exeDir, bool spawnPob = true, bool verbose = false);
 
 // Adoption and restoration against a real window this process owns, opened with
 // --dock-style-selftest. Report at <exeDir>PobTools\, 0 = pass.
 //
-// It builds its own MAXIMIZED window rather than driving POB, because whether POB
-// starts maximized depends on what the user last did -- so a check that waits for
-// POB to be maximized passes vacuously most of the time, which is precisely how
-// the missing WS_MAXIMIZE survived. Here the interesting state is guaranteed.
+// It builds its own MAXIMIZED window rather than driving POB: POB's maximized state depends on the
+// user's last run, so a check on it would pass vacuously.
 int RunDockStyleSelfTest(const std::wstring& exeDir);
 
 } // namespace WindowDock

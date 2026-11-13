@@ -1,23 +1,12 @@
-// Headless check that an edit made through the translation editor actually
-// reaches the engine.
+// Headless check that an edit made through the translation editor actually reaches the engine.
 //
-// The question this answers is not "does SaveFile write bytes" -- it is "after
-// I change a string in the editor, does POB show it?". Those are different
-// questions because the engine merges the eight dictionary files into ONE flat
-// map and lets a later file overwrite an earlier one (translation_manager.cpp,
-// order from meta.json). 12,254 English keys live in more than one file, so an
-// edit applied to the copy that loses the merge changes nothing on screen and
-// the editor gives no hint of it.
+// The engine merges the dictionary files into ONE flat map (later file wins, order from
+// meta.json), so an edit applied to the losing copy of a key changes nothing on screen.
+// The test drives the real data layer (editor_data.cpp), then asks the real loader
+// (translation_init + translation_lookup) what the engine returns -- shadowed case included.
 //
-// So the test drives the real data layer (editor_data.cpp) and then asks the
-// real loader (translation_init + translation_lookup) what the engine would
-// return -- including the shadowed case, which must be demonstrated rather
-// than assumed.
-//
-// Runs against whatever Data\ sits next to the exe. Point it at a scratch
-// deployment (copy pob-zh.exe + Data into a temp dir) so the shipping
-// dictionaries are never touched; the test still restores every value it
-// changes, and verifies the restore.
+// Runs against whatever Data\ sits next to the exe; point it at a scratch deployment so the
+// shipping dictionaries are never touched. Every changed value is restored and verified.
 
 #include "editor_selftest.h"
 
@@ -30,9 +19,10 @@
 #include <vector>
 
 #include "editor_data.h"
-#include "trans_editor_logic.h"   // P8-5:SetWithUndo / ApplyState
-#include "launcher_config.h"   // ResolveDataDir
+#include "trans_editor_logic.h"
+#include "launcher_config.h"
 #include "../translate/translation_manager.h"
+#include "win_util.h"
 
 namespace {
 
@@ -45,25 +35,6 @@ void check(bool ok, const char* what)
 	printf("  %s  %s\n", ok ? "[PASS]" : "[FAIL]", what);
 }
 
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s((size_t)n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
-
-std::wstring exe_dir()
-{
-	wchar_t path[MAX_PATH];
-	GetModuleFileNameW(nullptr, path, MAX_PATH);
-	std::wstring s(path);
-	size_t slash = s.find_last_of(L'\\');
-	return slash == std::wstring::npos ? L"" : s.substr(0, slash + 1);
-}
-
-// Whole file as bytes (P8); false when it cannot be opened.
 bool read_file_bytes(const std::wstring& p, std::string& out)
 {
 	HANDLE h = CreateFileW(p.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
@@ -104,8 +75,7 @@ std::vector<std::string> meta_list(const EditorModel& model, const char* field)
 		}
 	}
 	if (order.empty()) {
-		// meta.json is filtered out of the model (it has no "entries"), so read
-		// it directly rather than guessing an order
+		// meta.json is filtered out of the model (no "entries"): read it directly
 		std::wstring p = model.dataDir + L"meta.json";
 		HANDLE h = CreateFileW(p.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
 		                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -155,14 +125,10 @@ std::string engine_says(const char* key)
 
 } // namespace
 
-// T1-T13 for one game. Everything here writes to the REAL dictionaries (edit ->
-// verify through the engine -> restore), which is why it stayed hardcoded to poe1:
-// running it against poe2 rewrites poe2's files too. Safe now that SaveFile
-// preserves each file's original line ending.
+// T1-T13 for one game. Writes to the REAL dictionaries (edit -> verify through the engine -> restore).
 //
-// `slotRoot` is ALWAYS the built-in <exeDir>Data\<game>\, never a configured
-// external folder -- see RunEditorSelftest. A self test that followed the user's
-// setting would edit and re-save a translator's working copy.
+// `slotRoot` is ALWAYS the built-in <exeDir>Data\<game>\, never a configured external
+// folder -- see RunEditorSelftest.
 static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot, const char* game)
 {
 	printf("\n=== %s ===\n", game);
@@ -174,12 +140,9 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 	printf("  loaded %zu files, %zu entries\n", model.files.size(), model.entries.size());
 	check(model.entries.size() > 1000, "T1 model loads the dictionaries");
 
-	// The loader takes its locale from POB_GAME / POB_LOCALE, which host_main
-	// sets before launching POB. A headless run inherits neither, and without
-	// them determine_locale() returns empty and the loader silently enters
-	// passthrough mode -- every lookup then returns nothing and every
-	// comparison below "passes" for the wrong reason. Set them the same way
-	// the launcher does, and prove the loader actually read the files.
+	// The loader takes its locale from POB_GAME / POB_LOCALE (set by host_main). A headless run
+	// inherits neither, and the loader silently enters passthrough mode -- every comparison
+	// below would "pass" for the wrong reason. Set them as the launcher does and prove the files were read.
 	SetEnvironmentVariableW(L"POB_GAME",
 	                        std::wstring(game, game + strlen(game)).c_str()); // ASCII ids
 	SetEnvironmentVariableW(L"POB_LOCALE", L"zh-rTW");
@@ -193,7 +156,7 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 	check(!order.empty(), "T2 meta.json load_order readable");
 	std::map<std::string, std::string> winner = merge_winner(model, order);
 
-	// --- pick two subjects -------------------------------------------------
+	// pick two subjects
 	// (a) a key that lives in exactly one file  -> editing it must take effect
 	// (b) a key that lives in several files     -> editing the LOSING copy must
 	//     not take effect, editing the winner must
@@ -229,7 +192,7 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 
 	const std::string sentinel = u8"【編輯器自我測試】";
 
-	// --- (a) single-file key: edit must reach the engine --------------------
+	// (a) single-file key: edit must reach the engine
 	if (single) {
 		const std::string key = single->key;
 		const std::string before = single->value;
@@ -266,7 +229,7 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 		check(engine_says(key.c_str()) == before, "T8 restore verified");
 	}
 
-	// --- (b) shadowed key: editing the loser must NOT take effect -----------
+	// (b) shadowed key: editing the loser must NOT take effect
 	if (shadowLoser && shadowWinner) {
 		const std::string key = shadowLoser->key;
 		const std::string loserFile = model.files[(size_t)shadowLoser->fileIdx].name;
@@ -311,7 +274,7 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 		check(engine_says(key.c_str()) == winnerValue, "T11 restore verified");
 	}
 
-	// --- round-trip fidelity ----------------------------------------------
+	// round-trip fidelity
 	{
 		EditorModel m = LoadModel(slotRoot, "zh-rTW");
 		bool keysKept = true, metaKept = true;
@@ -324,10 +287,8 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 		check(metaKept, "T13 non-entries fields survived the round trip");
 	}
 
-	// --- load order, exposed on the model ----------------------------------
-	// The editor now reads meta.json's load_order itself so its file pickers can
-	// say which copy of a key the engine will actually use. T24-T26 check that
-	// shortcut against the full merge replay, and against the engine.
+	// load order, exposed on the model: T24-T26 check the editor's own load_order reading
+	// against the full merge replay and against the engine.
 	{
 		check(!model.loadOrder.empty(), "T24 model exposes meta.json load_order");
 
@@ -337,7 +298,7 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 		int prev = -1;
 		for (int fi : byOrder) {
 			const int o = model.files[(size_t)fi].order;
-			if (o < 0) continue;              // unlisted files sort last
+			if (o < 0) continue;
 			if (o <= prev) ascending = false;
 			prev = o;
 		}
@@ -349,7 +310,7 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 		int checked = 0, wrong = 0;
 		std::string firstWrong;
 		for (const auto& kv : occ) {
-			if (kv.second < 2) continue;      // only keys that actually collide
+			if (kv.second < 2) continue;
 			auto it = w.find(kv.first);
 			if (it == w.end()) continue;
 			const int fi = WinnerFileIdx(model, kv.first);
@@ -365,9 +326,7 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 		      "T26 WinnerFileIdx agrees with a full merge replay on every shadowed key");
 	}
 
-	// --- line endings survive a save ---------------------------------------
-	// Two poe1 dictionaries were silently converted CRLF->LF by an earlier
-	// version of SaveFile. Copies, so the real files are never at risk.
+	// line endings survive a save (works on copies)
 	{
 		bool anyCrlf = false, anyChecked = false, allKept = true;
 		for (const EditorFile& f : model.files) {
@@ -408,10 +367,8 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 		      "T27 SaveFile keeps a CRLF file CRLF");
 	}
 
-	// --- adding a brand-new key reaches the engine -------------------------
-	// The add-entry row is the only way to translate a string the engine has
-	// never logged as missing. SetEntry has no delete path, so the file is
-	// restored from a byte snapshot rather than by editing it back.
+	// adding a brand-new key reaches the engine. SetEntry has no delete path, so the file
+	// is restored from a byte snapshot.
 	{
 		const std::string newKey = "__pobtools_editor_selftest_key__";
 		const std::string newVal = u8"自我測試新增";
@@ -436,7 +393,7 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 		}
 	}
 
-	// --- locale enumeration -------------------------------------------------
+	// locale enumeration
 	{
 		std::vector<std::string> l1 = ListLocales(BuiltinDictDir(exeDir, DictSlot::Poe1));
 		std::vector<std::string> l2 = ListLocales(BuiltinDictDir(exeDir, DictSlot::Poe2));
@@ -446,10 +403,6 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 		check(has1 && has2, "T30 ListLocales finds zh-rTW for both games");
 		check(!lx.empty(), "T31 ListLocales falls back instead of returning nothing");
 
-		// The launcher's own labels are a dictionary of the same shape, so the
-		// editor reaches them with no special-case code -- that is the entire
-		// reason they were put under Data\launcher\<locale>\ rather than in a
-		// settings file of their own.
 		const std::wstring launcherRoot = BuiltinDictDir(exeDir, DictSlot::Launcher);
 		std::vector<std::string> ll = ListLocales(launcherRoot);
 		EditorModel lm = LoadModel(launcherRoot, "zh-rTW");
@@ -459,9 +412,7 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 		          lm.loadOrder.size() == 1 && lm.loadOrder[0] == "launcher.json",
 		      "T33 the launcher dictionary loads like any other");
 
-		// T33c -- a language nobody hardcoded. Dropping a folder in is the whole
-		// point, so it is exercised end to end (list it, load it, remove it)
-		// rather than asserted about zh-rTW, which proves nothing about "automatic".
+		// T33c -- a language nobody hardcoded: list it, load it, remove it.
 		{
 			const std::wstring probeRoot = BuiltinDictDir(exeDir, DictSlot::Poe1);
 			const std::wstring probe = probeRoot + L"xx-TEST\\";
@@ -488,14 +439,11 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 			DeleteFileW((probe + L"probe.json").c_str());
 			DeleteFileW((probe + L"meta.json").c_str());
 			RemoveDirectoryW(probe.c_str());
-			// Litter in the shipping Data\ directory is exactly what nobody notices.
 			check(GetFileAttributesW(probe.c_str()) == INVALID_FILE_ATTRIBUTES,
 			      "T33d the probe language folder was removed again");
 		}
 
-		// T33b -- which rows get the expanded editor. The About paragraph is the
-		// case that prompted it (four lines crammed into a one-line box), and a
-		// short label is the case that must NOT get a button cluttering it.
+		// T33b -- which rows get the expanded editor (multi-line yes, short label no).
 		{
 			EditorEntry multi; multi.value = "one\ntwo";
 			EditorEntry longv; longv.value = std::string(80, 'x');
@@ -513,11 +461,8 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 
 	// T33c -- every table cell is exactly one line.
 	//
-	// The entries table is an ImGuiListClipper over 110k rows and the clipper
-	// sizes the whole scroll range from ONE row's height, so a single taller row
-	// shortens the range and the rows past it cannot be reached. That is not
-	// hypothetical: ui.json has a key 25 lines long, and one 3-line key inside a
-	// 106-row filter was enough to strand the last entries off the bottom.
+	// The entries table is an ImGuiListClipper over 110k rows sizing the scroll range from ONE
+	// row's height, so a single taller row strands the last entries off the bottom.
 	{
 		check(OneLineForCell("a\nb") == "a\\nb" &&
 		          OneLineForCell("a\r\nb") == "a\\nb" &&
@@ -535,18 +480,13 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 				if (worst.empty()) worst = e.key.substr(0, 40);
 			}
 		}
-		// `folded > 0` is the part that keeps this honest: without it the sweep
-		// would pass just as happily on a dictionary that has no multi-line key
-		// at all, and prove nothing about the case it exists for.
+		// `folded > 0` keeps this honest: otherwise a dictionary with no multi-line key passes vacuously.
 		const std::string msg = "T33c2 no dictionary entry can draw a multi-line cell (" +
 		                        std::to_string(folded) + " folded)";
 		check(worst.empty() && folded > 0, msg.c_str());
 	}
 
-	// SaveFile backs a file up before overwriting it, so a run that edits and
-	// restores four files leaves four .bak copies behind. Every value is already
-	// restored and verified above, so the backups are litter -- and litter in the
-	// shipping Data\ directory is exactly the kind of thing nobody notices.
+	// SaveFile leaves a .bak per edited file; the values are already restored, so remove the litter.
 	for (const EditorFile& f : model.files)
 		DeleteFileW((f.path + L".bak").c_str());
 
@@ -558,17 +498,14 @@ int RunEditorSelftest(const std::string& games)
 	g_pass = g_fail = 0;
 	const std::wstring dir = exe_dir();
 
-	// PINNED to the shipped dictionaries by passing an empty configured path.
-	// This test edits real files and restores them; if it followed the user's
-	// DataDir setting it would be rewriting a translator's working copy, and a
-	// mistake there has no backup (dist\Data is not under version control).
+	// PINNED to the shipped dictionaries (empty configured path): following the user's DataDir
+	// setting would rewrite a translator's working copy, which has no backup.
 	const std::wstring poe1Root = ResolveDictDir(dir, DictSlot::Poe1, L"").root;
 	const std::wstring poe2Root = ResolveDictDir(dir, DictSlot::Poe2, L"").root;
 	printf("editor selftest - dictionary folders: %s | %s\n",
 	       narrow(poe1Root).c_str(), narrow(poe2Root).c_str());
 	printf("  NOTE: this edits the dictionaries next to the exe (edit -> verify -> restore)\n");
-	// Prove the pinning rather than trusting the comment: even with an external
-	// folder configured, the ones used here must still be the built-in ones.
+	// Prove the pinning: even with an external folder configured, the built-in ones are used.
 	check(poe1Root == BuiltinDictDir(dir, DictSlot::Poe1) &&
 	          poe2Root == BuiltinDictDir(dir, DictSlot::Poe2),
 	      "T34 selftest is pinned to the built-in dictionaries");
@@ -578,9 +515,7 @@ int RunEditorSelftest(const std::string& games)
 	if (doPoe1 && run_for_game(dir, poe1Root, "poe1") == 2) return 2;
 	if (doPoe2 && run_for_game(dir, poe2Root, "poe2") == 2) return 2;
 
-	// Everything below is poe1-only: it asserts the Volatility gem/passive
-	// collision, and poe2's dictionary has no such data. Printed, not skipped
-	// silently, so "did not run" stays visible.
+	// Everything below is poe1-only (Volatility gem/passive collision). Printed, not skipped silently.
 	printf("\n=== source dictionaries (poe1 only) ===\n");
 	SetEnvironmentVariableW(L"POB_GAME", L"poe1");
 	SetEnvironmentVariableW(L"POB_LOCALE", L"zh-rTW");
@@ -589,8 +524,7 @@ int RunEditorSelftest(const std::string& games)
 	std::vector<std::string> order = load_order(model);
 	(void)order;
 
-	// --- source dictionaries (issue #3) ------------------------------------
-	// POB stores support gems under their SHORT name, so "Volatility" is both a
+	// source dictionaries: POB stores support gems under their SHORT name, so "Volatility" is both a
 	// gem (易變輔助) and a passive node (易爆). passives.json loads later and wins
 	// the merge, which is right for the tree and wrong for the skill tab. The
 	// engine resolves it by letting POB name the data file a string came from.
@@ -639,13 +573,9 @@ int RunEditorSelftest(const std::string& games)
 		translation_set_source(nullptr);
 	}
 
-	// --- more source dictionaries (S1-S9) -----------------------------------
-	// passives / affixes / stats / uniques / items / ascendancy. The data is
-	// planted here (and fully restored afterwards) so the assertions do not hang
-	// on whatever the shipped dictionaries happen to contain. Every planted
-	// competitor sits in a file that loads LATER than the source file, so the
-	// merged (unmarked) answer differs from the sourced one -- otherwise a
-	// source that silently degrades to "none" would still pass.
+	// more source dictionaries (S1-S9): data is planted (and restored) so assertions don't depend on
+	// shipped content. Every planted competitor sits in a file loading LATER than the source file,
+	// so a source that silently degrades to "none" cannot pass.
 	printf("\n=== source dictionaries: passives/affixes/stats/... (poe1 only) ===\n");
 	{
 		auto say = [](const char* key) {
@@ -1151,8 +1081,7 @@ int RunEditorSelftest(const std::string& games)
 		check(restored && say(kRobust) == robustBefore, "SR 測試結束後字典完整還原");
 	}
 
-	// --- S16p: the shipped poe2 dictionaries carry "source_lookup" ----------
-	// (poe2 round 3-4 turned it on.) Real data, nothing planted: a source may
+	// S16p: the shipped poe2 dictionaries carry "source_lookup". Real data, nothing planted: a source may
 	// pick a different official wording than the unmarked lookup -- that is the
 	// point of sources -- but it must never lose a translation the unmarked
 	// lookup had.
@@ -1202,13 +1131,9 @@ int RunEditorSelftest(const std::string& games)
 		translation_reload();
 	}
 
-	// --- external dictionary root (POB_ZH_DATADIR) --------------------------
-	//
-	// Asks the REAL loader, not a re-implementation: build a throwaway dictionary
-	// somewhere else, point the variable at it, and see whether a key that exists
-	// ONLY there comes back. A key that exists only in the built-in dictionaries
-	// must then be gone -- that is what separates "read the external root" from
-	// "merged something extra on top", which would look identical otherwise.
+	// external dictionary root (POB_ZH_DATADIR): a key existing ONLY there must come back, and a
+	// key existing only in the built-ins must be gone -- separates "read the external root" from
+	// "merged something extra on top".
 	printf("\n=== external dictionary root ===\n");
 	{
 		wchar_t tmp[MAX_PATH];
@@ -1261,14 +1186,10 @@ int RunEditorSelftest(const std::string& games)
 		RemoveDirectoryW(extRoot.c_str());
 	}
 
-	// T39-T41: POB's raw item-text tags. A line in the "Edit item text" box
-	// carries "{enchant}{rune}", "{variant:N}", "{range:N}" prefixes that no
-	// dictionary key has. Without the tag-aware step the whole-line match misses
-	// and the glossary takes the line apart word by word -- field-reported as
-	// "{附魔}{符紋}3增加 6% 護甲，閃避和能量護盾": the TAGS translated, and
-	// "6% increased ..." matched inside "36% increased ...", leaving a stray "3".
-	// That box is editable and saved straight back into the item, so a translated
-	// tag is a corrupted item, not merely an ugly line.
+	// T39-T41: POB's raw item-text tags ("{enchant}{rune}", "{variant:N}", "{range:N}") that no
+	// dictionary key has. Without the tag-aware step the glossary translates the TAGS and matches
+	// "6% increased" inside "36% increased". The box is saved straight back into the item, so a
+	// translated tag corrupts the item.
 	printf("\n=== raw item-text tags (poe2) ===\n");
 	SetEnvironmentVariableW(L"POB_GAME", L"poe2");
 	SetEnvironmentVariableW(L"POB_LOCALE", L"zh-rTW");
@@ -1290,11 +1211,9 @@ int RunEditorSelftest(const std::string& games)
 	SetEnvironmentVariableW(L"POB_GAME", L"poe1");
 	translation_reload();
 
-	// T42-T45: the crafting drop-down's '#' placeholders. POB lists affixes as
-	// "+# to all Attributes (9)"; a number absorbs its sign into the key
-	// ("+5 ..." -> "# ...") but a literal '#' did not ("+# ..."), so most of the
-	// PoE1 affix list stayed English although the dictionary had every line.
-	// The '#' form must come out exactly as the numeric form with '#' for the number.
+	// T42-T45: the crafting drop-down's '#' placeholders ("+# to all Attributes (9)"). A number absorbs
+	// its sign into the key ("+5 ..." -> "# ...") but a literal '#' did not. The '#' form must come
+	// out exactly as the numeric form with '#' for the number.
 	printf("\n=== '#' placeholders (crafting drop-down) ===\n");
 	{
 		auto same_as_number = [&](const char* hashForm, const char* numForm, const char* num, const char* name) {
@@ -1318,8 +1237,7 @@ int RunEditorSelftest(const std::string& games)
 		      "T45 an unsigned '#' that already translated keeps doing so");
 	}
 
-	// P8 (使用者裁定 2026-10-21):id 字典檔(*_by_id.json)照列但唯讀;說明不再寫
-	// 「不會被讀取」(source_dicts 的檔不在 load_order 卻會被引擎讀)。
+	// P8:id 字典檔(*_by_id.json)照列但唯讀;說明不寫「不會被讀取」(source_dicts 的檔不在 load_order 卻會被引擎讀)。
 	// 在 %TEMP% 的複本上做:SaveFile 被拒前若誤寫，也只寫到複本。
 	printf("\n=== P8 id 字典唯讀 ===\n");
 	{

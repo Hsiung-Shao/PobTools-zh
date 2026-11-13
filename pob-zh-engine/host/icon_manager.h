@@ -5,14 +5,11 @@
 // on the main (GL) thread in Pump(). Everything degrades gracefully: no index,
 // no data file or no network just means no icons (names still show).
 //
-// Art paths are the real key -- that is what the URL and the cache filename are
-// built from, and two different items can legitimately share one (the atlas
-// planner has two Cartography scarabs on the same art, which then share a single
-// texture). The name-based calls are a thin adapter over the path ones for
-// callers that only know an English item name; they need the bundled
-// Data/icon_paths.json index (generated from the RePoE dataset). Callers that
-// already hold an art path -- e.g. the atlas planner reading
-// Data/scarabs_poe1.json -- use RequestPath/TextureByPath and need no index.
+// Art paths are the real key (URL and cache filename derive from it; two items
+// may share one, and then share a texture). The name-based calls are a thin
+// adapter for callers that only know an English item name; they need the bundled
+// Data/icon_paths.json index (from RePoE). Callers holding an art path use
+// RequestPath/TextureByPath and need no index.
 #pragma once
 
 #include <string>
@@ -23,6 +20,14 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include <functional>
+#include <vector>
+
+// The worker's load step: the cached file, else `fetch` (which is then cached). Returns decoded RGBA
+// (free with FreeDecoded) or null. Only bytes that decode are kept on disk; a cache file that does
+// not decode is deleted so a later run fetches it again.
+unsigned char* IconLoadOrFetch(const std::wstring& cacheFile,
+                               const std::function<bool(std::vector<unsigned char>&)>& fetch, int* w, int* h);
 
 class IconManager {
 public:

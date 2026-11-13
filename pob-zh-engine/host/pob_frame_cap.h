@@ -1,31 +1,18 @@
 // How fast the POB window is allowed to draw.
 //
-// Upstream SimpleGraphic has exactly one brake on its frame loop: the swap
-// waiting for vsync. Measured on 2026-09-17 that brake does not hold:
-//
-//   * THE PASSIVE TREE NEVER STOPS. Every frame there differs from the last,
-//     so nothing is elided, and the swap did not block at all (0.07 ms per
-//     Swap): the loop ran as fast as Lua allowed, ~120 fps on a desktop CPU.
-//   * A STATIC PAGE STILL PRESENTS. The build list elided every single frame
-//     (0 redraws a second) and still blitted and presented 144 times a second,
-//     which alone cost 37% of an integrated GPU at 1440p.
-//
-// A user report (3060 Ti at 87% GPU for POB, CPU at 0.9%) is what started the
-// measurement; its exact cause was never reproduced, which is the point of
-// capping the rate: whatever makes one frame expensive on somebody's machine,
-// the total is now bounded by how many frames are allowed.
+// Upstream SimpleGraphic's only brake on its frame loop is the swap waiting for vsync, and it does not hold:
+//   * THE PASSIVE TREE NEVER STOPS: every frame differs, nothing is elided, and the swap did not block (0.07 ms),
+//     so the loop ran as fast as Lua allowed (~120 fps).
+//   * A STATIC PAGE STILL PRESENTS: the build list elided every frame yet blitted and presented 144 times a
+//     second (37% of an integrated GPU at 1440p).
+// Capping the rate bounds the total whatever makes a frame expensive on somebody's machine.
 //
 // Two rules, both pure functions below so --perf-selftest can check them:
-//
-//   1. A frame budget. Foreground (window focused) and background (unfocused
-//      but still drawing: cursor over it, a coroutine or subscript running)
-//      each have a fps cap, 0 = no cap. The frame loop sleeps off whatever is
-//      left of the budget after the frame.
-//   2. An elided frame is not presented, unless the picture must be refreshed
-//      anyway (size changed, a screenshot, ImGui content on screen) or a
-//      second has passed since the last present. A frame that was not
-//      presented did not wait for vsync either, so with no cap configured it
-//      is paced at the monitor refresh instead -- never a busy spin.
+//   1. A frame budget. Foreground and background (unfocused but still drawing) each have a fps cap, 0 = no cap;
+//      the loop sleeps off what is left of the budget.
+//   2. An elided frame is not presented, unless the picture must refresh anyway (size changed, a screenshot, ImGui
+//      content) or a second has passed since the last present. An unpresented frame did not wait for vsync either,
+//      so with no cap it is paced at the monitor refresh -- never a busy spin.
 #pragma once
 
 #include <string>
@@ -69,10 +56,8 @@ struct PresentInputs {
 // Should this frame be blitted and swapped?
 bool ShouldPresent(const PresentInputs& in);
 
-// Sleeps with sub-millisecond precision where the OS allows it (a
-// high-resolution waitable timer, Windows 10 1803+), otherwise with a 1 ms
-// timer period for the duration of the sleep. Plain Sleep() would round a
-// 16.6 ms budget up to the 15.6 ms tick and turn a 60 fps cap into 32.
+// Sleeps with sub-millisecond precision (high-resolution waitable timer, Windows 10 1803+), else with a 1 ms timer
+// period. Plain Sleep() would round a 16.6 ms budget up to the 15.6 ms tick and turn a 60 fps cap into 32.
 void PreciseSleep(double seconds);
 
 } // namespace PobFrameCap

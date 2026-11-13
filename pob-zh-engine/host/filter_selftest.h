@@ -1,8 +1,6 @@
-// Headless data-layer check for the filter editor (pob-zh.exe --filter-selftest):
-// parser round-trip, operator handling, document CRUD, disable/restore and
-// selection anchoring over synthetic filters. Prints a PASS/FAIL report to the
-// console, writes it next to the exe as filter_selftest.txt, and returns a
-// non-zero exit code on any failure.
+// Headless data-layer check for the filter editor (pob-zh.exe --filter-selftest): parser round-trip, operators,
+// document CRUD, disable/restore and selection anchoring over synthetic filters. Report goes to the console and
+// filter_selftest.txt next to the exe; non-zero exit on any failure.
 #pragma once
 
 #include <string>

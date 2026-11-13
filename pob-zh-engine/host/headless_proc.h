@@ -63,9 +63,8 @@ public:
 	// print). Kept so a failing self-test can show it.
 	std::string StrayOutput();
 
-	// --- pass-through mode (the new UI window) -------------------------------
-	// The WebView2 window does not want typed calls: the page speaks the wire
-	// format itself, so the host only forwards lines both ways.
+	// pass-through mode (the new UI window): the page speaks the wire format
+	// itself, so the host only forwards lines both ways.
 	//
 	// Writes one line (no newline) to the child's stdin. false = stdin closed.
 	bool SendRaw(const std::string& jsonLine);

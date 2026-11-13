@@ -7,6 +7,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shlobj.h>
+#include "win_util.h"
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 
@@ -23,56 +24,18 @@
 
 using nlohmann::ordered_json;
 
-// GitHub repo with GGG's official atlas tree export; updates ride on release
-// tags (plain "3.28.0" — the -ruthless/-atlas variants are other tree flavors).
+// GitHub repo with GGG's official atlas tree export; updates ride on release tags (plain "3.28.0"; -ruthless/-atlas are other flavors).
 static const wchar_t* kApiHost = L"api.github.com";
 static const wchar_t* kRawHost = L"raw.githubusercontent.com";
 static const wchar_t* kTagsPath = L"/repos/grindinggear/atlastree-export/tags?per_page=100";
 static const wchar_t* kRawBase = L"/grindinggear/atlastree-export/";
 
-// repoe-fork publishes the same tree with official Traditional-Chinese names
-// and stat text, keyed by the same node hashes.
+// repoe-fork publishes the same tree with official Traditional-Chinese names and stat text, keyed by the same node hashes.
 static const wchar_t* kRepoeHost = L"repoe-fork.github.io";
 static const wchar_t* kRepoeVersionPath = L"/version.txt";
 static const wchar_t* kRepoeTcAtlasPath = L"/Traditional%20Chinese/passive_skill_trees/Atlas.json";
 
-// ---- small helpers (same conventions as atlas_import.cpp) ---------------------
-
-static bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 30)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
-
-static bool write_file_utf8(const std::wstring& path, const std::string& content)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	DWORD written = 0;
-	bool ok = content.empty() ||
-		(WriteFile(h, content.data(), (DWORD)content.size(), &written, nullptr) && written == content.size());
-	CloseHandle(h);
-	return ok;
-}
-
-static std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
+// small helpers (same conventions as atlas_import.cpp)
 
 // "3.28.0" -> {3,28,0}; rejects anything with a suffix ("3.25.0-ruthless").
 static bool parse_semver(const std::string& s, std::tuple<int, int, int>* out)
@@ -120,24 +83,11 @@ static void remove_dir_with_sub(const std::wstring& dir, const wchar_t* sub)
 
 static void remove_cache_dir(const std::wstring& dir) { remove_dir_with_sub(dir, L"assets"); }
 
-static long long now_filetime()
-{
-	FILETIME ft{};
-	GetSystemTimeAsFileTime(&ft);
-	ULARGE_INTEGER u{ ft.dwLowDateTime, ft.dwHighDateTime };
-	return (long long)u.QuadPart;
-}
+// zh mapping generation. KEEP IN SYNC with tools/gen_atlas_zh.py (both must emit the same atlas_tree_zh.json schema).
 
-// ---- zh mapping generation ----------------------------------------------------
-// KEEP IN SYNC with tools/gen_atlas_zh.py (build-time snapshot generator);
-// both must emit the same atlas_tree_zh.json schema.
-
-// repoe-fork keeps the "Grants N Atlas Passive Skill Points" line in the
-// passive's skill_points field rather than stat_text, so statsEn ends up one
-// line longer than statsZh and the whole node then fails the equal-length
-// guard in atlas_i18n.cpp (every line shows English). Synthesise that trailing
-// line so the arrays align. KEEP IN SYNC with _align_atlas_points_line() in
-// tools/gen_atlas_zh.py.
+// repoe-fork keeps the "Grants N Atlas Passive Skill Points" line in skill_points, not stat_text, so statsEn is one
+// line longer than statsZh and the node fails the equal-length guard in atlas_i18n.cpp (all English). Synthesise
+// that trailing line. KEEP IN SYNC with _align_atlas_points_line() in tools/gen_atlas_zh.py.
 static void AlignAtlasPointsLine(ordered_json& n)
 {
 	if (!n.contains("statsEn") || !n.contains("statsZh")) return;
@@ -180,10 +130,8 @@ static std::vector<std::string> StatLineNums(const std::string& s)
 	return out;
 }
 
-// repoe-fork's stat_text order can differ from GGG's stats, pairing statsZh[i]
-// with the wrong statsEn[i] (the panel's value backfill then fails -> English).
-// Reorder statsZh by number signature. KEEP IN SYNC with _align_stats_zh() in
-// tools/gen_atlas_zh.py.
+// repoe-fork's stat_text order can differ from GGG's, pairing statsZh[i] with the wrong statsEn[i] (value backfill
+// fails -> English). Reorder statsZh by number signature. KEEP IN SYNC with _align_stats_zh() in tools/gen_atlas_zh.py.
 static void AlignStatsZhOrder(ordered_json& n)
 {
 	if (!n.contains("statsEn") || !n.contains("statsZh")) return;
@@ -287,10 +235,8 @@ bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& t
 			}
 			outNodes[std::to_string(id)] = std::move(n);
 
-			// Options of a multiple-choice node (3.30+): one entry per option,
-			// keyed by its effect id -- a passive id of its own, disjoint from
-			// the node ids, so repoe / the game files can join it the same way.
-			// No name: an option is only its lines.
+			// Options of a multiple-choice node (3.30+): one entry per option, keyed by its effect id (a passive id
+			// disjoint from node ids, so repoe / game files join it the same way). No name: an option is only its lines.
 			if (v.contains("variantEffects") && v["variantEffects"].is_array())
 				for (const auto& e : v["variantEffects"]) {
 					if (!e.is_object() || !e.contains("effect") || !e["effect"].is_number_integer()) continue;
@@ -312,11 +258,8 @@ bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& t
 		if (joined == 0)
 			return fail(u8"沒有任何節點能對上繁中資料（hash 完全不合），保留舊對照");
 
-		// Preserve season-official entries from the previous mapping ("fresh":
-		// zh patched from the season's own game files while repoe lagged). A
-		// repoe-only rebuild would otherwise wipe those lines and node names;
-		// wherever repoe now supplies its own zh, repoe wins and the marker is
-		// dropped (once repoe catches the season up, markers become inert).
+		// Preserve season-official entries from the previous mapping ("fresh": zh patched from the season's game files
+		// while repoe lagged); a repoe-only rebuild would wipe them. Where repoe now supplies zh, repoe wins and the marker is dropped.
 		std::set<std::string> freshOut, freshNamesOut;
 		bool prevProvisional = false;
 		{
@@ -414,12 +357,10 @@ bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& t
 	}
 }
 
-// ---- AtlasUpdater -------------------------------------------------------------
+// AtlasUpdater
 
-void AtlasUpdater::Init(const std::wstring& exeDir)
+void AtlasUpdater::loadRecord()
 {
-	exeDir_ = exeDir;
-
 	// version record (missing file = never updated -> any tag counts as new)
 	std::string content;
 	if (read_file_utf8(exeDir_ + L"Data\\atlas_version.json", content)) {
@@ -435,90 +376,6 @@ void AtlasUpdater::Init(const std::wstring& exeDir)
 			sha_.clear();
 			repoe_.clear();
 			lastCheckUtc_ = 0;
-		}
-	}
-
-	worker_ = std::thread(&AtlasUpdater::workerLoop, this);
-}
-
-void AtlasUpdater::Shutdown()
-{
-	if (worker_.joinable()) {
-		{
-			std::lock_guard<std::mutex> lk(cmdMx_);
-			stop_.store(true);
-		}
-		cmdCv_.notify_all();
-		worker_.join();
-	}
-}
-
-void AtlasUpdater::RequestCheck(bool force)
-{
-	if (!worker_.joinable()) return;
-	static const long long kDay = 24ll * 3600 * 10'000'000; // FILETIME is 100ns units
-	if (!force && lastCheckUtc_ > 0 && now_filetime() - lastCheckUtc_ < kDay)
-		return; // throttled: checked within the last day
-	{
-		std::lock_guard<std::mutex> lk(cmdMx_);
-		cmdQ_.push_back(Cmd::Check);
-	}
-	cmdCv_.notify_one();
-}
-
-void AtlasUpdater::StartUpdate()
-{
-	if (!worker_.joinable()) return;
-	{
-		std::lock_guard<std::mutex> lk(cmdMx_);
-		cmdQ_.push_back(Cmd::Update);
-	}
-	cmdCv_.notify_one();
-}
-
-AtlasUpdater::Status AtlasUpdater::Poll()
-{
-	std::lock_guard<std::mutex> lk(stMx_);
-	return st_;
-}
-
-void AtlasUpdater::AckReload()
-{
-	std::lock_guard<std::mutex> lk(stMx_);
-	st_.reloadPending = false;
-	st_.zhRefreshed = false;
-	st_.phase = AtlasUpdatePhase::Idle;
-	st_.message.clear();
-}
-
-void AtlasUpdater::setPhase(AtlasUpdatePhase p, const std::string& msg)
-{
-	std::lock_guard<std::mutex> lk(stMx_);
-	st_.phase = p;
-	st_.message = msg;
-}
-
-void AtlasUpdater::workerLoop()
-{
-	for (;;) {
-		Cmd cmd;
-		{
-			std::unique_lock<std::mutex> lk(cmdMx_);
-			cmdCv_.wait(lk, [&] { return stop_.load() || !cmdQ_.empty(); });
-			if (stop_.load()) break;
-			cmd = cmdQ_.front();
-			cmdQ_.pop_front();
-		}
-		std::string err;
-		if (cmd == Cmd::Check) {
-			if (!doCheck(&err)) {
-				// a failed background check stays quiet; retried next launch
-				// because lastCheckUtc is only persisted on success
-				setPhase(AtlasUpdatePhase::Idle, "");
-			}
-		} else {
-			if (!doUpdate(&err))
-				setPhase(AtlasUpdatePhase::Error, err);
 		}
 	}
 }
@@ -574,35 +431,38 @@ bool AtlasUpdater::doCheck(std::string* err)
 		st_.latestTag = latestTag;
 	}
 
+	AtlasUpdatePhase ph = AtlasUpdatePhase::UpToDate;
+	std::string msg; // stays empty when the zh rebuild failed: keep the old mapping, retry on a future check
+	bool zhRefreshed = false;
 	if (latestTag != tag_) {
-		setPhase(AtlasUpdatePhase::UpdateAvailable,
-			u8"發現新賽季輿圖資料 " + latestTag + (tag_.empty() ? "" : u8"（目前 " + tag_ + u8"）"));
+		ph = AtlasUpdatePhase::UpdateAvailable;
+		msg = u8"發現新賽季輿圖資料 " + latestTag + (tag_.empty() ? "" : u8"（目前 " + tag_ + u8"）");
 	} else if (!repoeVer.empty() && repoeVer != repoe_) {
 		// same tree, newer translations: rebuild the zh mapping in place
 		setPhase(AtlasUpdatePhase::Checking, u8"更新繁中對照資料中…");
 		std::string zhErr;
 		if (refreshZhMapping(latestTag, repoeVer, &zhErr)) {
 			repoe_ = repoeVer;
-			std::lock_guard<std::mutex> lk(stMx_);
-			st_.phase = AtlasUpdatePhase::UpToDate;
-			st_.message = u8"繁中對照已更新（repoe " + repoeVer + u8"）";
-			st_.zhRefreshed = true;
-		} else {
-			// keep the old mapping; retry on a future check
-			setPhase(AtlasUpdatePhase::UpToDate, "");
+			msg = u8"繁中對照已更新（repoe " + repoeVer + u8"）";
+			zhRefreshed = true;
 		}
 	} else {
-		setPhase(AtlasUpdatePhase::UpToDate, u8"輿圖資料已是最新（" + latestTag + u8"）");
+		msg = u8"輿圖資料已是最新（" + latestTag + u8"）";
 	}
 
-	lastCheckUtc_ = now_filetime();
+	// record first: Poll() readers treat the phase change as "check finished"
+	lastCheckUtc_ = DataUpdaterNowFiletime();
 	saveVersionRecord();
+	{
+		std::lock_guard<std::mutex> lk(stMx_);
+		st_.phase = ph;
+		st_.message = msg;
+		if (zhRefreshed) st_.zhRefreshed = true;
+	}
 	return true;
 }
 
-// Re-fetches the English data.json (for names/stats) plus the TC Atlas.json and
-// rebuilds Data/atlas_tree_zh.json. Used by the catch-up path when repoe-fork
-// publishes translations after a season update already happened.
+// Re-fetches the English data.json plus the TC Atlas.json and rebuilds Data/atlas_tree_zh.json (catch-up when repoe-fork publishes translations after a season update).
 bool AtlasUpdater::refreshZhMapping(const std::string& tag, const std::string& repoeVer, std::string* err)
 {
 	std::string dataJson;
@@ -686,8 +546,7 @@ bool AtlasUpdater::doUpdate(std::string* err)
 			std::vector<unsigned char> bytes;
 			std::wstring path = std::wstring(kRawBase) + widen(tag) + L"/assets/" + widen(base);
 			if (!raw.Get(path, bytes, err, &stop_)) return false;
-			std::string body((const char*)bytes.data(), bytes.size());
-			if (!write_file_utf8(dst, body))
+			if (!DataUpdaterWriteCacheFile(dst, bytes))
 				{ if (err) *err = u8"寫入圖集快取失敗: " + base; return false; }
 		}
 		done++;
@@ -722,10 +581,8 @@ bool AtlasUpdater::doUpdate(std::string* err)
 		}
 	}
 
-	// Register the season, make it active, and roll back to the newest two
-	// LEAGUES: every revision of the current league stays (3.29.0 alongside
-	// 3.29.1), the previous league keeps only its final revision, anything older
-	// has its folder deleted.
+	// Register the season, make it active, prune to the newest two LEAGUES: all revisions of the current league stay,
+	// the previous one keeps only its final revision, older folders are deleted.
 	int keptSeasons = 0;
 	{
 		AtlasVersionIndex idx;
@@ -734,11 +591,9 @@ bool AtlasUpdater::doUpdate(std::string* err)
 		e.tag = tag; e.sha = latestSha_; e.repoe = repoeVer;
 		idx.UpsertActive(e);
 		std::vector<std::string> dropped = idx.PruneSeasons(2);
-		idx.SetLastCheckUtc(now_filetime());
+		idx.SetLastCheckUtc(DataUpdaterNowFiletime());
 		if (!idx.Save(exeDir_)) {
-			// The files landed but the index did not: next launch the new season
-			// is on disk and invisible. Worth saying out loud -- it looks exactly
-			// like "the update did nothing".
+			// The files landed but the index did not: the new season is on disk and invisible; say so (looks like "the update did nothing").
 			PobLog::Error("atlas", u8"新賽季資料已下載，但 atlas_index.json 存檔失敗");
 		}
 		keptSeasons = (int)idx.Versions().size();
@@ -748,7 +603,7 @@ bool AtlasUpdater::doUpdate(std::string* err)
 
 	tag_ = tag;
 	sha_ = latestSha_;
-	lastCheckUtc_ = now_filetime();
+	lastCheckUtc_ = DataUpdaterNowFiletime();
 	saveVersionRecord();          // legacy record: keeps the daily-throttle state
 	remove_cache_dir(cacheDir);   // best-effort
 
@@ -773,7 +628,7 @@ void AtlasUpdater::saveVersionRecord()
 	write_file_utf8(exeDir_ + L"Data\\atlas_version.json", v.dump());
 }
 
-// ---- CLI wrappers -------------------------------------------------------------
+// CLI wrappers
 
 static void attach_parent_console()
 {

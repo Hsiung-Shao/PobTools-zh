@@ -90,7 +90,6 @@ public:
 	// enough -- the worker applies translation packs on its own schedule with
 	// nobody pressing anything, so the gate has to be here.
 	void SetTranslationUpdates(bool on) { transUpdates_.store(on); }
-	bool TranslationUpdatesEnabled() const { return transUpdates_.load(); }
 
 	// Main thread. The beta line: the app check reads the release LIST and takes
 	// the highest version of any kind, instead of releases/latest (which GitHub
@@ -101,7 +100,6 @@ public:
 	// button: the check runs on its own schedule.
 	// ⚠ The data line is untouched; both channels share the same data-<n>.
 	void SetBetaChannel(bool on) { betaChannel_.store(on); }
-	bool BetaChannelEnabled() const { return betaChannel_.load(); }
 
 	// Main thread. Valid in TransAvailable: apply the pending translation pack
 	// once, regardless of the setting above. Turning the setting off must not mean
@@ -134,7 +132,6 @@ public:
 	// the button is not enough — the worker does the translation update on its
 	// own schedule, with nobody pressing anything.
 	void SetHold(bool on) { hold_.store(on); }
-	bool IsHeld() const { return hold_.load(); }
 
 private:
 	friend int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly, bool allowBack);
@@ -168,6 +165,8 @@ private:
 		// Only the beta line can ever see one, and only so the prompt can say so:
 		// "new version available" for a test build is a half-truth.
 		bool appPrerelease = false;
+		long long appOrder = 0;            // AppVerKey's 4th field for appVer
+		long long localOrder = 0;          // beta line: this build's own tag's order, 0 = not on the list
 		// Data 線 (highest data-<n> among /releases)
 		std::string dataTag;               // "data-3" verbatim — NOT a semver
 		long long   dataSeq = -1;          // 3; -1 = none found
@@ -241,8 +240,11 @@ struct UpdatePlan {
 // allowBack: the user asked for this check with the beta line off. Only then is
 // an older stable release offered -- a background check never walks a build
 // backwards (a dev build is always "newer than stable").
-UpdatePlan PlanUpdates(bool hasAppAsset, std::tuple<int, int, int> remoteApp,
-                       std::tuple<int, int, int> localApp,
+// (major, minor, patch, order): order is 0 for a stable release and the GitHub
+// published_at (yyyymmddhhmmss) for a "X.Y.Z-beta-<hash>" one, so a beta sorts
+// after the stable release it follows and before the next one.
+using AppVerKey = std::tuple<int, int, int, long long>;
+UpdatePlan PlanUpdates(bool hasAppAsset, AppVerKey remoteApp, AppVerKey localApp,
                        bool hasDataAsset, long long remoteDataSeq, long long localDataSeq,
                        bool autoData, bool allowBack = false);
 

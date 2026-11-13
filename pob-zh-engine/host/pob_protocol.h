@@ -59,7 +59,7 @@ bool RegisterPobProtocol(const std::wstring& exePath, std::wstring* err = nullpt
 // True when afterwards no scheme points at this exe.
 bool UnregisterPobProtocol(const std::wstring& exePath, std::wstring* err = nullptr);
 
-// ---- a POB of the same game is already open (phase 2) ----------------------
+// a POB of the same game is already open
 
 // Window props, shared with the engine (ui_main.cpp) and the new interface
 // window (modern_ui_window.cpp).

@@ -13,8 +13,7 @@
 // invisible there; in English a continuation would silently produce
 // "the launcher.Use the button".
 //
-// Coverage: only releases from v1.0.0 on are translated (user ruling,
-// 2026-09-12). The older entries stay Chinese-only and the last line says so.
+// Coverage: only releases from v1.0.0 on are translated; older entries stay Chinese-only and the last line says so.
 // UPDATE THIS TOGETHER WITH changelog.h ON EVERY RELEASE.
 #pragma once
 

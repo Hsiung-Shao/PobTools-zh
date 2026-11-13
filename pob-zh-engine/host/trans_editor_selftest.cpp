@@ -28,6 +28,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "win_util.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -48,15 +49,6 @@ struct Report {
 	}
 	void line(const std::string& s) { text += s + "\n"; }
 };
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s((size_t)n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
 
 bool readAll(const std::wstring& p, std::string& out)
 {
@@ -170,7 +162,7 @@ int RunTransEditorSelftest(const std::wstring& exeDir)
 	Report rep;
 	rep.line("trans-editor selftest");
 
-	// ---- E1 add-entry notice ----------------------------------------------------
+	// E1 add-entry notice
 	{
 		EditorModel m = synth();
 		AddHint h;
@@ -231,7 +223,7 @@ int RunTransEditorSelftest(const std::wstring& exeDir)
 		              (first.empty() ? "" : ", first " + first));
 	}
 
-	// ---- E2 undo ------------------------------------------------------------------
+	// E2 undo
 	{
 		EditorModel m = synth();
 		UndoStack u;
@@ -264,7 +256,7 @@ int RunTransEditorSelftest(const std::wstring& exeDir)
 		rep.check("E2i the stack keeps at most kMax steps", big.Size() == UndoStack::kMax);
 	}
 
-	// ---- E3 checks --------------------------------------------------------------
+	// E3 checks
 	{
 		const std::string key = "^xE05030Life Regeneration^7 cannot be modified\nwhile you are Cursed";
 		TextChecks c = CheckTranslation(key, u8"^xe05030生命再生^7無法被修改\n當你受到詛咒時");
@@ -291,7 +283,7 @@ int RunTransEditorSelftest(const std::wstring& exeDir)
 		rep.check("E3i a bare caret or broken ^x is not a colour", ColourEscapes("50^ ^xZZ0000 ^5").size() == 1);
 	}
 
-	// ---- E4 fill / withdraw -------------------------------------------------------
+	// E4 fill / withdraw
 	{
 		EditorModel m = synth();
 		UndoStack u;
@@ -329,7 +321,7 @@ int RunTransEditorSelftest(const std::wstring& exeDir)
 		rep.check("E4h a single fill is one step with its mark", u.Size() == 1 && rows[2].filled && rows[2].filledFile == 1);
 	}
 
-	// ---- the scratch copy ---------------------------------------------------------
+	// the scratch copy
 	wchar_t tmpBuf[MAX_PATH] = L"";
 	GetTempPathW(MAX_PATH, tmpBuf);
 	const std::wstring root = std::wstring(tmpBuf) + L"pobtools_te_selftest_" + std::to_wstring(GetCurrentProcessId()) + L"\\";
@@ -352,7 +344,7 @@ int RunTransEditorSelftest(const std::wstring& exeDir)
 	}
 	rep.check("E5- scratch copy of poe1 / poe2 / launcher zh-rTW", copied && origHash.size() > 10, narrow(root));
 
-	// ---- E5 byte-exact saving -------------------------------------------------------
+	// E5 byte-exact saving
 	{
 		// every shipped dictionary file, saved unchanged, comes back byte for byte
 		int files = 0, same = 0;
@@ -466,7 +458,7 @@ int RunTransEditorSelftest(const std::wstring& exeDir)
 		}
 	}
 
-	// ---- E6 only modified -----------------------------------------------------------
+	// E6 only modified
 	{
 		EditorModel m = LoadModel(root + L"Data\\poe2\\", "zh-rTW");
 		UndoStack u;
@@ -492,7 +484,7 @@ int RunTransEditorSelftest(const std::wstring& exeDir)
 		rep.check("E6c undoing one: 2 modified, 1 dirty file", CountModified(m) == 2 && DirtyCount(m) == 1);
 	}
 
-	// ---- E7 the panel ---------------------------------------------------------------
+	// E7 the panel
 	{
 		// a second language for poe1, so a language switch has somewhere to go
 		const std::wstring xx = root + L"Data\\poe1\\xx-TEST\\";
@@ -555,7 +547,7 @@ int RunTransEditorSelftest(const std::wstring& exeDir)
 		delete p;
 	}
 
-	// ---- E8 the missing-strings scan ----------------------------------------------
+	// E8 the missing-strings scan
 	{
 		writeAll(root + L"translate_misses.log",
 		         "# untranslated strings (locale=zh-rTW)\n"
@@ -579,7 +571,7 @@ int RunTransEditorSelftest(const std::wstring& exeDir)
 		rep.check("E8c the tag is kept", mm.size() == 4 && mm[1].tag == "REV" && mm[2].tag == "FLAVOUR" && mm[3].tag == "PROPERTY");
 	}
 
-	// ---- clean up, and prove the real dictionaries were never touched -----------------
+	// clean up, and prove the real dictionaries were never touched
 	removeTree(root);
 	rep.check("E9a the scratch copy is gone", GetFileAttributesW(root.c_str()) == INVALID_FILE_ATTRIBUTES);
 	{

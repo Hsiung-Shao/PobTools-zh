@@ -11,12 +11,9 @@
 // record are each only overwritten after their replacement fully validated.
 #pragma once
 
-#include <atomic>
-#include <condition_variable>
-#include <deque>
-#include <mutex>
+#include "data_updater.h"
+
 #include <string>
-#include <thread>
 
 enum class AtlasUpdatePhase {
 	Idle,            // nothing to report (includes throttled-away checks)
@@ -29,56 +26,35 @@ enum class AtlasUpdatePhase {
 	Error,
 };
 
-class AtlasUpdater {
+struct AtlasUpdateStatus {
+	AtlasUpdatePhase phase = AtlasUpdatePhase::Idle;
+	std::string latestTag;          // set while UpdateAvailable/Downloading/...
+	std::string message;            // UTF-8 progress / result / error text
+	int filesDone = 0, filesTotal = 0; // Downloading progress
+	bool reloadPending = false;     // Done: tree (and maybe zh) changed on disk
+	bool zhRefreshed = false;       // only the zh mapping changed (no GL work)
+};
+
+// Init loads Data/atlas_version.json (also the daily-throttle record);
+// StartUpdate downloads + imports latestTag; AckReload also clears zhRefreshed.
+// Worker failures are not logged (check: back to Idle; update: Error).
+class AtlasUpdater : public DataUpdater<AtlasUpdatePhase, AtlasUpdateStatus> {
 public:
-	void Init(const std::wstring& exeDir);  // loads Data/atlas_version.json, starts the worker
-	void Shutdown();                        // cancels any transfer and joins the worker
-
-	// Main thread. Queues a version check; without force it is throttled to
-	// once per day (persisted in Data/atlas_version.json).
-	void RequestCheck(bool force);
-
-	// Main thread. Valid in UpdateAvailable/Error: downloads + imports latestTag.
-	void StartUpdate();
-
-	struct Status {
-		AtlasUpdatePhase phase = AtlasUpdatePhase::Idle;
-		std::string latestTag;          // set while UpdateAvailable/Downloading/...
-		std::string message;            // UTF-8 progress / result / error text
-		int filesDone = 0, filesTotal = 0; // Downloading progress
-		bool reloadPending = false;     // Done: tree (and maybe zh) changed on disk
-		bool zhRefreshed = false;       // only the zh mapping changed (no GL work)
-	};
-	Status Poll();                      // main thread, each frame: snapshot
-	void AckReload();                   // main thread: after handling reload/refresh
+	using Status = AtlasUpdateStatus;
 
 private:
 	friend int RunAtlasUpdateCli(const std::wstring& exeDir); // headless reuse of doCheck/doUpdate
 
-	enum class Cmd { Check, Update };
-	void workerLoop();
-	bool doCheck(std::string* err);     // worker
-	bool doUpdate(std::string* err);    // worker
+	void loadRecord() override;
+	bool doCheck(std::string* err) override;     // worker
+	bool doUpdate(std::string* err) override;    // worker
+	void ackExtra(Status& st) override { st.zhRefreshed = false; }
 	bool refreshZhMapping(const std::string& tag, const std::string& repoeVer, std::string* err);
 	void saveVersionRecord();
-
-	void setPhase(AtlasUpdatePhase p, const std::string& msg);
-
-	std::wstring exeDir_;
-	std::thread worker_;
-	std::atomic<bool> stop_{ false };
-
-	std::mutex cmdMx_;
-	std::condition_variable cmdCv_;
-	std::deque<Cmd> cmdQ_;
-
-	std::mutex stMx_;
-	Status st_;
 
 	// version record + check result cache (worker-thread only after Init)
 	std::string tag_, sha_, repoe_;
 	std::string latestTag_, latestSha_; // newest remote tag from the last doCheck
-	std::atomic<long long> lastCheckUtc_{ 0 }; // FILETIME (100ns units)
 };
 
 // Builds atlas_tree_zh.json inside destDir (trailing backslash, e.g. a season

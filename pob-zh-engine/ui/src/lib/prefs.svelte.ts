@@ -12,8 +12,6 @@ export const FONT_MAX = 18;
 
 export const THEMES = ["slate", "light", "contrast", "parchment"] as const;
 export type Theme = (typeof THEMES)[number];
-/** The accent presets the settings page offers ("" = the theme's own). */
-export const ACCENTS = ["#d8aa4b", "#5b9dff", "#4fbf7a", "#a77bff", "#e0645a", "#3fc1c9"] as const;
 
 export const DEFAULTS = { zoom: 100, fontSize: 13, theme: "slate" as Theme, accent: "", font: "" };
 /** The launcher's own defaults (launcher_config.h AppearanceConfig): no image, 50 % bright, solid panels. */

@@ -4,6 +4,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "win_util.h"
 
 #include <condition_variable>
 #include <deque>
@@ -30,15 +31,6 @@ void set_env_both(const wchar_t* var, const wchar_t* val)
 {
 	SetEnvironmentVariableW(var, val);
 	_wputenv_s(var, val);
-}
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
 }
 
 } // namespace

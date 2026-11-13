@@ -3,17 +3,13 @@
 #include <cstdint>
 
 struct ImVec4;
-// Declared at global scope on purpose: a `struct ImGuiStyle&` written inside
-// namespace PobUi would declare PobUi::ImGuiStyle, a brand new incomplete type
-// that has nothing to do with ImGui's.
+// Declared at global scope on purpose: inside namespace PobUi, `struct ImGuiStyle&` would declare a new PobUi::ImGuiStyle.
 struct ImGuiStyle;
 
 namespace PobUi {
 
-// Design-system colour tokens (PobTools design system, tokens.json), packed the
-// way IM_COL32 packs them (R in the low byte) so they can go straight into a draw
-// list. One value per meaning: the dozen hand-typed status colours that used to
-// be scattered through launcher_ui.cpp are these now.
+// Design-system colour tokens (tokens.json), packed like IM_COL32 (R in the low byte) so they go straight into a
+// draw list. One value per meaning.
 namespace Tok {
 constexpr std::uint32_t Rgb(unsigned r, unsigned g, unsigned b, unsigned a = 255)
 {
@@ -42,7 +38,7 @@ inline constexpr std::uint32_t WarningSoft   = Rgb(0x2a, 0x23, 0x12);
 inline constexpr std::uint32_t Danger        = Rgb(0xef, 0x69, 0x6f);
 inline constexpr std::uint32_t DangerSoft    = Rgb(0x2c, 0x15, 0x17);
 inline constexpr std::uint32_t DangerFill    = Rgb(0x65, 0x2b, 0x2f);
-inline constexpr std::uint32_t DangerFillHover = Rgb(0x85, 0x33, 0x39);  // PushDangerButton's hover
+inline constexpr std::uint32_t DangerFillHover = Rgb(0x85, 0x33, 0x39);
 inline constexpr std::uint32_t OnDanger      = Rgb(0xff, 0xeb, 0xec);
 inline constexpr std::uint32_t Update        = Rgb(0x81, 0x8c, 0xf8);
 inline constexpr std::uint32_t Scrim         = Rgb(0x00, 0x00, 0x00, 0xa0);
@@ -59,11 +55,11 @@ inline constexpr std::uint32_t TreeLinkOn    = Rgb(0x74, 0xca, 0xf4);
 inline constexpr std::uint32_t TreeAdd       = Rgb(0x66, 0xd3, 0x8f);
 inline constexpr std::uint32_t TreeRemove    = Rgb(0xef, 0x69, 0x6f);
 inline constexpr std::uint32_t TreeHit       = TreeNotable;
-// The two kinds the atlas planner lists beside keystones and notables (2026-10-08).
+// The two kinds the atlas planner lists beside keystones and notables.
 inline constexpr std::uint32_t TreeWormhole  = Rgb(0x8c, 0xcc, 0xf2);
 inline constexpr std::uint32_t TreeSmall     = Rgb(0xb8, 0xc2, 0xd1);
 // The game's eleven beam / minimap colour tokens and its rarity colours, as the
-// filter editor shows them (2026-10-09 design: FilterDetail palette).
+// filter editor shows them (FilterDetail palette).
 inline constexpr std::uint32_t FxRed         = Rgb(0xe0, 0x40, 0x40);
 inline constexpr std::uint32_t FxGreen       = Rgb(0x40, 0xc0, 0x60);
 inline constexpr std::uint32_t FxBlue        = Rgb(0x40, 0x80, 0xe0);
@@ -78,7 +74,7 @@ inline constexpr std::uint32_t FxBrown       = Rgb(0x80, 0x60, 0x40);
 inline constexpr std::uint32_t RarityMagic   = Rgb(0x88, 0x88, 0xff);
 inline constexpr std::uint32_t RarityRare    = Rgb(0xd6, 0xb5, 0x6a);
 inline constexpr std::uint32_t RarityUnique  = Rgb(0xaf, 0x60, 0x25);
-// The translation editor's source-file badges (2026-10-09 design, te.css .src.a-d):
+// The translation editor's source-file badges (te.css .src.a-d):
 // a file keeps its hue by a hash of its name.
 inline constexpr std::uint32_t SrcBlueBg     = Rgb(0x1e, 0x2a, 0x44);
 inline constexpr std::uint32_t SrcBlueFg     = Rgb(0x9f, 0xb8, 0xff);
@@ -90,9 +86,8 @@ inline constexpr std::uint32_t SrcAmberBg    = Rgb(0x3a, 0x2a, 0x1a);
 inline constexpr std::uint32_t SrcAmberFg    = Rgb(0xe8, 0xb5, 0x5b);
 } // namespace Tok
 
-// Node kinds on a passive-style canvas, and the one colour each is drawn and
-// listed in. Shared so the atlas planner and the timeless-jewel view cannot
-// drift apart again (each used to carry its own copy of the hues).
+// Node kinds on a passive-style canvas, and the one colour each is drawn and listed in. Shared so the atlas planner
+// and the timeless-jewel view cannot drift apart.
 enum class TreeKind { Keystone, Wormhole, Notable, Small, Socket };
 std::uint32_t TreeKindColor(TreeKind kind);
 
@@ -114,29 +109,16 @@ enum class StatusTone {
 
 void ApplyTheme(float scale, Density density = Density::Comfortable);
 
-// Fill a style from scratch, without touching the active one.
-//
-// Exists so a container can hold several densities at once and swap between them
-// per tab: an embedded tool draws at its own density inside a launcher drawn at
-// another. ApplyTheme cannot be used for that -- it ends in ScaleAllSizes, which
-// COMPOUNDS if applied to an already-scaled style, so calling it per frame would
-// grow every padding without bound.
-//
-// Two rules for swapping, both of which the tab body satisfies naturally:
-//   * only while the style-var stack is empty. PushStyleVar records the OLD value,
-//     so replacing the whole style underneath makes PopStyleVar restore garbage.
+// Fill a style from scratch, without touching the active one: lets a container swap densities per tab (an embedded
+// tool draws at its own density inside a launcher drawn at another). ApplyTheme cannot do this -- it ends in
+// ScaleAllSizes, which COMPOUNDS on an already-scaled style.
+// Swapping rules:
+//   * only while the style-var stack is empty (PushStyleVar records the OLD value; PopStyleVar would restore garbage).
 //   * only between widgets, never mid-window.
 void BuildStyle(::ImGuiStyle& out, float scale, Density density);
 
-void PushPrimaryButton();
-void PushDangerButton();
-void PopButtonStyle();
-
-// Glyph ranges every ImGui host adds to its body face on top of Default +
-// ChineseFull (+ Korean): the Arrows and Mathematical Operators blocks. Neither
-// is in ImGui's CJK table, so "≥ ≤ ⇐ →" used to come out of the atlas as '?'
-// whatever the font -- FZ_ZY and both Noto faces all carry ≥ / ≤ (the shipped
-// fonts are merged as fallbacks, so a gap in one is filled by another).
+// Glyph ranges every ImGui host adds to its body face on top of Default + ChineseFull (+ Korean): the Arrows and
+// Mathematical Operators blocks, which are not in ImGui's CJK table ("≥ ≤ ⇐ →" would come out as '?').
 // ImWchar is 16-bit in this build (static_assert in ui_theme.cpp).
 const unsigned short* SymbolGlyphRanges();
 

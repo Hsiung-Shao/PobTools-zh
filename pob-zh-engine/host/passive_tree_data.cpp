@@ -3,6 +3,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "win_util.h"
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 
@@ -12,25 +13,9 @@
 
 using nlohmann::ordered_json;
 
-// ---- file helpers (same conventions as atlas_tree_data.cpp) -----------------
+// file helpers (same conventions as atlas_tree_data.cpp)
 
-static bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 30)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
-
-// ---- json parsing -----------------------------------------------------------
+// json parsing
 
 static bool parse_sprite(const ordered_json& j, PtSprite& out)
 {
@@ -173,7 +158,7 @@ int PassiveTreeData::IndexOfId(int id) const
 	return -1;
 }
 
-// ---- selftest ---------------------------------------------------------------
+// selftest
 
 static void ptlog(FILE* f, const char* fmt, ...)
 {
@@ -208,6 +193,7 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 	std::string err;
 	if (!d.Load(exeDir, &err)) {
 		ptlog(rep, "[FAIL] load  %s\n", err.c_str());
+		ptlog(rep, "RESULT FAIL\n");
 		if (rep) fclose(rep);
 		return 1;
 	}
@@ -285,10 +271,9 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 		      std::to_string(zhLines) + "/" + std::to_string(lines));
 	}
 
-	// Timeless-jewel LUT coverage: every non-socket tree node id should appear in
-	// timeless_jewels.json's nodeIndex, else jewel search silently skips it (the
-	// jewel dataset ships from PoB and can lag a new league's tree). >=90% keeps
-	// the drift visible without failing on a handful of brand-new nodes.
+	// Timeless-jewel LUT coverage: every non-socket node id should appear in timeless_jewels.json's
+	// nodeIndex, else jewel search silently skips it (the dataset ships from PoB and can lag a new
+	// league's tree). >=90% keeps the drift visible without failing on a handful of new nodes.
 	{
 		TJDataset ds;
 		std::string terr;
@@ -307,6 +292,7 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 	}
 
 	ptlog(rep, "\n%d passed, %d failed\n", pass, fail);
+	ptlog(rep, fail == 0 ? "RESULT PASS\n" : "RESULT FAIL\n");
 	if (rep) fclose(rep);
 	return fail == 0 ? 0 : 1;
 }

@@ -1,26 +1,20 @@
-// PobTools atlas planner persistence: multi-build file schema (with silent
-// migration from the original single-build format), build export/import as
-// json or a clipboard share code, and small UI state (panel width).
-//
-// Pure data, no ImGui/GL. The build file keeps its original path
-// (PobTools/atlas_build_poe1.json) and is upgraded in place on first save.
+// PobTools atlas planner persistence: multi-build file schema (silent migration from the single-build format),
+// build export/import as json or a clipboard share code, and small UI state. Pure data, no ImGui/GL.
+// The build file keeps its path (PobTools/atlas_build_poe1.json) and is upgraded in place on first save.
 #pragma once
 
 #include <map>
 #include <string>
 #include <vector>
 
-// One astrolabe placed on one atlas quadrant. Lives here rather than in
-// atlas_astrolabes.h because it is a shape the SAVE FILE has: putting it the
-// other way round would make the persistence header depend on the catalogue
-// header while the catalogue's self-test depends on this one.
+// One astrolabe placed on one atlas quadrant. Lives here (not atlas_astrolabes.h) because it is a SAVE FILE shape;
+// the other way round would make this header depend on the catalogue header, whose self-test depends on this one.
 struct AstrolabePlacement {
 	std::string region; // AtlasRegions id: "NorthWest" / "NorthEast" / "SouthEast" / "SouthWest"
 	std::string id;     // "Metadata/Items/Currency/Astrolabe..."
 };
 
-// One 3.30 thread slot of the map device: a thread type and how many are
-// socketed. Lives here for the same reason as AstrolabePlacement.
+// One 3.30 thread slot of the map device: a thread type and how many are socketed (lives here like AstrolabePlacement).
 struct ThreadSlot {
 	std::string id;
 	int count = 1;
@@ -36,10 +30,8 @@ struct AtlasProfitItem {
 	double chaos = 0.0;
 };
 
-// A stretch of the stash revenue history (倉庫收益) bound to a project, so the
-// build carries what running it actually earned. Unlike mapPrice / cost this IS
-// part of the build: it goes through the export json and the share code --
-// sharing it is the point. All money in chaos; divineRate (at toUtc) converts.
+// A stretch of the stash revenue history (倉庫收益) bound to a project. Unlike mapPrice / cost this IS part of the
+// build (export json and share code carry it). All money in chaos; divineRate (at toUtc) converts.
 struct AtlasProfitRecord {
 	long long fromUtc = 0, toUtc = 0;
 	std::string league;
@@ -54,54 +46,39 @@ struct AtlasProfitRecord {
 	bool empty() const { return fromUtc <= 0 || toUtc <= fromUtc; }
 };
 
-// `notes`, `scarabs`, `targets`, `astrolabes` and `mapId` were all added after
-// the format shipped. All are written ONLY when non-empty, so a build that uses
-// none of them serializes byte-identically to what earlier versions produced,
-// and an older PobTools reading a newer file just ignores the extra keys. Keep
-// that property when adding further fields.
+// `notes`, `scarabs`, `targets`, `astrolabes` and `mapId` were added after the format shipped. All are written ONLY
+// when non-empty, so a build without them serializes byte-identically to earlier versions and older PobTools just
+// ignores extra keys. Keep that property when adding fields.
 struct AtlasBuildEntry {
 	std::string name;                  // UTF-8 display name
 	std::vector<int> alloc;            // GGG skill ids, start node excluded
 	std::string notes;                 // free-form project note (may contain newlines)
 	std::vector<std::string> scarabs;  // scarab Metadata ids, in placement order (max 5)
-	// 3.30 thread slots, in slot order (max 3). JSON key "threads":
-	// [{"id": "...", "n": 6}, ...]; written only when non-empty, shared through
-	// the export json and the share code like scarabs.
+	// 3.30 thread slots, in slot order (max 3). JSON key "threads": [{"id": "...", "n": 6}, ...]; written only
+	// when non-empty, shared like scarabs.
 	std::vector<ThreadSlot> threads;
-	// At most one per quadrant (the game refuses a second Shaped Region on a
-	// quadrant); serialized as an OBJECT keyed by quadrant so the document stays
-	// sparse and independent of quadrant ordering.
+	// At most one per quadrant (the game refuses a second Shaped Region); serialized as an OBJECT keyed by quadrant (sparse, order-independent).
 	std::vector<AstrolabePlacement> astrolabes;
 	std::string mapId;                 // the project's main map (WorldAreas.Id), "" = none
-	// The tier the project intends to RUN that map at, which is not the map's
-	// own tier: once a quadrant's Voidstone is socketed every map in it becomes
-	// T16. So this is the user's plan, stored independently of mapId, and the
-	// map picker is never filtered by it. 0 = unset, 99 = unique maps.
+	// The tier the project intends to RUN that map at (not the map's own tier: a socketed Voidstone makes every map
+	// in the quadrant T16). Independent of mapId; the picker is never filtered by it. 0 = unset, 99 = unique maps.
 	int mapTier = 0;
-	// Nodes the user picked deliberately, as GGG skill ids. Everything else in
-	// `alloc` is wiring the solver chose and may re-route freely (see
-	// atlas_optimize.h). Empty alongside a non-empty `alloc` means "saved
-	// before targets existed" and triggers the one-time migration prompt.
+	// Nodes the user picked deliberately (GGG skill ids); the rest of `alloc` is solver wiring that may re-route
+	// (atlas_optimize.h). Empty alongside a non-empty `alloc` = "saved before targets existed" -> one-time migration prompt.
 	std::vector<int> targets;
-	// Nodes the user ruled out; the solver routes around them. Kept so a
-	// planning session can be resumed instead of re-marked from scratch.
+	// Nodes the user ruled out; the solver routes around them (kept so a planning session can resume).
 	std::vector<int> blocked;
 	// Picked options of multiple-choice nodes (3.30+): node id -> effect id.
 	// Part of the build, so it travels through the export json and share code.
 	std::map<int, int> variants;
-	// What the player pays for one map of this project, in chaos (the 收益
-	// tab's cost card; poe.ninja no longer prices regular maps). 0 = unset.
-	// A market price, not part of the build: written to the build file only,
-	// never into the export json or the share code.
+	// What the player pays for one map of this project, in chaos (the 收益 tab's cost card). 0 = unset.
+	// A market price, not part of the build: build file only, never the export json or share code.
 	double mapPrice = 0.0;
-	// What the player PAID for this project's map-device items, item id ->
-	// chaos per unit. A bulk buyer presses 「記錄目前市價」 once; a batch buyer
-	// types each price. Same rules as mapPrice: build file only, written only
-	// when set. costRecordedUtc = when the market was last recorded (0 = never).
+	// What the player PAID for this project's map-device items, item id -> chaos per unit. Same rules as mapPrice
+	// (build file only, written when set). costRecordedUtc = when the market was last recorded (0 = never).
 	std::map<std::string, double> costPrices;
 	long long costRecordedUtc = 0;
-	// How many maps the player plans to run: the cost card shows the whole
-	// plan's cost. Same rules as mapPrice (build file only, written when > 0).
+	// How many maps the player plans to run (the cost card shows the whole plan). Same rules as mapPrice (written when > 0).
 	int plannedMaps = 0;
 	// Shared with the build (write_extras): see AtlasProfitRecord.
 	AtlasProfitRecord profit;
@@ -114,15 +91,11 @@ struct AtlasBuildFile {
 
 	static std::wstring PathOf(const std::wstring& exeDir);
 
-	// Load resets to a single empty "預設" build when the file is missing or
-	// invalid (and returns false); parsed content only replaces the members
-	// when fully valid.
+	// Load resets to a single empty "預設" build when the file is missing or invalid (returns false); parsed content replaces members only when fully valid.
 	bool Load(const std::wstring& exeDir);
 	bool Save(const std::wstring& exeDir) const;
 
-	// String-level codec, selftest-friendly. ParseDoc accepts both the current
-	// multi-build schema and the legacy {version, alloc[]} single-build file
-	// (migrated into builds[0] = "預設").
+	// String-level codec. ParseDoc accepts the multi-build schema and the legacy {version, alloc[]} file (migrated into builds[0] = "預設").
 	bool ParseDoc(const std::string& json);
 	std::string SerializeDoc() const;
 
@@ -142,8 +115,7 @@ bool AtlasParseExportJson(const std::string& json, AtlasBuildEntry* out, std::st
 std::string AtlasBuildShareCode(const AtlasBuildEntry& b, const std::string& treeVersion);
 bool AtlasParseShareCode(const std::string& code, AtlasBuildEntry* out, std::string* err);
 
-// Planner UI state (PobTools/atlas_ui.json). panelW is in logical pixels
-// (unscaled); 0 means "use the default responsive width".
+// Planner UI state (PobTools/atlas_ui.json). panelW is in unscaled logical pixels; 0 = default responsive width.
 struct AtlasUiState {
 	float panelW = 0.0f;
 	std::string season;   // last atlas season the user viewed (e.g. "3.29.0"); "" = default active

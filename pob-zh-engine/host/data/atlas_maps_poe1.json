@@ -1,7 +1,7 @@
 {
  "format": "pobtools-atlas-maps",
  "game": "poe1",
- "source": "GGPK 3.29.0.4.2",
+ "source": "GGPK 3.29.0.4.2 + 3.30 patch notes (31 maps removed, 31 re-added as provisional: names/art from 3.29 GGPK, tier/region unknown until the 3.30 GGPK)",
  "series": "Deepwater",
  "tierColumn": "AbyssalTier",
  "maps": [
@@ -39,17 +39,6 @@
    "art": "Art/2DItems/Maps/Atlas2Maps/New/TropicalIsland"
   },
   {
-   "id": "MapWorldsIvoryTemple",
-   "enArea": "Ivory Temple",
-   "zhArea": "象牙神殿",
-   "tier": 13,
-   "region": "SouthWest",
-   "kind": "normal",
-   "enItem": "Ivory Temple Map",
-   "zhItem": "象牙神殿",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/IvoryTemple"
-  },
-  {
    "id": "MapWorldsExcavation",
    "enArea": "Excavation",
    "zhArea": "挖掘場",
@@ -81,17 +70,6 @@
    "enItem": "Caldera Map",
    "zhItem": "火山炎口",
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Abyss"
-  },
-  {
-   "id": "MapWorldsTortureChamber",
-   "enArea": "Primordial Blocks",
-   "zhArea": "血腥陣地",
-   "tier": 5,
-   "region": "NorthWest",
-   "kind": "normal",
-   "enItem": "Primordial Blocks Map",
-   "zhItem": "血腥陣地",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/PrimevalRuins"
   },
   {
    "id": "MapWorldsCoralRuins",
@@ -149,17 +127,6 @@
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Cage"
   },
   {
-   "id": "MapWorldsBazaar",
-   "enArea": "Bazaar",
-   "zhArea": "遠古市集",
-   "tier": 4,
-   "region": "NorthEast",
-   "kind": "normal",
-   "enItem": "Bazaar Map",
-   "zhItem": "遠古市集",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Bazaar"
-  },
-  {
    "id": "MapWorldsGraveyard",
    "enArea": "Graveyard",
    "zhArea": "墮影墓場",
@@ -171,17 +138,6 @@
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Graveyard"
   },
   {
-   "id": "MapWorldsInfestedValley",
-   "enArea": "Infested Valley",
-   "zhArea": "病疫林谷",
-   "tier": 15,
-   "region": "NorthWest",
-   "kind": "normal",
-   "enItem": "Infested Valley Map",
-   "zhItem": "病疫林谷",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Infestation"
-  },
-  {
    "id": "MapWorldsBelfry",
    "enArea": "Belfry",
    "zhArea": "雲頂鐘樓",
@@ -191,17 +147,6 @@
    "enItem": "Belfry Map",
    "zhItem": "雲頂鐘樓",
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Belfry"
-  },
-  {
-   "id": "MapWorldsCourthouse",
-   "enArea": "Courthouse",
-   "zhArea": "失序教院",
-   "tier": 4,
-   "region": "SouthWest",
-   "kind": "normal",
-   "enItem": "Courthouse Map",
-   "zhItem": "失序教院",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Courthouse"
   },
   {
    "id": "MapWorldsTerrace",
@@ -246,17 +191,6 @@
    "enItem": "Colonnade Map",
    "zhItem": "激戰柱廊",
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Colonnade"
-  },
-  {
-   "id": "MapWorldsCells",
-   "enArea": "Cells",
-   "zhArea": "幽魂監牢",
-   "tier": 1,
-   "region": "NorthEast",
-   "kind": "normal",
-   "enItem": "Cells Map",
-   "zhItem": "幽魂監牢",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Cells"
   },
   {
    "id": "MapWorldsDesertSpring",
@@ -325,28 +259,6 @@
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Channel"
   },
   {
-   "id": "MapWorldsArsenal",
-   "enArea": "Arsenal",
-   "zhArea": "古兵工廠",
-   "tier": 16,
-   "region": "NorthEast",
-   "kind": "normal",
-   "enItem": "Arsenal Map",
-   "zhItem": "古兵工廠",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Arsenal"
-  },
-  {
-   "id": "MapWorldsWaterways",
-   "enArea": "Waterways",
-   "zhArea": "危機水道",
-   "tier": 10,
-   "region": "NorthEast",
-   "kind": "normal",
-   "enItem": "Waterways Map",
-   "zhItem": "危機水道",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Waterways"
-  },
-  {
    "id": "MapWorldsAridLake",
    "enArea": "Arid Lake",
    "zhArea": "乾枯湖岸",
@@ -391,17 +303,6 @@
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Baths"
   },
   {
-   "id": "MapWorldsGhetto",
-   "enArea": "Ghetto",
-   "zhArea": "赤貧居所",
-   "tier": 3,
-   "region": "SouthEast",
-   "kind": "normal",
-   "enItem": "Ghetto Map",
-   "zhItem": "赤貧居所",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Ghetto"
-  },
-  {
    "id": "MapWorldsHauntedMansion",
    "enArea": "Haunted Mansion",
    "zhArea": "幽魂宅邸",
@@ -411,17 +312,6 @@
    "enItem": "Haunted Mansion Map",
    "zhItem": "幽魂宅邸",
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Chambers"
-  },
-  {
-   "id": "MapWorldsDarkForest",
-   "enArea": "Dark Forest",
-   "zhArea": "夜語幽林",
-   "tier": 12,
-   "region": "NorthWest",
-   "kind": "normal",
-   "enItem": "Dark Forest Map",
-   "zhItem": "夜語幽林",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/DarkForest"
   },
   {
    "id": "MapWorldsPlateau",
@@ -466,17 +356,6 @@
    "enItem": "Arachnid Nest Map",
    "zhItem": "異蛛巢穴",
    "art": "Art/2DItems/Maps/Atlas2Maps/New/ArachnidNest"
-  },
-  {
-   "id": "MapWorldsGardens",
-   "enArea": "Gardens",
-   "zhArea": "迷宮花園",
-   "tier": 4,
-   "region": "SouthWest",
-   "kind": "normal",
-   "enItem": "Gardens Map",
-   "zhItem": "迷宮花園",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Terrace"
   },
   {
    "id": "MapWorldsBurialChambers",
@@ -556,17 +435,6 @@
    "art": "Art/2DItems/Maps/Atlas2Maps/New/ColdRiver"
   },
   {
-   "id": "MapWorldsToxicSewer",
-   "enArea": "Toxic Sewer",
-   "zhArea": "腐敗下水道",
-   "tier": 10,
-   "region": "SouthWest",
-   "kind": "normal",
-   "enItem": "Toxic Sewer Map",
-   "zhItem": "腐敗下水道",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Sewer"
-  },
-  {
    "id": "MapWorldsColosseum",
    "enArea": "Colosseum",
    "zhArea": "大決鬥場",
@@ -578,17 +446,6 @@
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Colosseum"
   },
   {
-   "id": "MapWorldsForkingRiver",
-   "enArea": "Forking River",
-   "zhArea": "岔河",
-   "tier": 15,
-   "region": "SouthEast",
-   "kind": "normal",
-   "enItem": "Forking River Map",
-   "zhItem": "岔河",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/ForkingRiver"
-  },
-  {
    "id": "MapWorldsCrystalOre",
    "enArea": "Crystal Ore",
    "zhArea": "紫晶礦山",
@@ -598,17 +455,6 @@
    "enItem": "Crystal Ore Map",
    "zhItem": "紫晶礦山",
    "art": "Art/2DItems/Maps/Atlas2Maps/New/CrystalOre"
-  },
-  {
-   "id": "MapWorldsFrozenCabins",
-   "enArea": "Frozen Cabins",
-   "zhArea": "凍原小屋",
-   "tier": 3,
-   "region": "NorthEast",
-   "kind": "normal",
-   "enItem": "Frozen Cabins Map",
-   "zhItem": "凍原小屋",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/FrozenCabins"
   },
   {
    "id": "MapWorldsCore",
@@ -633,17 +479,6 @@
    "art": "Art/2DItems/Maps/Atlas2Maps/New/OvergrownShrine"
   },
   {
-   "id": "MapWorldsVault",
-   "enArea": "Vault",
-   "zhArea": "魔金寶庫",
-   "tier": 9,
-   "region": "NorthEast",
-   "kind": "normal",
-   "enItem": "Vault Map",
-   "zhItem": "魔金寶庫",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Vault"
-  },
-  {
    "id": "MapWorldsRamparts",
    "enArea": "Ramparts",
    "zhArea": "濱海堡壘",
@@ -653,17 +488,6 @@
    "enItem": "Ramparts Map",
    "zhItem": "濱海堡壘",
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Ramparts"
-  },
-  {
-   "id": "MapWorldsFloodedMine",
-   "enArea": "Flooded Mine",
-   "zhArea": "洪災礦坑",
-   "tier": 4,
-   "region": "NorthEast",
-   "kind": "normal",
-   "enItem": "Flooded Mine Map",
-   "zhItem": "洪災礦坑",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Cavern"
   },
   {
    "id": "MapWorldsCitySquare",
@@ -710,39 +534,6 @@
    "art": "Art/2DItems/Maps/Atlas2Maps/New/VaalPyramid"
   },
   {
-   "id": "MapWorldsBrambleValley",
-   "enArea": "Bramble Valley",
-   "zhArea": "荊棘谷",
-   "tier": 13,
-   "region": "NorthEast",
-   "kind": "normal",
-   "enItem": "Bramble Valley Map",
-   "zhItem": "荊棘谷",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Bramblefall"
-  },
-  {
-   "id": "MapWorldsForbiddenWoods",
-   "enArea": "Forbidden Woods",
-   "zhArea": "禁忌之森",
-   "tier": 1,
-   "region": "NorthWest",
-   "kind": "normal",
-   "enItem": "Forbidden Woods Map",
-   "zhItem": "禁忌之森",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/ForbiddenWoods"
-  },
-  {
-   "id": "MapWorldsShipyard",
-   "enArea": "Shipyard",
-   "zhArea": "熾炎船塢",
-   "tier": 6,
-   "region": "NorthWest",
-   "kind": "normal",
-   "enItem": "Shipyard Map",
-   "zhItem": "熾炎船塢",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Shipyard"
-  },
-  {
    "id": "MapWorldsMesa",
    "enArea": "Mesa",
    "zhArea": "平頂荒漠",
@@ -752,39 +543,6 @@
    "enItem": "Mesa Map",
    "zhItem": "平頂荒漠",
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Mesa"
-  },
-  {
-   "id": "MapWorldsAlleyways",
-   "enArea": "Alleyways",
-   "zhArea": "危城巷弄",
-   "tier": 4,
-   "region": "NorthWest",
-   "kind": "normal",
-   "enItem": "Alleyways Map",
-   "zhItem": "危城巷弄",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Alleyways"
-  },
-  {
-   "id": "MapWorldsAtoll",
-   "enArea": "Atoll",
-   "zhArea": "濱海山丘",
-   "tier": 10,
-   "region": "NorthWest",
-   "kind": "normal",
-   "enItem": "Atoll Map",
-   "zhItem": "濱海山丘",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Atoll"
-  },
-  {
-   "id": "MapWorldsFoundry",
-   "enArea": "Foundry",
-   "zhArea": "鍊金房",
-   "tier": 11,
-   "region": "NorthEast",
-   "kind": "normal",
-   "enItem": "Foundry Map",
-   "zhItem": "鍊金房",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/ThaumaturgyDungeon"
   },
   {
    "id": "MapWorldsTribunal",
@@ -809,17 +567,6 @@
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Cemetery"
   },
   {
-   "id": "MapWorldsLair",
-   "enArea": "Lair",
-   "zhArea": "餓獸巢穴",
-   "tier": 10,
-   "region": "NorthWest",
-   "kind": "normal",
-   "enItem": "Lair Map",
-   "zhItem": "餓獸巢穴",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Lair"
-  },
-  {
    "id": "MapWorldsJungleValley",
    "enArea": "Jungle Valley",
    "zhArea": "劇毒林谷",
@@ -829,17 +576,6 @@
    "enItem": "Jungle Valley Map",
    "zhItem": "劇毒林谷",
    "art": "Art/2DItems/Maps/Atlas2Maps/New/JungleValley"
-  },
-  {
-   "id": "MapWorldsArachnidTomb",
-   "enArea": "Arachnid Tomb",
-   "zhArea": "異蛛墓塚",
-   "tier": 14,
-   "region": "SouthEast",
-   "kind": "normal",
-   "enItem": "Arachnid Tomb Map",
-   "zhItem": "異蛛墓塚",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Arachnid"
   },
   {
    "id": "MapWorldsPalace",
@@ -862,28 +598,6 @@
    "enItem": "Siege Map",
    "zhItem": "禁斷圍城",
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Boulevard"
-  },
-  {
-   "id": "MapWorldsStagnation",
-   "enArea": "Stagnation",
-   "zhArea": "淤塞水道",
-   "tier": 11,
-   "region": "SouthWest",
-   "kind": "normal",
-   "enItem": "Stagnation Map",
-   "zhItem": "淤塞水道",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Stagnation"
-  },
-  {
-   "id": "MapWorldsOrchard",
-   "enArea": "Orchard",
-   "zhArea": "密林果園",
-   "tier": 11,
-   "region": "SouthEast",
-   "kind": "normal",
-   "enItem": "Orchard Map",
-   "zhItem": "密林果園",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Orchard"
   },
   {
    "id": "MapWorldsGrotto",
@@ -985,17 +699,6 @@
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Malformation"
   },
   {
-   "id": "MapWorldsPier",
-   "enArea": "Pier",
-   "zhArea": "怒浪之港",
-   "tier": 6,
-   "region": "NorthEast",
-   "kind": "normal",
-   "enItem": "Pier Map",
-   "zhItem": "怒浪之港",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Pier"
-  },
-  {
    "id": "MapWorldsTower",
    "enArea": "Tower",
    "zhArea": "闇獄尖塔",
@@ -1018,17 +721,6 @@
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Basilica"
   },
   {
-   "id": "MapWorldsPlaza",
-   "enArea": "Plaza",
-   "zhArea": "廣場",
-   "tier": 12,
-   "region": "NorthWest",
-   "kind": "normal",
-   "enItem": "Plaza Map",
-   "zhItem": "廣場",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Plaza"
-  },
-  {
    "id": "MapWorldsVolcano",
    "enArea": "Volcano",
    "zhArea": "火山炎域",
@@ -1038,17 +730,6 @@
    "enItem": "Volcano Map",
    "zhItem": "火山炎域",
    "art": "Art/2DItems/Maps/Atlas2Maps/New/Volcano"
-  },
-  {
-   "id": "MapWorldsEstuary",
-   "enArea": "Estuary",
-   "zhArea": "熔火岩灘",
-   "tier": 1,
-   "region": "SouthEast",
-   "kind": "normal",
-   "enItem": "Estuary Map",
-   "zhItem": "熔火岩灘",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Estuary"
   },
   {
    "id": "MapWorldsPit",
@@ -1071,28 +752,6 @@
    "enItem": "Mineral Pools Map",
    "zhItem": "濕地礦山",
    "art": "Art/2DItems/Maps/Atlas2Maps/New/MineralPools"
-  },
-  {
-   "id": "MapWorldsChateau",
-   "enArea": "Chateau",
-   "zhArea": "古堡",
-   "tier": 1,
-   "region": "SouthWest",
-   "kind": "normal",
-   "enItem": "Chateau Map",
-   "zhItem": "古堡",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Chateau"
-  },
-  {
-   "id": "MapWorldsBeach",
-   "enArea": "Beach",
-   "zhArea": "白沙灘頭",
-   "tier": 13,
-   "region": "NorthEast",
-   "kind": "normal",
-   "enItem": "Beach Map",
-   "zhItem": "白沙灘頭",
-   "art": "Art/2DItems/Maps/Atlas2Maps/New/Beach"
   },
   {
    "id": "MapWorldsPhantasmagoria",
@@ -1500,6 +1159,378 @@
    "enItem": "Death and Taxes",
    "zhItem": "亡者之財",
    "art": "Art/2DItems/Maps/DeathandTaxes"
+  },
+  {
+   "id": "MapWorldsAcademy",
+   "enArea": "Academy",
+   "zhArea": "惡靈學院",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Academy Map",
+   "zhItem": "惡靈學院",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Academy",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsAncientCity",
+   "enArea": "Ancient City",
+   "zhArea": "遠古危城",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Ancient City Map",
+   "zhItem": "遠古危城",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/VaalCity",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsArmoury",
+   "enArea": "Armoury",
+   "zhArea": "軍械庫",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Armoury Map",
+   "zhItem": "軍械庫",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Armory",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsBarrows",
+   "enArea": "Barrows",
+   "zhArea": "熱林塚墓",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Barrows Map",
+   "zhItem": "熱林塚墓",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Barrows",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsBoneCrypt",
+   "enArea": "Bone Crypt",
+   "zhArea": "骨跡陵墓",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Bone Crypt Map",
+   "zhItem": "骨跡陵墓",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Catacomb",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsCarcass",
+   "enArea": "Carcass",
+   "zhArea": "惡臭屍域",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Carcass Map",
+   "zhItem": "惡臭屍域",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Carcass",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsCastleRuins",
+   "enArea": "Castle Ruins",
+   "zhArea": "遺跡廢墟",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Castle Ruins Map",
+   "zhItem": "遺跡廢墟",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/CastleRuins",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsCoves",
+   "enArea": "Coves",
+   "zhArea": "疾風峽灣",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Coves Map",
+   "zhItem": "疾風峽灣",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Coves",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsCrimsonTemple",
+   "enArea": "Crimson Temple",
+   "zhArea": "緋紅神殿",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Crimson Temple Map",
+   "zhItem": "緋紅神殿",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Sanctuary",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsCursedCrypt",
+   "enArea": "Cursed Crypt",
+   "zhArea": "惡咒陵墓",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Cursed Crypt Map",
+   "zhItem": "惡咒陵墓",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Crypt",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsDefiledCathedral",
+   "enArea": "Defiled Cathedral",
+   "zhArea": "不潔教堂",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Defiled Cathedral Map",
+   "zhItem": "不潔教堂",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/DefiledCathedral",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsDig",
+   "enArea": "Dig",
+   "zhArea": "違禁掘坑",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Dig Map",
+   "zhItem": "違禁掘坑",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Dig",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsDungeon",
+   "enArea": "Dungeon",
+   "zhArea": "禁魂炎獄",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Dungeon Map",
+   "zhItem": "禁魂炎獄",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Dungeon",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsMaze",
+   "enArea": "Maze",
+   "zhArea": "冥神之域",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Maze Map",
+   "zhItem": "冥神之域",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Maze",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsMoonTemple",
+   "enArea": "Moon Temple",
+   "zhArea": "嬋娟神殿",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Moon Temple Map",
+   "zhItem": "嬋娟神殿",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/LunarisTemple",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsMudGeyser",
+   "enArea": "Mud Geyser",
+   "zhArea": "陰晦泥灘",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Mud Geyser Map",
+   "zhItem": "陰晦泥灘",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/MudGeyser",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsNecropolis",
+   "enArea": "Necropolis",
+   "zhArea": "魔影墓場",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Necropolis Map",
+   "zhItem": "魔影墓場",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Necropolis",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsOvergrownRuin",
+   "enArea": "Overgrown Ruin",
+   "zhArea": "長草遺跡",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Overgrown Ruin Map",
+   "zhItem": "長草遺跡",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/OvergrownRuin",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsPen",
+   "enArea": "Pen",
+   "zhArea": "穢陰獄牢",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Pen Map",
+   "zhItem": "穢陰獄牢",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Pen",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsPeninsula",
+   "enArea": "Peninsula",
+   "zhArea": "乾潮林地",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Peninsula Map",
+   "zhItem": "乾潮林地",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/DryPeninsula",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsRacecourse_",
+   "enArea": "Racecourse",
+   "zhArea": "古競速場",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Racecourse Map",
+   "zhItem": "古競速場",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Racecourse",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsScriptorium",
+   "enArea": "Scriptorium",
+   "zhArea": "墓影書坊",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Scriptorium Map",
+   "zhItem": "墓影書坊",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Scriptorium",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsSepulchre",
+   "enArea": "Sepulchre",
+   "zhArea": "陰暗墓塚",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Sepulchre Map",
+   "zhItem": "陰暗墓塚",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Sepulchre",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsShore",
+   "enArea": "Shore",
+   "zhArea": "暮光海灘",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Shore Map",
+   "zhItem": "暮光海灘",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Shore",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsSpiderForest",
+   "enArea": "Spider Forest",
+   "zhArea": "巨蛛之林",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Spider Forest Map",
+   "zhItem": "巨蛛之林",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/SpiderForest",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsThicket",
+   "enArea": "Thicket",
+   "zhArea": "驚懼樹叢",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Thicket Map",
+   "zhItem": "驚懼樹叢",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Thicket",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsUndergroundRiver",
+   "enArea": "Underground River",
+   "zhArea": "地底之河",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Underground River Map",
+   "zhItem": "地底之河",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/UndergroundRiver",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsUndergroundSea",
+   "enArea": "Underground Sea",
+   "zhArea": "濱海幽穴",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Underground Sea Map",
+   "zhItem": "濱海幽穴",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/UndergroundSea",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsVilla",
+   "enArea": "Villa",
+   "zhArea": "魅影別墅",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Villa Map",
+   "zhItem": "魅影別墅",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Villa",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsWastePool",
+   "enArea": "Waste Pool",
+   "zhArea": "死寂泥溝",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Waste Pool Map",
+   "zhItem": "死寂泥溝",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/WastePool",
+   "provisional": true
+  },
+  {
+   "id": "MapWorldsWasteland",
+   "enArea": "Wasteland",
+   "zhArea": "荒地",
+   "tier": 0,
+   "region": "",
+   "kind": "normal",
+   "enItem": "Wasteland Map",
+   "zhItem": "荒地",
+   "art": "Art/2DItems/Maps/Atlas2Maps/New/Wasteland",
+   "provisional": true
   }
  ]
 }

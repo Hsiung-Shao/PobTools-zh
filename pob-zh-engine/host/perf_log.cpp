@@ -234,7 +234,7 @@ void Recorder::CloseSecond(const ProcStats& ps)
 	const long drawn = frames - sec_.reason[DrawElided];
 	const bool gpuOk = gpuSupported_ && sec_.gpuSamples > 0 && !sec_.gpuDisjoint;
 
-	// ---- the SEC line ----
+	// the SEC line
 	std::string l = "SEC " + Stamp() + " page=" + PageName(state_) + " focus=" + FocusName(state_);
 	if (state_.popups > 0 || state_.dropdown) l += " popups=" + std::to_string(state_.popups) + (state_.dropdown ? "+menu" : "");
 	if (state_.minimized) l += " minimized";
@@ -308,7 +308,7 @@ void Recorder::CloseSecond(const ProcStats& ps)
 	if (state_.texAsync > 0) l += " tex_loading=" + std::to_string(state_.texAsync);
 	Emit(l);
 
-	// ---- fold into the page+state group ----
+	// fold into the page+state group
 	Group& g = groups_[state_.GroupKey()];
 	g.seconds += el;
 	g.frames += frames;
@@ -386,7 +386,7 @@ void Recorder::Finish()
 	}
 }
 
-// ---- global, file-backed ---------------------------------------------------------
+// global, file-backed
 
 namespace {
 

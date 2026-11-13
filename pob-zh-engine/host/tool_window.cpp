@@ -35,16 +35,13 @@ static bool g_toolRedraw = true;
 
 namespace {
 
-// The launcher's sizes (launcher_ui.cpp), so a tool looks the same as its own
-// window and as a launcher tab: the design system's 16 px body is 19 px here,
-// and every widget size goes through PobUi::D() on that 19/16 ratio.
+// The launcher's sizes (launcher_ui.cpp): the design's 16 px body is 19 px here, and every widget size goes through PobUi::D() on that ratio.
 const float kFontSize = 19.0f;
 const float kSmallFontSize = 15.0f;   // hints, pills, numerics
 const float kHeadingFontSize = 20.0f; // drawn with the body face (WidgetFonts::headingPx)
 const float kBigFontSize = 30.0f;   // ToolPanelHost::big
 
-// The ini's last-write time and size folded into one number; 0 when it cannot
-// be read. What ToolZoom::Watch compares once a second -- a stat, not a parse.
+// The ini's last-write time and size folded into one number (0 when unreadable); ToolZoom::Watch compares it each second.
 std::uint64_t IniStamp(const std::wstring& path)
 {
 	WIN32_FILE_ATTRIBUTE_DATA a{};
@@ -70,10 +67,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
-	// Same scale rule as the launcher: monitor content scale times the user's
-	// font-size zoom from pob-zh.ini, so a tool opened as its own window is the
-	// same size on screen as the same tool opened as a launcher tab. The zoom
-	// part is followed while the window is open (ToolZoom::Watch below).
+	// Same scale rule as the launcher: monitor content scale times the ini's font-size zoom (followed while open, ToolZoom::Watch).
 	const std::wstring iniPath = exeDir + L"pob-zh.ini";
 	const std::uint64_t iniStampAtStart = IniStamp(iniPath);
 	const LauncherConfig startCfg = LoadLauncherConfig(iniPath);
@@ -89,9 +83,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	// Work area, physical pixels; (0,0)-sized when unknown.
 	int wx = 0, wy = 0, ww = 0, wh = 0;
 	if (monitor) glfwGetMonitorWorkarea(monitor, &wx, &wy, &ww, &wh);
-	// The window's default size at a zoom. Windows that asked to be clamped
-	// always are; every window is once zoom has pushed it past the screen
-	// (1500 * 1.37 on a 1920-wide monitor).
+	// The window's default size at a zoom; clamped for windows that asked, and for every window once zoom pushes it past the screen.
 	auto defaultSize = [&](float z, int* w, int* h) {
 		*w = (int)(desc.defW * dpiScale * z);
 		*h = (int)(desc.defH * dpiScale * z);
@@ -121,8 +113,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		return 1;
 	}
 	if (ww > 0 && wh > 0) {
-		// Centred on the work area so a screen-tall window is not half under the
-		// taskbar.
+		// Centred on the work area so a screen-tall window is not half under the taskbar.
 		glfwSetWindowPos(win, wx + (ww - winW) / 2, wy + (wh - winH) / 2);
 	} else if (monitor) {
 		const GLFWvidmode* mode = glfwGetVideoMode(monitor);
@@ -130,15 +121,11 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	}
 	glfwMakeContextCurrent(win);
 	glfwSwapInterval(1);
-	// NOT shown yet: GLFW_VISIBLE is false above, and the window goes on screen
-	// with its first presented frame (FramePacing::FirstShow). Shown here it was a
-	// white rectangle for the 330-410 ms the atlas and the panel take to build.
+	// NOT shown yet: the window goes on screen with its first presented frame (FramePacing::FirstShow), else it is a white rectangle while the atlas builds.
 	FramePacing::FirstShow firstShow;
 	firstShow.Start(glfwGetTime());
-	// POBTOOLS_TOOL_SHOT=<file.bmp>: never show the window; draw until the panel
-	// has settled, save that frame and quit. A screenshot with nothing on anyone's
-	// screen and no input sent (a panel may add its own variable for which page,
-	// e.g. POBTOOLS_ATLAS_PAGE).
+	// POBTOOLS_TOOL_SHOT=<file.bmp>: never show the window; draw until the panel settles, save that frame and quit
+	// (a panel may add its own variable for which page, e.g. POBTOOLS_ATLAS_PAGE).
 	std::wstring shotPath = ShotEnv(L"POBTOOLS_TOOL_SHOT");
 	const bool shotMode = !shotPath.empty();
 	const double shotSince = glfwGetTime();
@@ -148,12 +135,9 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			glfwShowWindow(win);
 		}
 	};
-	// Unchanged frames are not presented (frame_pacing.h); a refresh or a resize
-	// invalidates the picture without changing the draw data, so both force one.
-	// The refresh callback also draws while a border is being dragged
-	// (live_resize.h). One tool window per process, hence the file-level flag.
-	// Before the ImGui backend, which chains the callbacks it needs and leaves
-	// these two.
+	// Unchanged frames are not presented; a refresh or resize invalidates the picture without changing draw
+	// data, so both force one. The refresh callback also draws during a border drag (live_resize.h).
+	// One tool window per process, hence the file-level flag. Installed before the ImGui backend, which chains them.
 	LiveResize::Install(win, &g_toolRedraw);
 	g_toolRedraw = true;
 
@@ -162,12 +146,8 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	ImGui::GetIO().IniFilename = nullptr;   // never touch the engine's imgui.ini
 	PobUi::ApplyTheme(scale, panel.Density());
 
-	// Full CJK + Korean, so item names, node names and IME input all render. The
-	// launcher builds an equivalent face for the embedded case; the ranges differ
-	// only in that the launcher also folds in its own UI strings.
-	//
-	// The inputs are read once; the faces are built by `buildFonts` at the
-	// current `scale` -- and again whenever the launcher's font size changes.
+	// Full CJK + Korean, so item names, node names and IME input render. Inputs are read once; faces are
+	// built by `buildFonts` at the current `scale` and again whenever the font size changes.
 	const std::wstring primaryFontPath = ResolveConfiguredFontPath(exeDir);
 	std::vector<unsigned char> ttf = EdReadFile(primaryFontPath);
 	ImFont* font = nullptr;
@@ -175,9 +155,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	ImFont* fontBig = nullptr;
 	bool cjkOk = false;
 	bool iconsOk = false;
-	// Must outlive the atlas: ImGui stores the pointers and re-reads them on every
-	// Build(). Static because this function can only ever run one panel at a time
-	// in this process.
+	// Must outlive the atlas: ImGui stores the pointers and re-reads them on every Build(). Static: one panel per process.
 	static ImVector<ImWchar> ranges;
 	static ImVector<ImWchar> bigRanges;
 	static std::vector<std::vector<unsigned char>> fallbackTtfs;
@@ -193,9 +171,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	if (!ttf.empty()) {
 		glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTex);
 		if (maxTex <= 0) maxTex = 2048;
-		// Every other shipped font, merged as glyph fallbacks (present glyphs are
-		// skipped): the tools draw zh-rCN dictionary text, and Noto Sans TC has
-		// no simplified-only glyphs. Static: the atlas keeps the pointers.
+		// Every other shipped font, merged as glyph fallbacks (tools draw zh-rCN text; Noto Sans TC lacks simplified-only glyphs). Static: the atlas keeps the pointers.
 		fallbackTtfs.clear();
 		for (const std::wstring& f : ListAvailableFonts(exeDir)) {
 			const std::wstring p = exeDir + L"Fonts\\" + f;
@@ -203,12 +179,8 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			std::vector<unsigned char> fb = EdReadFile(p);
 			if (!fb.empty()) fallbackTtfs.push_back(std::move(fb));
 		}
-		// Where the icon font sits on a text line depends on the primary face's
-		// ascent (ui_icons_data.h), the same rule the launcher uses.
 		primaryAscent = PobIcon::HheaAscentRatio(ttf);
-		// ToolPanelHost::big -- a score of glyphs, so it costs nothing and both hosts
-		// can offer it unconditionally rather than the panel having two layouts.
-		// Keep in step with the launcher's rangesDigits (launcher_ui.cpp).
+		// ToolPanelHost::big: a score of glyphs, offered unconditionally by both hosts. Keep in step with launcher_ui.cpp rangesDigits.
 		bigRanges.clear();
 		ImFontGlyphRangesBuilder bb;
 		bb.AddText(kBigFontGlyphs);
@@ -225,11 +197,8 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			io.Fonts->Flags |= ImFontAtlasFlags_NoPowerOfTwoHeight;
 			io.Fonts->TexDesiredWidth = maxTex >= 8192 ? 8192 : (maxTex >= 4096 ? 4096 : 2048);
 
-			// One attempt at a glyph set; true when the built atlas is uploadable.
-			// The launcher has the same ladder (LoadFonts in launcher_ui.cpp) for the
-			// same reason: an atlas over GL_MAX_TEXTURE_SIZE is not an error anywhere,
-			// it is a window that draws nothing. Reachable here at the largest
-			// font-size setting on a high-DPI monitor, so it has to be guarded.
+			// One attempt at a glyph set; true when the built atlas is uploadable. Same ladder as the launcher's
+			// LoadFonts: an atlas over GL_MAX_TEXTURE_SIZE is a window that draws nothing (reachable at the largest font on high-DPI).
 			auto attempt = [&](bool fullCjk, bool korean) -> bool {
 				io.Fonts->Clear();
 				ranges.clear();
@@ -240,10 +209,8 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 				if (korean) b.AddRanges(io.Fonts->GetGlyphRangesKorean());
 				b.AddRanges(PobUi::SymbolGlyphRanges());   // ≥ ≤ ⇐: not in the CJK table
 				b.BuildRanges(&ranges);
-				// Body and small: the primary face, every fallback, then the icons --
-				// last, so a text font that uses the same Private Use Area keeps its
-				// glyphs. Small carries the same glyph set as body because a tool's
-				// hints quote node, map and item names, not just fixed strings.
+				// Body and small: primary face, every fallback, then the icons LAST (a text font using the same
+				// Private Use Area keeps its glyphs). Small carries body's glyph set: hints quote node/map/item names.
 				auto addFace = [&](float px) -> ImFont* {
 					ImFont* f = io.Fonts->AddFontFromMemoryTTF(ttf.data(), (int)ttf.size(), px, &cfg, ranges.Data);
 					for (std::vector<unsigned char>& fb : fallbackTtfs)
@@ -258,9 +225,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 				if (!io.Fonts->Build()) return false;
 				return io.Fonts->TexWidth <= maxTex && io.Fonts->TexHeight <= maxTex;
 			};
-			// Same ladder as the launcher's LoadFonts: the block the active language
-			// does not read is the first to go. With a Korean interface that is the
-			// full CJK block; for everyone else it is Hangul.
+			// Same ladder as the launcher's LoadFonts: the block the active language does not read goes first (full CJK for Korean, else Hangul).
 			bool built = attempt(true, true);
 			if (!built) {
 				PobLog::Error("i18n", std::string("tool window font atlas over the GPU limit at ") +
@@ -283,17 +248,14 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			}
 			if (font)
 				cjkOk = font->FindGlyphNoFallback((ImWchar)0x555F /* 啟 */) != nullptr;
-			// Measured on the faces the widgets draw with, not assumed from "the TTF
-			// loaded": without them every icon would be a '?'.
+			// Measured on the faces the widgets draw with (else every icon is a '?').
 			iconsOk = PobIcon::FaceHasIcons(font) && PobIcon::FaceHasIcons(fontSmall);
 		}
 		if (!font) font = io.Fonts->AddFontDefault();
 		if (!fontSmall) fontSmall = font;
 	};
 	buildFonts(startCfg.locale == L"ko-KR");
-	// Check point before Init, the other slow step: only past kFirstShowLimit, i.e.
-	// when the atlas alone took that long. None after Init -- the loop's first
-	// pass presents a few milliseconds later and shows the window with content.
+	// Check point before Init (the other slow step), only past kFirstShowLimit; none after Init (the loop's first pass presents shortly).
 	if (!shotMode) showIfDue(false);
 
 	ImGui_ImplGlfw_InitForOpenGL(win, true);
@@ -313,8 +275,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	int rc = 0;
 	if (!panel.Init(host)) {
 		rc = 1;
-		// Safe here -- there is no frame in flight yet. The launcher cannot do this
-		// at the same point; see IToolPanel::InitError.
+		// Safe here: no frame in flight yet (the launcher cannot; see IToolPanel::InitError).
 		if (const char* why = panel.InitError(); why && *why) {
 			PobLog::Error("panel", std::string(panel.PanelId() ? panel.PanelId() : "?") +
 			                           u8" 面板初始化失敗：" + why);
@@ -325,18 +286,12 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		}
 	} else {
 		bool running = true;
-		// Pacing (frame_pacing.h): wait for events instead of spinning, present
-		// only changed frames. `nextWait` is decided at the bottom of each pass.
+		// Pacing (frame_pacing.h): wait for events instead of spinning; `nextWait` is decided at the bottom of each pass.
 		FramePacing::Pacer pacer;
 		double nextWait = 0.0;
-		// Following the launcher's font size (ToolZoom, tool_window.h), applied
-		// between frames the way the launcher applies its own slider: a fresh
-		// style at the new scale (BuildStyle resets before it scales, so this does
-		// not compound), the faces rebuilt through the same ladder, and the panel
-		// reads the new scale and faces through `host` on its next frame.
-		// Window size, as in the launcher: one still at the size it opened with
-		// moves to the new default (same centre, kept on the work area); one the
-		// user has sized by hand, maximised or minimised keeps its size.
+		// Following the launcher's font size (ToolZoom), applied between frames: a fresh style at the new
+		// scale (BuildStyle resets first, so it does not compound), faces rebuilt through the same ladder.
+		// A window still at its opened size moves to the new default (same centre); one sized by hand, maximised or minimised keeps its size.
 		ToolZoom::Watch zoomWatch;
 		int autoW = winW, autoH = winH;   // the size this code last gave the window
 		zoomWatch.Start(glfwGetTime(), iniStampAtStart, startCfg.fontSize);
@@ -349,8 +304,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			if (IniStamp(iniPath) != stamp) return;   // read during a save: next poll
 			const int fromSize = zoomWatch.FontSize();
 			if (!zoomWatch.Commit(stamp, c.fontSize)) return;
-			// One line per change the user made (the diag log, not the error log):
-			// the only trace a report can show that the window did follow.
+			// One diag-log line per change: the only trace that the window followed.
 			PobLog::Diag("i18n", "tool window follows launcher font size " + std::to_string(fromSize) +
 			                         " -> " + std::to_string(c.fontSize) + " px");
 			scale = dpiScale * LauncherZoom(c.fontSize);
@@ -386,21 +340,16 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			host.cjkOk = cjkOk;
 			g_toolRedraw = true;   // new glyphs, possibly behind the same vertices
 		};
-		// One frame. `live` = called from the refresh callback in the middle of
-		// a border drag (live_resize.h): draw and present, nothing else -- the
-		// close request and the deferred work wait for the main loop, which runs
-		// again as soon as the drag ends.
+		// One frame. `live` = called from the refresh callback mid border drag (live_resize.h): draw and present only;
+		// close request and deferred work wait for the main loop.
 		auto frame = [&](bool live) {
-			// Never in a live frame: it rebuilds the atlas. Nor before the first
-			// frame: the backend creates its font texture lazily in the first
-			// NewFrame, and a CreateFontsTexture ahead of that would run twice.
+			// Never in a live frame (rebuilds the atlas), nor before the first frame (the backend creates its font texture lazily in the first NewFrame).
 			if (!live && ImGui::GetFrameCount() > 0) followZoom();
 			pacer.BeginFrame(glfwGetTime());
 			ImGui_ImplOpenGL3_NewFrame();
 			ImGui_ImplGlfw_NewFrame();
 			ImGui::NewFrame();
-			// Every frame, with the real scale: the widgets size themselves from it
-			// (PobUi::D), and the faces are only valid for this atlas.
+			// Every frame, with the real scale: widgets size from it (PobUi::D) and the faces are only valid for this atlas.
 			{
 				PobUi::WidgetFonts wf;
 				wf.body = font;
@@ -427,9 +376,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			ImGui::End();
 			PobUi::DrawToast();   // results the panel reported with ShowToast
 
-			// The window's own X becomes a close REQUEST, held until the panel
-			// answers: a panel with unsaved work answers by drawing a prompt, and
-			// obeying the close immediately would take the prompt down with it.
+			// The window's X becomes a close REQUEST held until the panel answers (unsaved work answers with a prompt, which an immediate close would destroy).
 			if (!live && glfwWindowShouldClose(win)) {
 				glfwSetWindowShouldClose(win, GLFW_FALSE);
 				panel.RequestClose();
@@ -468,9 +415,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 				glfwSwapBuffers(win);
 			}
 			if (live) return;
-			// After the swap: the picture is in the swap chain before the window is
-			// on screen. Showing it delivers a WM_PAINT, whose refresh callback
-			// presents once more on the next pass.
+			// After the swap the picture is in the swap chain before the window is shown; showing it delivers a WM_PAINT that presents once more.
 			if (!shotMode) showIfDue(present);
 			nextWait = pacer.WaitSeconds(glfwGetTime());
 		};
@@ -484,9 +429,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			LiveResize::MainScope inMain;
 			frame(false);
 
-			// After the frame is on screen, so a modal dialog does not appear over a
-			// half-drawn window and a long pause does not eat a frame the user is
-			// waiting on.
+			// After the frame is on screen, so a modal dialog does not appear over a half-drawn window.
 			panel.RunDeferred();
 		}
 		LiveResize::SetDraw(nullptr);   // the loop's state goes out of scope here

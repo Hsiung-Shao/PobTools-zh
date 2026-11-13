@@ -1,12 +1,10 @@
 // --headless-selftest: can POB's own Lua run in our engine with no window, be
 // driven over stdio, and give the same numbers POB writes into a saved build?
 //
-// Runs against a SANDBOX copy of the detected PoE1 install, never the user's:
-// POB writes Settings.xml, Update\ and (on load) Builds\ next to itself in
-// standalone mode, and the update check we run here downloads into Update\.
-// TreeData (555 MB) and Data\TimelessJewelData (237 MB) are junctioned because
-// nothing in this test writes them; everything else is copied so the update
-// check's integrity pass sees every manifest file where it expects it.
+// Runs against a SANDBOX copy of the detected PoE1 install, never the user's (POB writes
+// Settings.xml, Update\ and Builds\ next to itself). TreeData and Data\TimelessJewelData are
+// junctioned (nothing here writes them); the rest is copied so the update check's integrity pass
+// sees every manifest file.
 
 #include "headless_proc.h"
 #include "modern_ui_browser.h"
@@ -20,6 +18,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
+#include "win_util.h"
 
 #include <atomic>
 #include <cmath>
@@ -46,24 +45,6 @@ void check(const std::string& what, bool ok, const std::string& detail = "")
 	line(std::string(ok ? "PASS " : "FAIL ") + what + (detail.empty() ? "" : "  (" + detail + ")"));
 }
 
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
-
-std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return {};
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), n);
-	return w;
-}
-
 using namespace PobSandbox;
 
 std::string ReadFileA(const std::wstring& path)
@@ -78,8 +59,7 @@ std::string ReadFileA(const std::wstring& path)
 	return out;
 }
 
-// Runs a console program with the given working directory and waits for it;
-// returns false on spawn failure or timeout. Used for POB's own Update.exe.
+// Runs a console program in the given working directory and waits; false on spawn failure or timeout.
 static bool RunAndWait(const std::wstring& exe, const std::wstring& args, const std::wstring& cwd,
                        unsigned timeoutMs, unsigned long* exitCode)
 {
@@ -200,10 +180,8 @@ int CompareStats(const std::vector<std::pair<std::string, std::string>>& oracle,
 
 std::wstring FindSampleBuild(const std::wstring& buildsDir)
 {
-	// The most recently written .xml that carries <PlayerStat: an empty or
-	// half-written build would make the oracle vacuous, and the newest one is
-	// the likeliest to have been saved by the POB version now installed, which
-	// is what makes the soft (on-disk) comparison mean anything.
+	// The most recent .xml carrying <PlayerStat: an empty build would make the oracle vacuous, and the
+	// newest is likeliest saved by the installed POB version (which the soft comparison relies on).
 	WIN32_FIND_DATAW fd{};
 	HANDLE h = FindFirstFileW((buildsDir + L"\\*.xml").c_str(), &fd);
 	if (h == INVALID_HANDLE_VALUE) return L"";
@@ -226,9 +204,8 @@ std::wstring FindSampleBuild(const std::wstring& buildsDir)
 
 } // namespace
 
-// Developer probe: `method|method:{"json":...}|...`, each answered in order,
-// all responses written as one JSON array. No sandbox on purpose -- this is
-// for looking at what the bridge says about a real install, not for changing it.
+// Developer probe: `method|method:{"json":...}|...`, answered in order into one JSON array.
+// No sandbox on purpose: for looking at a real install, not changing it.
 int RunBridgeCall(const std::wstring& exeDir, const std::wstring& pobDir,
                   const std::wstring& methods, const std::wstring& outFile)
 {
@@ -268,8 +245,7 @@ int RunBridgeCall(const std::wstring& exeDir, const std::wstring& pobDir,
 				std::string method = one, params = "{}";
 				size_t colon = one.find(':');
 				if (colon != std::string::npos) { method = one.substr(0, colon); params = one.substr(colon + 1); }
-				// `@file` reads the JSON from a file: PowerShell strips the quotes
-				// out of an inline JSON argument before the process ever sees it.
+				// `@file` reads the JSON from a file: PowerShell strips quotes from inline JSON arguments.
 				if (!params.empty() && params[0] == '@') params = ReadFileA(widen(params.substr(1)));
 				json p;
 				try { p = json::parse(params); } catch (...) { p = json::object(); }
@@ -296,7 +272,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 
 	line("PobTools --headless-selftest");
 
-	// --- locate the PoE1 install -------------------------------------------
+	// locate the PoE1 install
 	std::wstring pobDir = pobDirOverride;
 	if (pobDir.empty()) {
 		InstallInfo info = DetectInstalls(exeDir);
@@ -309,7 +285,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		goto done;
 	}
 	{
-		// --- sandbox ---------------------------------------------------------
+		// sandbox
 		const std::wstring sandboxRoot = exeDir + L"PobTools\\sandbox";
 		const std::wstring sandbox = sandboxRoot + L"\\PathOfBuildingCommunity";
 		Rmtree(sandbox);
@@ -331,7 +307,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		const std::string manifestVersion = ManifestVersion(ReadFileA(sandbox + L"\\manifest.xml"));
 		check("manifest.xml has a Version number", !manifestVersion.empty(), manifestVersion);
 
-		// --- boot the headless engine ---------------------------------------
+		// boot the headless engine
 		HeadlessProc::Options opt;
 		opt.exeDir = exeDir;
 		opt.launchLua = sandbox + L"\\Launch.lua";
@@ -370,7 +346,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		check("version.buildPath points into the sandbox",
 		      !buildPath.empty() && widen(buildPath).find(L"sandbox") != std::wstring::npos, buildPath);
 
-		// --- load a real build ----------------------------------------------
+		// load a real build
 		json loaded;
 		bool okLoad = false;
 		if (!sample.empty() && !buildPath.empty()) {
@@ -384,7 +360,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		check("get_stats returns scalars", okStats && stats.value("count", 0) > 20,
 		      okStats ? "count=" + std::to_string(stats.value("count", 0)) : stats.dump());
 
-		// --- hard oracle: POB's own save vs the bridge's read -----------------
+		// hard oracle: POB's own save vs the bridge's read
 		json saved;
 		bool okSave = okLoad && child.Call("save_xml", json::object(), saved, 60000);
 		check("save_xml", okSave && saved.value("xml", "").find("<PlayerStat ") != std::string::npos,
@@ -401,7 +377,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      oracle.size() > 20 && bad == 0 && missing == 0, detail);
 		}
 
-		// --- soft oracle: the build as last saved by whichever POB saved it ---
+		// soft oracle: the build as last saved by whichever POB saved it
 		if (okStats && !sample.empty()) {
 			auto oracle = ParsePlayerStats(ReadFileA(pobDir + L"\\Builds\\" + sample));
 			int missing = 0;
@@ -414,7 +390,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			line(std::string("INFO soft oracle (on-disk <PlayerStat> vs recalculated, rel 1e-3): ") + detail);
 		}
 
-		// --- sidebar -----------------------------------------------------------
+		// sidebar
 		json sidebar;
 		bool okSide = okLoad && child.Call("get_sidebar", json::object(), sidebar, 30000);
 		int rows = okSide ? (int)sidebar["rows"].size() : 0;
@@ -431,11 +407,8 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		      "rows=" + std::to_string(rows) + " withText=" + std::to_string(textRows) + " translated=" + std::to_string(zhRows));
 		check("sidebar rows come back translated (zh-rTW dictionaries applied)", zhRows > 0);
 
-		// --- F2's switch: the page's way back to POB's original English ----------
-		// Nothing the bridge answers with carries an English copy of a breakdown
-		// line, so "show the original" can only mean asking again with the
-		// engine's display translation off -- the same flag the classic window's
-		// F2 flips. Proven on the sidebar, where each row carries both forms.
+		// F2's switch: the page's way back to POB's original English
+		// "Show the original" means asking again with the engine's display translation off (the classic F2 flag).
 		{
 			json off, on, verOff;
 			const bool okOff = child.Call("set_translate", json{{"enabled", false}}, off, 30000);
@@ -467,7 +440,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okVerOff && verOff["caps"].value("translateToggle", false), "");
 		}
 
-		// --- sidebar 1b: stat keys, breakdown, build list, build info ------------
+		// sidebar 1b: stat keys, breakdown, build list, build info
 		{
 			int valueRows = 0, withStat = 0, doubleSpacer = 0, firstBd = -1;
 			bool prevSpacer = false;
@@ -485,16 +458,13 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 					if (firstBd < 0 && r.value("hasBreakdown", false)) firstBd = i;
 				}
 			}
-			// The per-entry wrapper is what puts `stat` on a row; POB's own rows
-			// never have it. Below 80% the sidebar would regroup wrongly.
+			// The per-entry wrapper puts `stat` on a row (POB's own rows never have it); below 80% the sidebar regroups wrongly.
 			check("sidebar value rows carry POB's stat key (per-entry wrapper)",
 			      valueRows > 10 && withStat * 10 >= valueRows * 8,
 			      "valueRows=" + std::to_string(valueRows) + " withStat=" + std::to_string(withStat));
 			check("per-entry wrapper did not change POB's spacer logic (no double spacer)", okSide && doubleSpacer == 0,
 			      "doubleSpacer=" + std::to_string(doubleSpacer));
-			// The breakdown exists where POB has GetSidebarBreakdown (beta); on
-			// master the rows must say there is nothing to open, and asking
-			// anyway must answer empty rather than fail.
+			// The breakdown needs GetSidebarBreakdown (beta); on master rows say there is nothing to open and asking answers empty.
 			json capv;
 			const bool okCaps = child.Call("version", json::object(), capv, 30000) && capv.contains("caps");
 			const bool canBd = okCaps && capv["caps"].value("sidebarBreakdown", false);
@@ -504,6 +474,40 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				check("sidebar_breakdown of the first breakdown row has sections (POB with GetSidebarBreakdown)",
 				      okBd && bd.contains("sections") && !bd["sections"].empty(),
 				      okBd ? bd.dump().substr(0, 300) : ("row=" + std::to_string(firstBd) + " " + bd.dump()));
+				// 來源提示:表格段列出的每個 tips 參照,帶回去問都要拿到 POB 的提示行或節點 id。
+				// 逐列找到第一個有 tips 的細項為止(樣本建置一定有物品或天賦來源)。
+				int tipRow = -1, tipRefs = 0, tipLines = 0, tipNodes = 0, tipBad = 0;
+				std::string tipDetail;
+				int ri = 0;
+				for (auto& r : sidebar["rows"]) {
+					ri++;
+					if (tipRow > 0) break;
+					if (!r.value("hasBreakdown", false)) continue;
+					json b;
+					if (!child.Call("sidebar_breakdown", json{{"rowIndex", ri}}, b, 30000) || !b.contains("sections")) continue;
+					for (auto& s : b["sections"]) {
+						if (!s.contains("tips") || !s["tips"].is_array()) continue;
+						for (auto& ref : s["tips"]) {
+							tipRow = ri;
+							if (++tipRefs > 12) break;
+							json tp;
+							bool okTp = child.Call("sidebar_breakdown", json{{"rowIndex", ri}, {"tip", ref}}, tp, 30000);
+							if (okTp && tp.contains("lines") && tp["lines"].is_array() && !tp["lines"].empty()) tipLines++;
+							else if (okTp && tp.contains("node") && tp["node"].is_number()) tipNodes++;
+							else {
+								tipBad++;
+								if (tipDetail.empty()) tipDetail = ref.dump() + " -> " + tp.dump().substr(0, 160);
+							}
+						}
+					}
+				}
+				check("sidebar_breakdown{tip}: every source reference a table lists answers POB's tooltip lines or a node id",
+				      tipRow > 0 && tipBad == 0 && tipLines + tipNodes > 0,
+				      "row=" + std::to_string(tipRow) + " refs=" + std::to_string(tipRefs) + " lines=" + std::to_string(tipLines) +
+				          " nodes=" + std::to_string(tipNodes) + " bad=" + std::to_string(tipBad) + " " + tipDetail);
+				json none;
+				bool okNone = tipRow > 0 && child.Call("sidebar_breakdown", json{{"rowIndex", tipRow}, {"tip", json{{"s", 99}, {"r", 99}, {"k", "sourceName"}}}}, none, 30000);
+				check("sidebar_breakdown{tip} for a row that is not there is an error, not a tooltip", tipRow > 0 && !okNone, none.dump().substr(0, 160));
 			} else {
 				bool okBd = okCaps && child.Call("sidebar_breakdown", json{{"rowIndex", 1}}, bd, 30000);
 				check("sidebar breakdown degrades on a POB without GetSidebarBreakdown: no row offers one, asking answers empty",
@@ -530,7 +534,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okBi ? bi["points"].dump() : bi.dump());
 		}
 
-		// --- tree 1c/1d: data, art, state, hover, click round trip, undo ---------
+		// tree 1c/1d: data, art, state, hover, click round trip, undo
 		{
 			json td;
 			bool okTd = okLoad && child.Call("tree_data", json::object(), td, 120000);
@@ -572,8 +576,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			          ts["points"].value("used", -1) + ts["points"].value("ascUsed", 0) + 2 <= allocCount + 4,
 			      okTs ? "alloc=" + std::to_string(allocCount) + " points=" + ts["points"].dump() : ts.dump().substr(0, 300));
 
-			// Cluster subgraphs come with POB's own node ids (never the array
-			// index), their own connectors, and every socket with its jewel.
+			// Cluster subgraphs carry POB's own node ids (never the array index), connectors, and each socket's jewel.
 			{
 				int dyn = 0, dynStatic = 0, dynFramed = 0, conns = 0, socketsN = 0, withJewel = 0, withRadius = 0, overlays = 0;
 				std::set<long long> staticIds;
@@ -662,11 +665,8 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			          before["stats"].value("TotalDPS", 0.0) == after["stats"].value("TotalDPS", 1.0),
 			      okC2 ? "alloc=" + std::to_string(c2["allocatedNodes"].size()) : c2.dump().substr(0, 300));
 
-			// The allocated node with the most dependents (one next to the class
-			// start takes the whole tree with it): dealloc, undo, and the set
-			// must be identical, cluster-jewel nodes included. POB's own undo
-			// base is taken before cluster subgraphs exist, so without the
-			// bridge's ResetUndo this loses every cluster node.
+			// The allocated node with the most dependents: dealloc, undo, and the set must be identical,
+			// cluster nodes included (POB's undo base predates cluster subgraphs; the bridge's ResetUndo fixes that).
 			long long hub = -1;
 			size_t hubDeps = 0;
 			if (okTs) {
@@ -708,8 +708,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				      okCl && cl["classes"].size() == 7 && cl["classes"][0]["ascendancies"].size() >= 2 &&
 				          cl["classes"][0]["ascendancies"][0]["id"].is_number() && !cl["current"].value("className", "").empty(),
 				      okCl ? cl["current"].dump() : cl.dump().substr(0, 300));
-				// 第 15 輪(使用者核准 2026-10-28):昇華名依 Ascendancy id。出貨字典有
-				// ascendancy_by_id.json 時,清單裡每個 key 對得上(英文也相同)的昇華都要是表上的名稱;
+				// 昇華名依 Ascendancy id:有 ascendancy_by_id.json 時,key 對得上的昇華都要是表上名稱;
 				// 沒有表時只驗「側欄與下拉同名」(下面 get_build_info 那條)。
 				{
 					json idTbl;
@@ -925,7 +924,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okNd ? std::to_string(nd0["lines"].size()) + " -> " + std::to_string(nd1["lines"].size()) : nd1.dump().substr(0, 200));
 		}
 
-		// --- 1e: the build's passive trees: list, copy/rename/move/delete, links, reset, convert ---
+		// 1e: the build's passive trees: list, copy/rename/move/delete, links, reset, convert
 		{
 			json ls0;
 			bool okLs0 = okLoad && child.Call("list_specs", json::object(), ls0, 30000);
@@ -979,7 +978,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okBack ? ls9.dump().substr(0, 200) : (d1.dump() + d2.dump() + d3.dump() + back.dump()).substr(0, 300));
 		}
 
-		// --- 2a: build header, level, share code, save-as, import ---------------
+		// 2a: build header, level, share code, save-as, import
 		{
 			json hdr;
 			bool okH = okLoad && child.Call("get_build_header", json::object(), hdr, 30000);
@@ -996,8 +995,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			json r1, st1;
 			bool ok1 = okH && child.Call("set_build_field", json{{"field", "level"}, {"value", lv1}}, r1, 60000) &&
 			           child.Call("get_stats", json::object(), st1, 30000);
-			// Life alone is not enough of a witness (a CI build sits at 1 whatever
-			// the level); any of the three moving proves the recalculation ran.
+			// Life alone is no witness (a CI build sits at 1 whatever the level); any of the three moving proves a recalculation.
 			auto moved = [&](const char* k) {
 				return st0.contains("stats") && st1.contains("stats") && st0["stats"].value(k, 0.0) != st1["stats"].value(k, 0.0);
 			};
@@ -1038,10 +1036,8 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okImp ? "dps " + st0["stats"].value("TotalDPS", json()).dump() + " -> " + st3["stats"].value("TotalDPS", json()).dump()
 			            : imp.dump().substr(0, 300));
 
-			// Account import: ImportTab's OAuth / account-name state as the page
-			// polls it. Offline checks first, then one real round trip against
-			// pathofexile.com with an account that cannot exist (the same network
-			// POB's own update check already used).
+			// Account import: ImportTab's OAuth / account-name state as the page polls it; offline checks
+			// first, then one real round trip against pathofexile.com with an account that cannot exist.
 			{
 				json is;
 				bool okIs = child.Call("import_status", json::object(), is, 30000);
@@ -1071,9 +1067,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				      "mode=" + mode + " status=" + status.substr(0, 120));
 			}
 
-			// Build list management: New (an unnamed build), New Folder, Rename,
-			// Copy, Delete, all under the sandbox's build folder; then the sample
-			// build again so the checks below start from the same place.
+			// Build list management (New, New Folder, Rename, Copy, Delete) under the sandbox's build folder, then back to the sample build.
 			{
 				json nb;
 				bool okNb = child.Call("new_build", json{{"name", "bridge_new"}}, nb, 120000);
@@ -1125,8 +1119,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				      okMv && okMvBack && GetFileAttributesW(movedPath.c_str()) != INVALID_FILE_ATTRIBUTES && GetFileAttributesW(cpPath.c_str()) != INVALID_FILE_ATTRIBUTES &&
 				          !okMvSelf && child.Alive(),
 				      mv.dump().substr(0, 120) + " " + mvBack.dump().substr(0, 120) + " " + mvSelf.dump().substr(0, 120));
-				// the moved copy is deleted before its folder: POB's recursive
-				// RemoveDir does not delete a non-empty folder under Wine
+				// delete the moved copy before its folder: POB's recursive RemoveDir fails on a non-empty folder under Wine
 				json delMoved;
 				child.Call("delete_build", json{{"path", narrow(movedPath)}, {"isFolder", false}}, delMoved, 30000);
 				json delOpen;
@@ -1181,7 +1174,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("save_build (in place) succeeds on a build that has a file", okSv2 && !sv2.value("unsaved", true));
 		}
 
-		// --- 2b: items -----------------------------------------------------------
+		// 2b: items
 		{
 			json li;
 			bool okLi = okLoad && child.Call("list_items", json::object(), li, 60000);
@@ -1192,17 +1185,15 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			          li["items"][0].contains("nameZh"),
 			      okLi ? "items=" + std::to_string(li["items"].size()) + " slots=" + std::to_string(li["slots"].size()) + " shown=" + std::to_string(shownSlots)
 			           : li.dump().substr(0, 300));
-			// The first few items: every tooltip has lines and a header, and at
-			// least one line somewhere came back translated (a jewel's text may
-			// have no dictionary entry, so no single item is required to).
+			// The first few items: every tooltip has lines and a header, and at least one line came back
+			// translated (a single item may have no dictionary entry).
 			int ttOk = 0, ttTried = 0, zhLines = 0;
 			for (size_t i = 0; okLi && i < li["items"].size() && i < 5; i++) {
 				json tt;
 				ttTried++;
 				if (!child.Call("item_tooltip", json{{"id", li["items"][i].value("id", 0LL)}}, tt, 60000)) continue;
 				int textLines = 0;
-				// The injector already renames items in POB's own tables, so "raw"
-				// can be Chinese too; count lines that carry any non-ASCII text.
+				// The injector already renames items in POB's tables, so "raw" can be Chinese too; count non-ASCII lines.
 				for (auto& l : tt["lines"]) if (l.contains("text")) {
 					textLines++;
 					const std::string tx = l.value("text", "");
@@ -1253,9 +1244,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			bool okBadAdd = child.Call("add_item", json{{"raw", "Rarity: RARE\nNonsense\nNot A Base At All\n"}}, badAdd, 60000);
 			check("add_item refuses text with no known base (error, engine stays up)", !okBadAdd && child.Alive(), badAdd.dump().substr(0, 200));
 
-			// Chinese item text (the game client's Ctrl+C) goes through the engine's
-			// reverse translator before Item(): the same jewel, written the way the
-			// Traditional Chinese client prints it, must resolve to the same base.
+			// Chinese item text (client Ctrl+C) goes through the reverse translator before Item() and must resolve to the same base.
 			{
 				const std::string zhRaw = u8"稀有度: 魔法\n習武的 鈷藍珠寶\n鈷藍珠寶\n--------\n物品等級: 20\n--------\n增加 10% 最大生命\n";
 				json zhAdd;
@@ -1288,7 +1277,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("item_tooltip{raw} previews a database entry without adding it", okDbTt && dbTt["lines"].size() >= 3);
 		}
 
-		// --- 2b2: item editing, comparison, list management, item databases ----
+		// 2b2: item editing, comparison, list management, item databases
 		{
 			json li;
 			bool okLi = okLoad && child.Call("list_items", json::object(), li, 60000);
@@ -1345,12 +1334,8 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("item_edit_cancel drops the display item; the build's item is still what it was; no session afterwards",
 			      okCancel && raw2.value("raw", "") == raw0.value("raw", "x") && !okNone && child.Alive(), edNone.dump().substr(0, 120));
 
-			// Every mod line POB draws, not just the explicit ones. A unique with an
-			// implicit and rolled ranges is the case that caught this: the panel
-			// listed four of its five lines (the missing one being the implicit,
-			// the line the tooltip prints above the separator), and every range row
-			// came back blank because the drop-down's list is plain strings while
-			// the data lives on the item.
+			// Every mod line POB draws, not just explicit ones (a unique with an implicit and rolled
+			// ranges; range rows read the item, not the drop-down's plain-string list).
 			json edU;
 			const char* kUniqueRaw =
 			    "Rarity: UNIQUE\nGoldrim\nLeather Cap\nImplicits: 1\n{range:0.5}+(10-20) to Evasion Rating\n"
@@ -1372,8 +1357,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okU ? "implicit=" + std::to_string(implicitLines) + " explicit=" + std::to_string(explicitLines) +
 			                " ranges=" + std::to_string(edU["ranges"].size()) + " labelled=" + std::to_string(labelledRanges)
 			          : edU.dump().substr(0, 300));
-			// the roll of the FIRST line (the implicit) has to move: with the index
-			// space still starting at the explicits, this wrote to the wrong line
+			// the roll of the FIRST line (the implicit) has to move: the index space must start at the implicit
 			json edU2;
 			const double roll0 = (okU && !edU["ranges"].empty()) ? edU["ranges"][0].value("range", -1.0) : -1.0;
 			bool okU2 = okU && child.Call("item_edit_set", json{{"range", json{{"index", 1}, {"value", 1.0}}}}, edU2, 60000);
@@ -1436,10 +1420,8 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				           : bt.dump().substr(0, 300));
 			}
 			bool okEdC = okCo && child.Call("item_edit_begin", json{{"craft", json{{"rarity", "RARE"}, {"type", craftType}, {"base", craftBase}}}}, edC, 60000);
-			// the affix drop-downs read "+# to maximum Life" / "A/B" (hybrids): every
-			// option must come back translated. A literal '#' used to keep its sign out
-			// of the dictionary key and a hybrid was looked up as one string, so a
-			// third of these lists stayed English (field report, 165 of 474).
+			// the affix drop-downs read "+# to maximum Life" / "A/B" (hybrids): every option must come back
+			// translated (a literal '#' must keep its sign out of the key; hybrids are looked up per half).
 			{
 				int opts = 0, english = 0;
 				std::string firstEnglish;
@@ -1577,7 +1559,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okReq ? "req=" + std::to_string(dbReq.value("total", 0)) + " rare=" + std::to_string(dbRare.value("total", 0)) : dbReq.dump().substr(0, 300));
 		}
 
-		// --- 2c: skills ----------------------------------------------------------
+		// 2c: skills
 		{
 			json sk;
 			bool okSk = okLoad && child.Call("list_skills", json::object(), sk, 60000);
@@ -1741,9 +1723,8 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okDg && sk3["groups"].size() == sk["groups"].size() && st0["stats"].value("TotalDPS", 0.0) == st3["stats"].value("TotalDPS", 1.0),
 			      okDg ? "groups=" + std::to_string(sk3["groups"].size()) + " dps " + st3["stats"].value("TotalDPS", json()).dump() : dg.dump().substr(0, 200));
 
-			// Deleting a group ABOVE the main one: the main skill must stay on the
-			// same group (SkillListControl:OnSelDelete moves the index up by one).
-			// Clamping only, as before, left it on whatever slid into the old slot.
+			// Deleting a group ABOVE the main one: the main skill must stay on the same group
+			// (SkillListControl:OnSelDelete moves the index up by one; clamping alone is wrong).
 			json k0, a1, a2, sm2, del1, k1, restore, del2;
 			bool okM = child.Call("list_skills", json::object(), k0, 60000);
 			const int n0 = okM ? (int)k0["groups"].size() : 0;
@@ -1763,7 +1744,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			child.Call("delete_group", json{{"index", n0 + 1}}, del2, 60000);
 		}
 
-		// --- 2d: config + calcs ---------------------------------------------------
+		// 2d: config + calcs
 		{
 			json cf;
 			bool okCf = okLoad && child.Call("list_config", json::object(), cf, 60000);
@@ -1875,9 +1856,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okCm && st3["stats"].value("TotalDPS", 0.0) > st0["stats"].value("TotalDPS", 0.0) && st0["stats"].value("TotalDPS", 0.0) == st4["stats"].value("TotalDPS", 1.0),
 			      okCm ? "dps " + st0["stats"].value("TotalDPS", json()).dump() + " -> " + st3["stats"].value("TotalDPS", json()).dump() : cm.dump().substr(0, 200));
 
-			// the Add Mod browser behind the custom-modifier group -- a POB that has
-			// none (master 2.67.2: caps.configModBrowser false) gets no button on the
-			// page either, so there is nothing to drive
+			// the Add Mod browser behind the custom-modifier group (absent when caps.configModBrowser is false)
 			json mbv;
 			const bool hasModBrowser = child.Call("version", json::object(), mbv, 30000) &&
 			                           mbv["caps"].value("configModBrowser", false);
@@ -1920,9 +1899,8 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okCal && cal["sections"].size() > 20 && enabledSecs > 10 && rows > 100 && cells > 150 && withBd > 100 && cal["selectors"].contains("mainSocketGroup"),
 			      okCal ? "sections=" + std::to_string(cal["sections"].size()) + " rows=" + std::to_string(rows) + " cells=" + std::to_string(cells) + " bd=" + std::to_string(withBd)
 			            : cal.dump().substr(0, 300));
-			// The "View Skill Details" controls are shown only when their row is
-			// enabled, which POB computes in CalcSectionControl:UpdateSize (a Draw
-			// path); headless the bridge has to run it or the page hides them.
+			// "View Skill Details" shows only when its row is enabled (computed in the Draw-path
+			// CalcSectionControl:UpdateSize); headless, the bridge has to run it.
 			bool sgShown = false, modeShown = false;
 			size_t modeItems = 0;
 			if (okCal) for (auto& sec : cal["sections"]) {
@@ -1952,7 +1930,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("set_calcs_input{misc_buffMode} round-trips", okCi && cal2["input"].value("misc_buffMode", "") == "UNBUFFED");
 		}
 
-		// --- 2e: notes + party ------------------------------------------------------
+		// 2e: notes + party
 		{
 			json n0, sn, n1, bi;
 			bool okN = okLoad && child.Call("get_notes", json::object(), n0, 30000) &&
@@ -2102,17 +2080,15 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("list_build_sites lists POB's build sites (and which take uploads); a link from elsewhere is refused",
 			      okBs && bsites["sites"].size() >= 5 && shareable >= 2 && !okBadUrl && child.Alive(),
 			      okBs ? bsites["sites"].dump().substr(0, 200) : bsites.dump().substr(0, 200));
-			// Share and import-from-link wait inside one request for POB's upload /
-			// download subscript; its callback used to run only between requests,
-			// so both always timed out after 60 s (field report: pob.codes Share).
+			// Share and import-from-link wait inside one request for POB's upload/download subscript
+			// (its callback must also run inside the request, or both time out at 60 s).
 			json sr;
 			bool okSr = child.Call("subscript_roundtrip", json::object(), sr, 30000);
 			check("one request can wait on POB's background work (a subscript finishes inside it: Share / import from link)",
 			      okSr && sr.contains("value") && sr["value"].is_number() && sr["value"].get<double>() == 42.0,
 			      sr.dump().substr(0, 200));
-			// "Open in PoB" (pob://): ONLINE -- a real poe.ninja button link (2026-10,
-			// Allflame ladder character), downloaded by POB's own DownloadBuild and
-			// decoded; a link that breaks the whitelist is refused before any download.
+			// "Open in PoB" (pob://): ONLINE -- a real poe.ninja link downloaded by POB's DownloadBuild and
+			// decoded; a link breaking the whitelist is refused before any download.
 			json fu, fuDec, fuBad, fuBad2;
 			const std::string ninjaUri =
 				"pob://poeninja/overview/code?account=Brainwar-1546&name=BrainAllFlamed&overview=allflame&type=exp";
@@ -2155,7 +2131,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			child.Call("select_loadout", json{{"index", 2}}, back, 60000);
 		}
 
-		// --- POB's Options dialog: read its controls, save through its Save -----
+		// POB's Options dialog: read its controls, save through its Save
 		{
 			json po, ver, s1, s2;
 			bool okPo = okLoad && child.Call("pob_options", json::object(), po, 60000) && child.Call("version", json::object(), ver, 30000);
@@ -2190,21 +2166,18 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okS1 ? std::string("flipped=") + (flipped ? "1" : "0") + " restored=" + (restored ? "1" : "0") : s1.dump().substr(0, 300));
 			json ui;
 			bool okUi = child.Call("pob_update_info", json::object(), ui, 60000);
-			// POB lists the entries newer than the running version: none on an
-			// up-to-date master, the whole file on beta (its version has a hash)
+			// entries newer than the running version: none on an up-to-date master, the whole file on beta
 			check("pob_update_info: main:OpenUpdatePopup's changelog list (capped) and the running version",
 			      okUi && ui.contains("lines") && ui["lines"].size() <= 400 && !ui.value("version", "").empty(),
 			      okUi ? "lines=" + std::to_string(ui["lines"].size()) : ui.dump().substr(0, 200));
 		}
 
-		// --- POB's own update check, synchronously -----------------------------
+		// POB's own update check, synchronously
 		json upd;
 		bool okUpd = child.Call("check_update_sync", json::object(), upd, 300000);
 		check("check_update_sync answered", okUpd, upd.dump());
 		if (okUpd) {
-			// "none" while the sandbox copy is current; upstream POB does release
-			// new builds, and then its own check legitimately answers "normal"
-			// (or "basic"). Either is a working check; an error is not.
+			// "none" while the sandbox copy is current; once upstream releases, "normal"/"basic" are equally valid; an error is not.
 			const std::string mode = upd.value("mode", "");
 			check("update check on an untouched sandbox answers without an error (\"none\", or an update POB found)",
 			      (mode == "none" || mode == "normal" || mode == "basic") && upd.value("error", "").empty(),
@@ -2213,10 +2186,9 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		const bool untouchedNone = okUpd && upd.value("mode", "") == "none";
 		const std::string corruption = "\n-- pobtools headless selftest: deliberate corruption\n";
 
-		// --- POB's own "normal" update, end to end --------------------------------
-		// A program-part file with a wrong sha1 is exactly what UpdateCheck's
-		// integrity pass re-downloads; ApplyUpdate then Restart()s the Lua state
-		// in this same process, and the bridge comes back with it.
+		// POB's own "normal" update, end to end
+		// A program-part file with a wrong sha1 is re-downloaded by UpdateCheck's integrity pass;
+		// ApplyUpdate then Restart()s the Lua state in this process and the bridge comes back with it.
 		if (!untouchedNone) {
 			check("normal update round trip", true, "skipped: the untouched sandbox already differs from upstream (a POB update is pending)");
 		} else {
@@ -2233,8 +2205,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okU1 ? "mode=" + u1.value("mode", "") + " error=" + u1.value("error", "") : (inManifest ? u1.dump().substr(0, 300) : "Classes/Tooltip.lua not in manifest"));
 			json ap;
 			bool okAp = okU1 && u1.value("mode", "") == "normal" && child.Call("apply_update", json{{"mode", "normal"}}, ap, 300000);
-			// Both events, and in this order: the page takes "hello" as "ready";
-			// a "restarted" behind it left the new interface on "booting" forever.
+			// Both events, in this order: the page takes "hello" as "ready"; "restarted" behind it must not leave it on "booting".
 			int iRestart = -1, iHello = -1;
 			for (int waited = 0; okAp && waited < 90000 && (iRestart < 0 || iHello < 0); waited += 200) {
 				const std::vector<json> evs = child.Events();
@@ -2289,11 +2260,9 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			json cbad;
 			bool okBad2 = child.Call("compare_load", json{{"code", "not a code"}}, cbad, 60000);
 			if (okCl) child.Call("compare_remove", json{{"index", 1}}, crm, 60000);
-			// POB's own CompareEntry before beta 2026-09-25 ("Fix compare tab not
-			// checking socket colours") builds its socket groups before the items
-			// load, so the compared copy of a build calculates lower than the build
-			// itself -- in classic POB's Compare tab too. Stats must match only on a
-			// POB that has that fix; tree, items and config must match everywhere.
+			// Older CompareEntry builds socket groups before items load, so the compared copy calculates
+			// lower (classic Compare tab too): stats must match only on a POB with the socket-colour fix;
+			// tree, items and config must match everywhere.
 			const bool pobCompareFixed =
 			    ReadFileA(sandbox + L"\\Classes\\CompareEntry.lua").find("UpdateSocketGroups") != std::string::npos;
 			check(pobCompareFixed ? "compare_load/compare_state: this build against its own code shows no differences (tree, items, config, stats)"
@@ -2335,11 +2304,8 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			bool okTr = okLoad && child.Call("trade_open", json::object(), tr0, 120000);
 			bool okTrSet = okTr && child.Call("trade_set", json{{"tradeType", 2}, {"sort", 2}, {"fetchPages", 3}}, trSet, 60000);
 			bool okBad = child.Call("trade_price", json{{"row", 1}}, trBad, 60000);
-			// "Find best" without a login only builds POB's weighted search URL:
-			// that part is local, so it is checked whenever the league list (which
-			// does come from the site) arrived.
-			// the realm and league lists come from the site through POB's own
-			// background request; give them a few pumps before deciding
+			// "Find best" without a login only builds POB's weighted search URL (local); checked whenever
+			// the league list arrived. The realm/league lists come via POB's background request: pump a few times first.
 			for (int i = 0; okTr && i < 5 && tr0["league"]["options"].empty(); i++) {
 				json pump;
 				if (!child.Call("trade_refresh", json{{"seconds", 5}}, pump, 60000)) break;
@@ -2353,9 +2319,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			if (leagues) {
 				bestOk = child.Call("trade_find_best", json{{"row", 1}, {"timeout", 240}}, trBest, 300000);
 				if (bestOk) for (auto& r : trBest["rows"]) if (r.value("index", 0) == 1) bestUrl = r.value("url", "");
-				// The query rides either as ?q=<json> (old site) or, since GGG's gzip +
-				// base64url change, as the path segment after the league:
-				// /trade/search/<league>/<blob>.
+				// The query rides as ?q=<json> (old site) or as /trade/search/<league>/<gzip+base64url blob>.
 				const size_t at = bestUrl.find("/trade/search/");
 				bool hasQuery = bestUrl.find("?q=") != std::string::npos;
 				if (!hasQuery && at != std::string::npos) {
@@ -2368,9 +2332,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			              : "trade_find_best needs a league list from the site; it was not reachable, so the row stays disabled",
 			      leagues ? bestOk : (okTr && !tr0["rows"][0].value("canFindBest", true)),
 			      "leagues=" + std::to_string(leagues ? tr0["league"]["options"].size() : 0) + " url=" + bestUrl.substr(0, 110));
-			// POB's "Query Options" dialog (what "Find best" opens): the page
-			// shows it instead of the bridge answering for it, so its controls
-			// have to come out, take a mod filter, and go away again.
+			// POB's "Query Options" dialog ("Find best"): the page shows it, so its controls must come out, take a mod filter, and close.
 			json trOpt, trMods, trModsQ, trPick, trMin, trClosed, trClosedMods, trTip;
 			bool optOk = false, modsOk = false, pickOk = false, closedOk = false;
 			std::string modLabel;
@@ -2426,13 +2388,9 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			           : tr0.dump().substr(0, 220));
 		}
 
-		// --- graceful shutdown --------------------------------------------------
-		// POB's own start-up update check (Launch.lua OnInit, a subscript) is
-		// still running when upstream has a release pending -- it fetches every
-		// changed file -- and the engine's shutdown waits for that subscript
-		// (ui_subscript_c::Stop), so closing stdin then took longer than the
-		// 10 s below and the child was killed (exit 9). Let it finish first:
-		// this test is about stdin, not about how big POB's next update is.
+		// graceful shutdown
+		// POB's start-up update check (a subscript) keeps running when upstream has a release pending, and
+		// shutdown waits for it (ui_subscript_c::Stop), exceeding the 10 s below (exit 9): let it finish first.
 		{
 			ULONGLONG waitStart = GetTickCount64();
 			json us;
@@ -2450,12 +2408,10 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		std::string stray = child.StrayOutput();
 		if (!stray.empty()) line("INFO non-JSON output from child:\r\n" + stray.substr(0, 2000));
 
-		// --- POB's own "basic" update, dry run ----------------------------------
-		// A runtime-part file (lua\xml.lua) with a wrong sha1 forces "basic":
-		// ApplyUpdate moves the program files in-process, rewrites the op list's
-		// start line to this exe, drops the relaunch marker, spawns Update.exe
-		// and Exit()s. POB_ZH_HEADLESS_DRYSPAWN keeps Update.exe from taking
-		// over the sandbox; we run it ourselves afterwards without its start line.
+		// POB's own "basic" update, dry run
+		// A runtime-part file (lua\xml.lua) with a wrong sha1 forces "basic": ApplyUpdate moves program
+		// files in-process, rewrites the op list's start line to this exe, drops the relaunch marker,
+		// spawns Update.exe and Exit()s. POB_ZH_HEADLESS_DRYSPAWN stops Update.exe taking over the sandbox.
 		if (!untouchedNone) {
 			check("basic update dry run", true, "skipped: the untouched sandbox already differs from upstream (a POB update is pending)");
 		} else {
@@ -2533,9 +2489,8 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			Rmtree(sandbox + L"\\Update");
 		}
 
-		// --- a bridge whose probe no longer matches POB: the gate must say so --
-		// (what a POB update that renames a function looks like; the window
-		// falls back to classic on this verdict and the launcher greys its button)
+		// a bridge whose probe no longer matches POB: the gate must say so
+		// (a POB update that renames a function: the window falls back to classic and the launcher greys its button)
 		{
 			std::wstring bridgeSrc = opt.bridgeLua.empty() ? exeDir + L"Data\\bridge\\bridge.lua" : opt.bridgeLua;
 			std::string src = ReadFileA(bridgeSrc);
@@ -2559,7 +2514,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			DeleteFileW(brokenBridge.c_str());
 		}
 
-		// --- a broken script must end the child, not hang it --------------------
+		// a broken script must end the child, not hang it
 		{
 			const std::wstring broken = sandboxRoot + L"\\broken";
 			Rmtree(broken);
@@ -2585,7 +2540,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 
 done:
 	line("PASS " + std::to_string(g_pass) + "   FAIL " + std::to_string(g_fail));
-	line(g_fail == 0 ? "ALL PASS" : "FAILURES");
+	line(g_fail == 0 ? "RESULT PASS" : "RESULT FAIL");
 
 	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
 		FILE* f = nullptr;
@@ -2596,11 +2551,10 @@ done:
 	return g_fail;
 }
 
-// --headless-selftest-poe2 [pobDir]: the same engine and bridge against PoE2's
-// Path of Building (a fork with its own tree art, classes, weapon-set passives
-// and attribute nodes, and without some PoE1 surfaces). A PoE2 install ships no
-// builds, so the test makes one through the bridge and uses POB's own save of
-// it as the oracle. Report at <exeDir>headless_selftest_poe2.txt.
+// --headless-selftest-poe2 [pobDir]: the same engine and bridge against PoE2's POB (own tree art,
+// classes, weapon-set passives, attribute nodes; lacks some PoE1 surfaces). PoE2 ships no builds, so
+// the test makes one through the bridge and uses POB's own save as the oracle.
+// Report at <exeDir>headless_selftest_poe2.txt.
 int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobDirOverride)
 {
 	g_rep.clear(); g_fail = 0; g_pass = 0;
@@ -2659,7 +2613,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			      caps.dump());
 		}
 
-		// --- a new build ---------------------------------------------------------
+		// a new build
 		json nb, cls;
 		bool okNew = child.Call("new_build", json::object(), nb, 120000);
 		check("new_build", okNew, nb.dump().substr(0, 200));
@@ -2669,7 +2623,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		for (size_t i = 0; okCls && i < nCls; i++) if (cls["classes"][i]["ascendancies"].size() < 2) ascOk = false;
 		check("list_classes: PoE2's classes, each with ascendancies after None", nCls >= 8 && ascOk, "classes=" + std::to_string(nCls));
 
-		// --- tree ------------------------------------------------------------------
+		// tree
 		json td, ta, ts;
 		bool okTs = child.Call("get_tree_state", json::object(), ts, 30000);
 		std::string version = okTs ? ts.value("treeVersion", "") : "";
@@ -2710,8 +2664,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		check("tree_assets again answers from the cache (unchanged art is not decoded twice)", okTa2 && secondMs < 5000 && secondMs * 3 < firstMs + 3000,
 		      "first=" + std::to_string(firstMs) + "ms second=" + std::to_string(secondMs) + "ms");
 
-		// A path from the class start: breadth-first over POB's links, normal
-		// nodes only, the first few in order so every click is adjacent.
+		// A path from the class start: breadth-first over POB's links, normal nodes only, so every click is adjacent.
 		int startId = 0;
 		if (okTd && okTs) {
 			for (auto& c : td["classes"]) if (c.value("name", "") == ts.value("className", "")) startId = c.value("startNodeId", 0);
@@ -2788,9 +2741,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		check("set_alloc_mode 1 then a click: the node is allocated to weapon set 1 (nodeModes)",
 		      okM1 && m1.value("allocMode", -1) == 1 && okSc && sc["nodeModes"].value(std::to_string(setNode), 0) == 1,
 		      "node=" + std::to_string(setNode) + " " + (okSc ? sc["nodeModes"].dump() : sc.dump()).substr(0, 200));
-		// still in weapon-set mode: a keystone is global and stays on the main
-		// tree (PassiveTreeView's shouldBlockGlobalNodeAllocation), so the click
-		// is refused and nothing is allocated
+		// still in weapon-set mode: a keystone is global (shouldBlockGlobalNodeAllocation), so the click is refused
 		int keystone = 0;
 		if (okTd) for (auto& [k, n] : td["nodes"].items()) if (n.value("type", "") == "Keystone" && !n.contains("asc")) { keystone = n.value("id", 0); break; }
 		json kb;
@@ -2803,7 +2754,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		check("tree_undo takes the weapon-set node back", okUndo && undo.value("allocCount", -1) == allocated,
 		      okUndo ? std::to_string(undo.value("allocCount", -1)) + " vs " + std::to_string(allocated) : undo.dump().substr(0, 200));
 
-		// --- items and skills ----------------------------------------------------
+		// items and skills
 		const std::string bow = "Rarity: Rare\nStorm Thirst\nRecurve Bow\n--------\nItem Level: 80\n--------\n"
 		                        "Adds 20 to 60 Lightning Damage\n+120 to Accuracy Rating\n15% increased Attack Speed\n";
 		json ai, ag, stats;
@@ -2814,9 +2765,8 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		double avg = okSt ? stats["stats"].value("AverageDamage", 0.0) : 0.0;
 		check("add_group Lightning Arrow on the bow: POB calculates damage", okAg && avg > 0, "AverageDamage=" + std::to_string(avg));
 
-		// The empty add row: supports that can support the group, by the DPS
-		// PoE2's picker estimates inside UpdateSortCache (it has no DPSBuilder),
-		// and the picker hover / gem hover compares.
+		// The empty add row: supports for the group, by the DPS PoE2's picker estimates in UpdateSortCache
+		// (no DPSBuilder), plus the picker/gem hover compares.
 		{
 			const int gi = okAg ? ag.value("index", 0) : 0;
 			json sm, sa;
@@ -2876,7 +2826,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		bool okDbo = child.Call("item_db_options", json{{"kind", "unique"}}, dbo, 180000);
 		check("item_db_options: PoE2's unique database filters", okDbo && dbo.contains("slot") && dbo["slot"].size() > 5, dbo.dump().substr(0, 200));
 
-		// --- a real zh-TW PoE2 copy through the paste path ------------------------
+		// a real zh-TW PoE2 copy through the paste path
 		{
 			const PoE2PasteFixture* wand = nullptr;
 			for (const PoE2PasteFixture& fx : kPoe2PasteFixtures) if (std::string(fx.name) == "wand-rare-dueling-wand-01") wand = &fx;
@@ -2884,10 +2834,8 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			bool okPt = wand && child.Call("parse_item_text", json{{"raw", wand->text}}, pt, 60000);
 			int unsupported = 0;
 			std::string unsupportedText;
-			// Only lines the paste actually carries count. The wand names no rune, so
-			// POB infers one from the "(rune)" line (Hedgewitch Assandra's Rune of
-			// Wisdom) and adds that rune's Bonded line itself -- a stat POB has no
-			// parser for. That line is POB's own guess, not text we translated.
+			// Only lines the paste carries count: POB infers a rune from the "(rune)" line and adds its Bonded
+			// line itself (a stat POB cannot parse) -- POB's own guess, not text we translated.
 			const std::string pastedText = okPt ? pt.value("text", "") : "";
 			if (okPt) for (auto& l : pt["lines"]) if (l.value("unsupported", false) && pastedText.find(l.value("line", "")) != std::string::npos) { unsupported++; unsupportedText += " [" + l.dump().substr(0, 160) + "]"; }
 			check("parse_item_text: a zh-TW PoE2 wand comes back in English, POB reads its base and every line",
@@ -2898,13 +2846,9 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			           : pt.dump().substr(0, 200));
 		}
 
-		// --- a trade-site paste: the "Requirements:" block ------------------------
-		// PoE1's POB consumes "Dex: 99" into the item's requirements; the PoE2
-		// fork kept the header and the Level line but never ported the attribute
-		// branch, so the line fell through to the mod parser and the item wore a
-		// modifier reading "Dex: 99 (Not supported in PoB yet)". Dropped in
-		// poecharm_inject.lua -- POB works the requirement out from the base and
-		// the mods anyway, which is what PoE1 ends up showing.
+		// a trade-site paste: the "Requirements:" block
+		// PoE1's POB consumes "Dex: 99" into requirements; the PoE2 fork never ported that branch, so the
+		// line fell to the mod parser ("Dex: 99 (Not supported in PoB yet)"). Dropped in poecharm_inject.lua.
 		{
 			const char* kTradePaste =
 			    "Rarity: Rare\nPandemonium Star\nDesert Cap\n--------\nHelmet\n"
@@ -2929,8 +2873,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			      okTp ? "mods=" + std::to_string(mods) + " attrLine=" + std::to_string(sawAttrLine) +
 			                 " base=" + tp["summary"].value("baseName", "")
 			           : tp.dump().substr(0, 300));
-			// The helmet has one augment socket: the panel must offer POB's "Rune #1"
-			// drop-down (field-reported missing from the new UI), and picking a rune
+			// The helmet has one augment socket: the panel must offer POB's "Rune #1" drop-down, and a pick
 			// must put its line into the item under the "rune" section.
 			if (okTp) {
 				int slots = tp.contains("runeSlots") ? (int)tp["runeSlots"].size() : 0;
@@ -2954,12 +2897,10 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			child.Call("item_edit_cancel", json::object(), tpCancel, 60000);
 		}
 
-		// --- item / skill / config sets --------------------------------------------
-		// POB2's New*Set appends the id to the order list itself; the bridge used to
-		// append again, so one "+" listed the set twice and deleting it left an id
-		// with no set, which SyncLoadouts (Build.lua:668) then crashed on. Each kind:
-		// add one, it is listed once; delete it, the list is back to what it was and
-		// the loadout sync (list_loadouts calls SyncLoadouts unguarded) still works.
+		// item / skill / config sets
+		// POB2's New*Set appends the id to the order list itself (the bridge must not append again, or
+		// delete leaves an id with no set and SyncLoadouts crashes). Each kind: add one, listed once;
+		// delete it, list back to what it was and list_loadouts still works.
 		{
 			struct Kind { const char* list; const char* field; const char* add; const char* del; };
 			const Kind kinds[] = {
@@ -2994,7 +2935,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			}
 		}
 
-		// --- craft drop-downs of a radius jewel -------------------------------------
+		// craft drop-downs of a radius jewel
 		// POB lists "Notable Passive Skills in Radius also grant X" as "Notable: X",
 		// a form no dictionary has; the bridge translates the full official line and
 		// shortens it the same way. Every option must come back in Chinese.
@@ -3035,11 +2976,9 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			child.Call("item_edit_cancel", json::object(), cancel, 60000);
 		}
 
-		// --- a rune that changes the affix limit ------------------------------------
-		// Field report: craft a weapon, pick "+1 Suffix Modifier allowed" (Serle's
-		// Triumph) and merely hovering the new suffix row crashed POB -- the rune's
-		// selFunc never called UpdateAffixControls, so that row's list was empty
-		// (upstream master 0.23.1, English too; poecharm_inject PATCHES["ItemsTab"]).
+		// a rune that changes the affix limit
+		// Picking "+1 Suffix Modifier allowed" crashed POB on hovering the new suffix row (the rune's selFunc
+		// never called UpdateAffixControls; patched in poecharm_inject PATCHES["ItemsTab"]).
 		// Every affix row shown after the pick must have a list its selection is in.
 		{
 			json co, ed, rs, cancel;
@@ -3070,7 +3009,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			child.Call("item_edit_cancel", json::object(), cancel, 60000);
 		}
 
-		// --- config, calcs, notes --------------------------------------------------
+		// config, calcs, notes
 		json lc, gc;
 		bool okLc = child.Call("list_config", json::object(), lc, 60000);
 		std::string checkVar;
@@ -3090,14 +3029,13 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		bool okGc = child.Call("get_calcs", json::object(), gc, 60000);
 		check("get_calcs: PoE2's CalcSections laid out", okGc && gc["sections"].size() > 10, okGc ? "" : gc.dump().substr(0, 200));
 
-		// --- share code and save oracle --------------------------------------------
+		// share code and save oracle
 		json ex, dec;
 		bool okEx = child.Call("export_code", json::object(), ex, 60000);
 		bool okDec = okEx && child.Call("decode_code", json{{"code", ex.value("code", "")}}, dec, 60000);
 		check("export_code -> decode_code on a PoE2 build", okDec, dec.dump().substr(0, 200));
 		{
-			// "Open in PoB" (pob2://): ONLINE -- a real poe.ninja PoE2 button link
-			// (2026-10, Forbidden Rites ladder character) through POB2's DownloadBuild;
+			// "Open in PoB" (pob2://): ONLINE -- a real poe.ninja PoE2 link through POB2's DownloadBuild;
 			// PoE1's pob:// scheme is not this POB's and must fail.
 			json fu, fuDec, fuOther;
 			bool okFu = child.Call("import_from_uri",
@@ -3169,9 +3107,8 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		      (attrId == 0 || allocAfter["overrides"].contains(std::to_string(attrId))),
 		      okAa ? std::to_string(allocAfter.value("allocCount", 0)) + " vs " + std::to_string(allocated) : "");
 
-		// --- F2's switch on PoE2's POB too ---------------------------------------
-		// Same flag, same bridge code, different dictionaries: worth its own
-		// check because this is the game where "it only works on PoE1" hides.
+		// F2's switch on PoE2's POB too
+		// Same flag and bridge code, different dictionaries: checked separately so "only works on PoE1" cannot hide.
 		{
 			json off, on, sideOff, sideOn, ver;
 			const bool okOff = child.Call("set_translate", json{{"enabled", false}}, off, 30000) &&
@@ -3197,7 +3134,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			      "off " + std::to_string(offSame) + "/" + std::to_string(offText) + ", on " + std::to_string(onZh));
 		}
 
-		// --- import ------------------------------------------------------------------
+		// import
 		json is, fc;
 		bool okIs = child.Call("import_status", json::object(), is, 60000);
 		bool poe2Realm = false;
@@ -3207,11 +3144,8 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		check("fetch_characters{site} is refused on PoE2's POB (no account-name import) and the child survives",
 		      !okFc && child.Alive(), fc.dump().substr(0, 200));
 
-		// PoE2's ImportTab runs the whole import itself, in a shape that has
-		// nothing in common with PoE1's: a raw JSON body, its own controls, its
-		// own status line. The bridge must report that it took that path, or it
-		// is back to driving PoE1's fields on a tab that does not have them --
-		// which is exactly how the character list stayed empty forever.
+		// PoE2's ImportTab runs the whole import itself (raw JSON body, own controls and status line); the
+		// bridge must report that it took that path, not drive PoE1's fields on a tab that lacks them.
 		check("import_status reports PoE2's self-driving import shape",
 		      okIs && is.value("selfDriving", false) && is["site"].contains("mode"),
 		      okIs ? ("selfDriving=" + std::to_string(is.value("selfDriving", false)) +
@@ -3236,11 +3170,9 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		      okPump && pumped.value("frames", 0) > 0 && pumped.value("seconds", 0) == 1,
 		      pumped.dump().substr(0, 120));
 
-		// --- From Nothing without its "Radius:" line --------------------------------
-		// A poe.ninja PoE2 export (field report, poe.ninja/poe2/pob/2b496) writes the
-		// jewel without "Radius: Small", so POB leaves jewelRadiusIndex nil and
-		// socketing it crashed BuildAllDependsAndPaths (PassiveSpec.lua:1381, upstream
-		// master and dev alike). The radius now comes from the unique database.
+		// From Nothing without its "Radius:" line
+		// A poe.ninja PoE2 export writes the jewel without "Radius: Small", leaving jewelRadiusIndex nil and
+		// crashing BuildAllDependsAndPaths on socketing (upstream too); the radius now comes from the unique database.
 		{
 			static const char* kFromNothingXml =
 			    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<PathOfBuilding2>\n"
@@ -3270,16 +3202,15 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 
 		child.Stop(5000);
 
-		// --- the system-browser fallback (what Wine / CrossOver get) -------------
-		// The loopback server against this sandbox: the page with its boot
-		// script, the folder mounts, the refusals (token, climbing, Host), the
-		// event stream carrying the engine's hello, a host.* round trip and
-		// host.close ending it.
+		// the system-browser fallback (what Wine / CrossOver get)
+		// The loopback server against this sandbox: boot page, folder mounts, refusals (token, climbing,
+		// Host), the event stream with the engine's hello, a host.* round trip, and host.close.
 		{
 			SetEnvironmentVariableW(L"POB_ZH_NO_BROWSER", L"1");
 			const std::wstring urlFile = exeDir + L"PobTools\\modern_ui_url_poe2.txt";
 			DeleteFileW(urlFile.c_str());
 			LauncherConfig bcfg = LoadLauncherConfig(exeDir + L"pob-zh.ini");
+			bcfg.uiMode = 2; // 固定啟動主題為 2,不看開發機的 ini,才能驗「ini 為 0 時維持啟動主題」
 			std::atomic<int> brc{ -1000 };
 			std::thread server([&]() { brc = ShowModernUiInBrowser(exeDir, L"poe2", L"zh-rTW", bcfg, L"", sandbox); });
 			std::string url;
@@ -3332,6 +3263,27 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			check("browser mode: the page is served with the window.pobtools boot script injected",
 			      page == 200 && body.find("window.pobtools") != std::string::npos && body.find("\"browser\":true") != std::string::npos,
 			      std::to_string(page));
+			// 工作階段開著時使用者改主題再按啟動會重用同一個工作階段,首頁必須依請求當下 ini 的 UiMode 回對應主題
+			const std::wstring uiIni = exeDir + L"pob-zh.ini";
+			wchar_t uiModeOrig[16];
+			GetPrivateProfileStringW(L"PobTools", L"UiMode", L"\x01", uiModeOrig, 16, uiIni.c_str());
+			const bool uiModeHadKey = wcscmp(uiModeOrig, L"\x01") != 0;
+			WritePrivateProfileStringW(L"PobTools", L"UiMode", L"1", uiIni.c_str());
+			std::string bodyT1, bodyT2, bodyT0;
+			const int pageT1 = port ? http("GET", prefix, host, "", bodyT1) : -1;
+			const bool t1Ok = bodyT1.find("./assets/index-") != std::string::npos && bodyT1.find("./assets/theme2-") == std::string::npos;
+			WritePrivateProfileStringW(L"PobTools", L"UiMode", L"2", uiIni.c_str());
+			const int pageT2 = port ? http("GET", prefix, host, "", bodyT2) : -1;
+			const bool t2Ok = bodyT2.find("./assets/theme2-") != std::string::npos;
+			// 經典(0)不該把還活著的工作階段掉回主題 1,要維持啟動主題(上面固定為 2)
+			WritePrivateProfileStringW(L"PobTools", L"UiMode", L"0", uiIni.c_str());
+			const int pageT0 = port ? http("GET", prefix, host, "", bodyT0) : -1;
+			const bool t0Ok = bodyT0.find("./assets/theme2-") != std::string::npos;
+			WritePrivateProfileStringW(L"PobTools", L"UiMode", uiModeHadKey ? uiModeOrig : nullptr, uiIni.c_str());
+			check("browser mode: the page follows the ini's UiMode at request time; classic (0) keeps the session's launch theme",
+			      pageT1 == 200 && pageT2 == 200 && pageT0 == 200 && t1Ok && t2Ok && t0Ok,
+			      "t1=" + std::to_string(pageT1) + " t1Ok=" + std::to_string(t1Ok) + " t2=" + std::to_string(pageT2) + " t2Ok=" + std::to_string(t2Ok) +
+			          " t0=" + std::to_string(pageT0) + " t0Ok=" + std::to_string(t0Ok));
 			int font = port ? http("GET", prefix + "~fonts/NotoSansTC-Regular.ttf", host, "", body) : -1;
 			int badTok = port ? http("GET", "/t/00000000000000000000000000000000/", host, "", body) : -1;
 			int climb = port ? http("GET", prefix + "~pob/../../pob-zh.ini", host, "", body) : -1;
@@ -3446,7 +3398,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 	}
 
 	line("PASS " + std::to_string(g_pass) + "   FAIL " + std::to_string(g_fail));
-	line(g_fail == 0 ? "ALL PASS" : "FAILURES");
+	line(g_fail == 0 ? "RESULT PASS" : "RESULT FAIL");
 	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
 		FILE* f = nullptr;
 		freopen_s(&f, "CONOUT$", "w", stdout);

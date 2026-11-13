@@ -2,9 +2,9 @@
 //
 // Icon glyphs for the launcher (Lucide 1.47.0, ISC; see host/data/icons_lucide.inc).
 // Each constant is the icon's UTF-8 string: draw it with the body / small / title
-// face (the icon font is merged into them) or through PobUi::Icon. They are NOT
-// in the launcher string table on purpose: the glyphs are Private Use Area
-// codepoints that no text font has, and the coverage selftest must not ask for them.
+// face (icon font merged in) or PobUi::Icon. NOT in the launcher string table on
+// purpose: they are Private Use Area codepoints no text font has, and the coverage
+// selftest must not ask for them.
 #pragma once
 
 namespace PobIcon {
@@ -16,7 +16,6 @@ inline constexpr const char House[] = "\xee\x83\xb5"; // house U+E0F5
 inline constexpr const char Funnel[] = "\xee\x83\x9c"; // funnel U+E0DC
 inline constexpr const char Crosshair[] = "\xee\x82\xac"; // crosshair U+E0AC
 inline constexpr const char Gem[] = "\xee\x89\x82"; // gem U+E242
-inline constexpr const char CodeXml[] = "\xee\x88\x86"; // code-xml U+E206
 inline constexpr const char ChartColumn[] = "\xee\x8a\xa3"; // chart-column U+E2A3
 inline constexpr const char Languages[] = "\xee\x83\xbe"; // languages U+E0FE
 inline constexpr const char AlignLeft[] = "\xee\x86\x85"; // text-align-start U+E185
@@ -29,7 +28,6 @@ inline constexpr const char FileText[] = "\xee\x83\x8c"; // file-text U+E0CC
 inline constexpr const char FolderOpen[] = "\xee\x89\x87"; // folder-open U+E247
 inline constexpr const char X[] = "\xee\x86\xb2"; // x U+E1B2
 inline constexpr const char Info[] = "\xee\x83\xb9"; // info U+E0F9
-inline constexpr const char CircleAlert[] = "\xee\x81\xb7"; // circle-alert U+E077
 inline constexpr const char TriangleAlert[] = "\xee\x86\x93"; // triangle-alert U+E193
 inline constexpr const char CircleX[] = "\xee\x82\x84"; // circle-x U+E084
 inline constexpr const char CircleCheck[] = "\xee\x88\xa6"; // circle-check U+E226

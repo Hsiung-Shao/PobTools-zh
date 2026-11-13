@@ -1,13 +1,10 @@
 // --error-log-selftest: the failure log's own contract.
 //
-// The log exists so a user's "it stopped working" turns into a place to look. If
-// its lines are malformed, its retention deletes the wrong thing, or two threads
-// tear each other's entries, we would find that out from the one report we
-// cannot re-run. So the shape is pinned here rather than eyeballed.
+// Pins the log's line shape, retention and thread safety (a bug there would only
+// surface in a user report we cannot re-run).
 //
-// Everything runs in a scratch directory under %TEMP% via PobLog::SetDirForTest.
-// The install's own PobTools\logs\ is the user's evidence; a self-test that
-// appended to it -- or pruned it -- would be destroying the thing it protects.
+// Runs in a scratch directory under %TEMP% via PobLog::SetDirForTest: the
+// install's own PobTools\logs\ is the user's evidence and must not be touched.
 
 #include "error_log.h"
 
@@ -130,9 +127,8 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 
 	const std::wstring today = box + TodayName();
 
-	// T1 -- the line carries the three things a bug report needs: when, which
-	// version, which feature. Without the version a report is unactionable: the
-	// same symptom means different things two releases apart.
+	// T1 -- the line carries when, which version, which feature (a report without
+	// the version is unactionable).
 	{
 		DeleteFileW(today.c_str());
 		PobLog::Error("app-update", "check failed: HTTP 403");
@@ -147,9 +143,7 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		check("T1e it is timestamped", !s.empty() && s[0] == '[' && s.find("] ") != std::string::npos, s);
 	}
 
-	// T2 -- one failure is one line even when the message is not. Lua tracebacks
-	// and Windows error text are multi-line; four lines in the file would read as
-	// four separate failures and send whoever reads it chasing three ghosts.
+	// T2 -- one failure is one line even for multi-line messages (Lua tracebacks).
 	{
 		DeleteFileW(today.c_str());
 		PobLog::Error("inject", "patch failed\r\nstack traceback:\n\tline 2\n\tline 3");
@@ -163,8 +157,7 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// T3 -- an empty/odd feature tag must not produce a nameless entry. "[]" in a
-	// report tells the reader nothing and looks like corruption.
+	// T3 -- an empty/odd feature tag must not produce a nameless "[]" entry.
 	{
 		DeleteFileW(today.c_str());
 		PobLog::Error("", "no tag");
@@ -174,9 +167,8 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		      ls.empty() ? "" : ls[0]);
 	}
 
-	// T4 -- appends accumulate rather than truncate. The obvious failure mode of
-	// a naive implementation is CREATE_ALWAYS, which would leave only the last
-	// error of the session -- usually a consequence, not the cause.
+	// T4 -- appends accumulate rather than truncate (CREATE_ALWAYS would keep only
+	// the last error, usually a consequence, not the cause).
 	{
 		DeleteFileW(today.c_str());
 		for (int i = 0; i < 5; i++) PobLog::Error("data", "entry " + std::to_string(i));
@@ -185,9 +177,7 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		      std::to_string(ls.size()) + " line(s)");
 	}
 
-	// T4b -- ten lines per incident, then silence. A failure on a per-frame path
-	// repeats sixty times a second; without a cap the file grows without bound and
-	// nobody opens it, which defeats the whole feature.
+	// T4b -- ten lines per incident, then silence (a per-frame failure repeats 60x/s).
 	{
 		DeleteFileW(today.c_str());
 		PobLog::ResetCapsForTest();
@@ -196,8 +186,7 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		check("T4b 500 identical failures are capped at 10 lines", ls.size() == 10,
 		      std::to_string(ls.size()) + " line(s)");
 		if (ls.size() == 10) {
-			// Announced silence. Without this the reader cannot tell "it stopped"
-			// from "the log gave up", and those call for opposite next steps.
+			// Announced silence: "it stopped" vs "the log gave up" need opposite next steps.
 			check("T4b1 the tenth line says the cap was reached",
 			      ls[9].find(u8"上限") != std::string::npos, ls[9]);
 			check("T4b2 the earlier ones are plain", ls[0].find(u8"上限") == std::string::npos,
@@ -205,9 +194,7 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// T4c -- the cap must not silence a DIFFERENT failure. The dangerous version of
-	// this is one that swallows the second symptom, which is usually the one that
-	// explains the first.
+	// T4c -- the cap must not silence a DIFFERENT failure (often the one that explains the first).
 	{
 		DeleteFileW(today.c_str());
 		PobLog::ResetCapsForTest();
@@ -223,8 +210,7 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// T4d -- same text under a different feature tag is a different incident, so it
-	// gets its own budget rather than sharing one.
+	// T4d -- same text under a different feature tag is a different incident.
 	{
 		DeleteFileW(today.c_str());
 		PobLog::ResetCapsForTest();
@@ -237,9 +223,7 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		      std::to_string(ls.size()) + " line(s)");
 	}
 
-	// T4e -- the cap does not reset on its own. A cap that expired on a timer would
-	// let a per-frame failure write ten more lines every minute: the same unbounded
-	// growth, just slower.
+	// T4e -- the cap does not reset on its own (a timed reset is just slower unbounded growth).
 	{
 		DeleteFileW(today.c_str());
 		PobLog::ResetCapsForTest();
@@ -251,9 +235,7 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		      std::to_string(ls.size()) + " line(s)");
 	}
 
-	// T5 -- concurrent writers. The updater worker, the UI thread and the engine
-	// all log; a torn line is worse than a missing one because it looks like data
-	// corruption in whatever it was reporting.
+	// T5 -- concurrent writers (updater worker, UI thread, engine): no torn lines.
 	{
 		DeleteFileW(today.c_str());
 		PobLog::ResetCapsForTest();   // every thread writes a distinct message anyway
@@ -277,9 +259,8 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		      std::to_string(ls.size()) + " lines, " + std::to_string(wellFormed) + " well-formed");
 	}
 
-	// T6 -- retention deletes only what this module wrote, and never today's.
-	// This loop runs inside the user's install directory; one careless wildcard
-	// and it becomes a file shredder pointed at somebody's data.
+	// T6 -- retention deletes only what this module wrote, and never today's
+	// (it runs inside the user's install directory).
 	{
 		const std::wstring keepA = box + L"important.txt";
 		const std::wstring keepB = box + L"error-not-a-date.log";
@@ -303,8 +284,7 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		check("T6e a name with a trailing suffix is untouched", exists(keepC));
 	}
 
-	// T7 -- keepDays 0 means "keep today only", not "delete everything". An
-	// off-by-one here would throw away the log of the session being reported.
+	// T7 -- keepDays 0 means "keep today only", not "delete everything".
 	{
 		Touch(box + L"error-2000-01-02.log");
 		const int removed = PobLog::PruneOlderThan(0);
@@ -314,8 +294,7 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		      "removed=" + std::to_string(removed));
 	}
 
-	// T8 -- the checker can fail. Without this, every PASS above is worth nothing:
-	// a Lines() that always returned one entry would make the file green.
+	// T8 -- the checker can fail (a Lines() that always returned one entry would pass everything above).
 	{
 		const std::vector<std::string> ls = Lines("a\r\nb\r\n\r\nc");
 		check("T8 the line splitter really splits", ls.size() == 3,
@@ -323,9 +302,7 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		check("T8b and drops the blank", ls.size() == 3 && ls[2] == "c");
 	}
 
-	// T9 -- a log location that cannot be written to must not take the caller
-	// down. Logging sits inside error paths; throwing from there would turn a
-	// handled failure into a crash.
+	// T9 -- an unwritable log location must not take the caller down (logging sits in error paths).
 	{
 		PobLog::SetDirForTest(L"\\\\?\\Z:\\nonexistent-volume\\logs\\");
 		bool threw = false;
@@ -340,11 +317,8 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		PobLog::SetDirForTest(box);
 	}
 
-	// T10 -- Diag() is a SECOND file. The error log's value is that an empty file
-	// means a healthy install; if normal events landed there that answer would be
-	// gone. It exists for the paths we cannot run ourselves (CrossOver on a Mac),
-	// so its lines carry the same version/feature/timestamp shape, and retention
-	// must sweep it too or a diagnostic trace would accumulate forever.
+	// T10 -- Diag() is a SECOND file (normal events must not land in the error log),
+	// with the same line shape, and retention must sweep it too.
 	{
 		PobLog::ResetCapsForTest();
 		DeleteFileW(today.c_str());

@@ -7,6 +7,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "win_util.h"
 
 #include <json.hpp>
 
@@ -29,8 +30,7 @@ struct Instance {
 };
 std::vector<Instance> g_instances;
 
-// Drop every finished child. Split out of PobRunningCount because three callers
-// now need "make the table current" without wanting POB's count.
+// Drop every finished child ("make the table current" without POB's count).
 void reap()
 {
 	for (size_t i = 0; i < g_instances.size();) {
@@ -62,20 +62,13 @@ struct FindWindowCtx {
 // The main window of a child process, or null while it has none yet.
 //
 // GLFW creates the window HIDDEN and shows it later (sys_video.cpp passes
-// GLFW_VISIBLE=FALSE so the user never sees an unpositioned stock window), so
-// "not found" is the normal answer for the first moments of a child's life and
-// must not be cached as "this one has no window".
+// GLFW_VISIBLE=FALSE), so "not found" is the normal answer for the first moments
+// of a child's life and must not be cached as "this one has no window".
 //
-// Only the GLFW class counts. There used to be a fallback to "the first visible
-// unowned window of the pid", meant as insurance; what it actually caught was
-// the engine's console window, which is created VISIBLE and stays the only
-// visible window of a fresh POB for its first ~0.3 s (the GLFW window is shown
-// during init, the console is hidden only after init). The launcher resolves
-// every 0.5 s, so about every other POB start latched onto the console, and
-// every appearance message and watchdog probe went to a window that ignored
-// them -- "the sliders do nothing until I restart POB a few times"
-// (2026-09-12). Nothing needs the fallback: a POB without a GLFW window is a
-// POB that has not finished starting.
+// Only the GLFW class counts, with no "first visible unowned window" fallback:
+// the engine's console window is created VISIBLE and is the only visible window
+// for the first ~0.3 s, so a fallback latched onto it and appearance messages
+// and watchdog probes went to a window that ignored them.
 BOOL CALLBACK find_window_cb(HWND hwnd, LPARAM param)
 {
 	auto* ctx = (FindWindowCtx*)param;
@@ -150,10 +143,8 @@ bool spawn(const std::wstring& launchLua, PROCESS_INFORMATION& pi, const std::ws
 	if (CreateProcessW(exe.c_str(), cmdBuf.data(), nullptr, nullptr, FALSE, 0,
 	                   nullptr, nullptr, &si, &pi))
 		return true;
-	// POB is started as `pob-zh.exe --engine <Launch.lua>`, NOT by running POB's
-	// own exe -- so the thing that fails here is spawning ourselves again, and the
-	// usual cause (anti-virus holding the exe, the install moved) is only in
-	// GetLastError, which is gone by the time anyone asks.
+	// POB is started as `pob-zh.exe --engine <Launch.lua>`, NOT POB's own exe, so
+	// what fails here is spawning ourselves; the cause is only in GetLastError.
 	PobLog::Error("pob", "CreateProcess for the POB child failed, GetLastError=" +
 	                         std::to_string((unsigned long)GetLastError()));
 	MessageBoxW(nullptr, L"無法啟動 POB 子程序。", L"PobTools", MB_ICONERROR | MB_OK);
@@ -182,15 +173,6 @@ void ApplyPobWindowOpacity(const std::wstring& game, int percent)
 		if (in.kind != InstanceKind::Pob || !in.hwnd || in.game != game) continue;
 		PostMessageW((HWND)in.hwnd, kMsgSetWindowOpacity, (WPARAM)percent, 0);
 	}
-}
-
-static std::string to_utf8(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int needed = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(needed, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], needed, nullptr, nullptr);
-	return s;
 }
 
 static const UINT      kMsgSetGlassBlur   = WM_APP + 0x51; // mirrored in engine sys_video.cpp
@@ -227,7 +209,7 @@ void ApplyPobTreeBackdrop(const std::wstring& game, int percent)     { post_pct(
 void ApplyPobBackground(const std::wstring& game, const std::wstring& bgPath)
 {
 	if (RunningUnderWine()) return;
-	std::string utf8 = to_utf8(bgPath);
+	std::string utf8 = narrow(bgPath);
 	COPYDATASTRUCT cds{};
 	cds.dwData = kCopyDataBgPath;
 	cds.cbData = (DWORD)utf8.size();
@@ -263,8 +245,7 @@ void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
 	set_env_both(L"POB_LOCALE", locale.c_str());
 	set_env_both(L"POB_ZH_FONTFILE", fontFile.c_str()); // r_font.cpp reads this
 	// Always written, empty included: this process is long-lived in KeepOpen mode,
-	// so clearing the setting has to actually clear the variable rather than leave
-	// the previous launch's value behind for the next POB to inherit.
+	// so clearing a setting must clear the variable, not leave the last launch's value.
 	set_env_both(L"POB_ZH_DATADIR", dataDir.c_str());
 	// "0"/"1", always written for the same long-lived-process reason as above.
 	set_env_both(L"POB_ZH_FONT_ALL", fontApplyAll ? L"1" : L"0");
@@ -320,9 +301,8 @@ unsigned long SpawnPobAndWait(const std::wstring& launchLua)
 	PROCESS_INFORMATION pi{};
 	if (!spawn(launchLua, pi)) return (unsigned long)-1;
 	CloseHandle(pi.hThread);
-	// Both ends of the wait go into the startup timeline: "closed POB, launcher
-	// came back seconds later" is only diagnosable when the child's exit and the
-	// launcher's return are on the same clock.
+	// Both ends of the wait go into the startup timeline so the child's exit and
+	// the launcher's return are on the same clock.
 	startup_trace_mark("POB child spawned (pid %lu); waiting for it to exit", (unsigned long)pi.dwProcessId);
 	WaitForSingleObject(pi.hProcess, INFINITE);
 	DWORD code = 0;
@@ -385,9 +365,7 @@ bool SpawnToolDetached(const std::wstring& exeDir, const wchar_t* flag, Instance
 	if (!CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE,
 	                    env.empty() ? 0 : CREATE_UNICODE_ENVIRONMENT, env.empty() ? nullptr : env.data(),
 	                    exeDir.c_str(), &si, &pi)) {
-		// A message box tells the user; the log is what tells us WHY. GetLastError
-		// is the whole answer here (5 = denied by AV/permissions, 2 = the exe moved)
-		// and it is gone by the time anyone asks.
+		// The log records WHY: GetLastError (5 = denied by AV/permissions, 2 = exe moved).
 		PobLog::Error("pob", "CreateProcess for the tool window failed, GetLastError=" +
 		                         std::to_string((unsigned long)GetLastError()));
 		MessageBoxW(nullptr, L"無法啟動工具視窗（子程序建立失敗）。", L"PobTools",
@@ -423,11 +401,9 @@ std::vector<InstanceInfo> RunningInstances()
 	std::vector<InstanceInfo> out;
 	out.reserve(g_instances.size());
 	for (Instance& in : g_instances) {
-		// Re-resolve while unknown: the window appears some time after the process
-		// does. Once found it is cached, but a stale handle is worse than none, so
-		// verify it still exists -- and is still the GLFW window: a cached handle
-		// that somehow points at anything else heals on the next call instead of
-		// misdirecting messages until the next POB restart.
+		// Re-resolve while unknown (the window appears after the process). A cached
+		// handle is re-verified (exists and is still the GLFW window) so a stale
+		// one heals instead of misdirecting messages.
 		if (in.hwnd && (!IsWindow(in.hwnd) || !is_glfw_window(in.hwnd))) in.hwnd = nullptr;
 		if (!in.hwnd && in.pid) in.hwnd = resolve_main_window(in.pid);
 		out.push_back({ in.pid, in.kind, in.game, (void*)in.hwnd });
@@ -441,9 +417,8 @@ bool AnyPobRunning(const std::wstring& exeDir)
 	// an update swaps engine\*.dll, and only POB has those loaded. A tool window
 	// being open must not block updates.
 	if (PobRunningCount() > 0) return true;
-	// A second launcher instance sees none of our handles. KeepOpen mode makes
-	// "launcher already open, user double-clicks the exe again" likely, and that
-	// second launcher must not swap engine\*.dll under the first one's POB.
+	// A second launcher instance sees none of our handles (likely in KeepOpen mode)
+	// and must not swap engine\*.dll under the first one's POB.
 	HANDLE h = OpenMutexW(SYNCHRONIZE, FALSE, marker_name(exeDir).c_str());
 	if (!h) return false;
 	CloseHandle(h);
@@ -541,11 +516,8 @@ int RunPobLaunchSelfTest(const std::wstring& exeDir)
 		SetEnvironmentVariableW(L"POB_LOCALE", nullptr);
 	}
 
-	// Tools share the table with POB but must never be mistaken for it. The one
-	// that matters is P12: a tool window open while an update wants to swap
-	// engine\*.dll is fine, because no tool has those DLLs loaded. Getting this
-	// wrong would silently stop updating for anyone who leaves the atlas planner
-	// open -- with no error to show for it.
+	// Tools share the table with POB but must never be mistaken for it (P12): an
+	// open tool window must not block updates, since no tool has engine\*.dll loaded.
 	HANDLE t1 = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 	HANDLE t2 = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 	TrackToolHandleForTest(t1, InstanceKind::AtlasPlanner);
@@ -671,13 +643,9 @@ int RunPobLaunchSelfTest(const std::wstring& exeDir)
 		RemoveDirectoryW(dir.c_str());
 	}
 
-	// P27-P29: which of a child's windows is "the POB window". The engine's
-	// console window is created VISIBLE and is the only visible window of a
-	// fresh POB for its first ~0.3 s (the GLFW window starts hidden); with the
-	// launcher polling every 0.5 s, a fallback to "any visible window" latched
-	// onto the console about every other start and every appearance message
-	// went there (2026-09-12). Both windows are stood up in THIS process,
-	// off-screen, so the check needs no engine and no desktop interaction.
+	// P27-P29: which of a child's windows is "the POB window" (the visible console
+	// must not win over the hidden-at-first GLFW window). Both windows are stood
+	// up in THIS process, off-screen, so no engine or desktop interaction is needed.
 	{
 		HINSTANCE hi = GetModuleHandleW(nullptr);
 		const wchar_t* kConCls = L"PobToolsTest Console Class";

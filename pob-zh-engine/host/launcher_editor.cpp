@@ -15,6 +15,7 @@
 #endif
 #include <windows.h>
 #include <shellapi.h>   // ShellExecuteW: open the dictionary folder
+#include "win_util.h"
 
 #include <GLES2/gl2.h>
 #include <GLFW/glfw3.h>
@@ -35,16 +36,6 @@
 namespace Tok = PobUi::Tok;
 using PobUi::D;
 
-// ---- helpers ---------------------------------------------------------------
-
-static std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-	return s;
-}
 
 // Case-insensitive (ASCII) substring test. needleLower must already be lower.
 static bool contains_ci(const std::string& hay, const std::string& needleLower)
@@ -85,8 +76,7 @@ static std::string stem(const std::string& fileName)
 	return dot == std::string::npos ? fileName : fileName.substr(0, dot);
 }
 
-// Stable per-file badge colour: a cheap hash of the file name picks one of the
-// design's badge hues (te.css .src.a-d) or the neutral one.
+// Stable per-file badge colour: a hash of the file name picks one of the design's badge hues.
 struct BadgeHue { std::uint32_t bg, fg; };
 static BadgeHue BadgeColor(const std::string& name)
 {
@@ -118,16 +108,10 @@ static void PillAt(ImDrawList* dl, ImVec2 p, float h, std::uint32_t bg, std::uin
 	SmallAt(dl, ImVec2(p.x + (w - ts.x) * 0.5f, p.y + (h - ts.y) * 0.5f), fg, s);
 }
 
-// ---- POB colour escapes ------------------------------------------------------
-// POB marks colour inline: ^xRRGGBB for a literal colour, ^0..^9 for a palette
-// index. The dictionaries carry them verbatim (218 entries do) because the
-// engine hands the codes straight back to POB, so the editor has to show them
-// the way POB will draw them rather than as raw escape text.
-//
-// Palette and parsing rules mirror engine/common/common.cpp IsColorEscape /
-// ReadColorEscape and the colorEscape[] table -- kept identical on purpose; a
-// preview that invents its own colours would be worse than none. These are
-// POB's colours, data rather than theme, so they are not design tokens.
+// POB colour escapes: ^xRRGGBB (literal) or ^0..^9 (palette). The dictionaries carry them verbatim
+// because the engine hands the codes back to POB, so the editor shows them the way POB draws them.
+// Palette and parsing mirror engine/common/common.cpp IsColorEscape / ReadColorEscape / colorEscape[]
+// -- keep identical; these are POB's colours (data), not design tokens.
 static const ImVec4 kPobPalette[10] = {
 	ImVec4(0.0f, 0.0f, 0.0f, 1.0f), // ^0 black
 	ImVec4(1.0f, 0.0f, 0.0f, 1.0f), // ^1 red
@@ -141,8 +125,7 @@ static const ImVec4 kPobPalette[10] = {
 	ImVec4(0.4f, 0.4f, 0.4f, 1.0f), // ^9 dark gray
 };
 
-// The swatches the multi-line editor offers: POB's own colorCodes
-// (PathOfBuilding Data/Global.lua), so an inserted colour is one POB itself uses.
+// Swatches offered by the multi-line editor: POB's own colorCodes (Data/Global.lua).
 struct PobSwatch { const char* code; const char* name; };
 static const PobSwatch kSwatches[] = {
 	{ "^7", u8"^7 預設（白）" },
@@ -208,8 +191,7 @@ static ImVec4 hex_colour(const char* code)   // "^xRRGGBB" or "^N"
 	return esc ? escape_colour(s, 0, esc) : kPobPalette[7];
 }
 
-// Draw `s` the way POB would: escapes consumed, following text tinted. One line
-// (the table's rows are one line each). `base` is the starting colour.
+// Draw `s` the way POB would: escapes consumed, following text tinted. One line; `base` is the starting colour.
 static void TextPobColored(const std::string& s, const ImVec4& base)
 {
 	ImVec4 cur = base;
@@ -233,8 +215,7 @@ static void TextPobColored(const std::string& s, const ImVec4& base)
 	if (first) ImGui::TextUnformatted(""); // keep the row height when empty
 }
 
-// The multi-line preview: same as TextPobColored, but a real newline or the two
-// characters \n (stats.json's spelling) starts a new line, as POB shows them.
+// Multi-line preview: like TextPobColored, but a real newline or the two characters \n (stats.json's spelling) starts a new line.
 static void DrawPobPreview(const std::string& s, const ImVec4& base)
 {
 	ImVec4 cur = base;
@@ -302,16 +283,10 @@ static std::string filetime_text(unsigned long long ft)
 	return buf;
 }
 
-// ---- file picker ---------------------------------------------------------------
-// Target-file picker, ordered the way the ENGINE loads the files rather than
-// alphabetically. Which file you write to decides whether the edit does anything
-// at all: the dictionary is one flat map merged in meta.json's load_order and the
-// last file to define a key wins. poe1 and poe2 order the same files differently,
-// so the name alone tells the user nothing.
-//
-// Drawn like PobUi::Select, with what Select cannot do: a disabled option (a file
-// not in load_order is never merged, so writing there is guaranteed to do
-// nothing) and a note per row ("已有這個 key", "最後載入").
+// Target-file picker, ordered the way the ENGINE loads the files: the dictionary is one flat map
+// merged in meta.json's load_order (last definition wins, and poe1/poe2 order files differently), so the
+// target file decides whether an edit does anything. Drawn like PobUi::Select plus disabled options
+// (a file not in load_order is never merged) and a note per row ("已有這個 key", "最後載入").
 static std::string FileLabel(const EditorModel& model, int fi)
 {
 	if (fi < 0 || fi >= (int)model.files.size()) return u8"（選擇檔案）";
@@ -395,30 +370,19 @@ static bool FileSelect(const char* id, const EditorModel& model, int* target, fl
 	return changed;
 }
 
-// ---- translation editor, as a panel -----------------------------------------
-//
-// The window / GL context / font atlas / main loop belong to whichever host is
-// drawing this: RunToolWindow for a window of its own, the launcher's tab body
-// when embedded. See tool_panel.h.
-//
-// Layout (2026-10-09 design, TranslationEditor / TEAdd / TEMissing / TEEdit /
-// TEStates): one header row (dictionary | language | entries / missing | undo |
-// more | save), then the page, then a one-line status footer.
+// Translation editor, as a panel. The window / GL context / font atlas / main loop belong to the
+// host drawing it (RunToolWindow or the launcher's tab body; see tool_panel.h).
+// Layout: one header row (dictionary | language | entries / missing | undo | more | save), the page, a status footer.
 
 namespace {
 
-// An action waiting for the unsaved-changes prompt. Every entry point (game
-// select, locale select, reload, closing the tab or the window) needs the same
-// guard, so they set a pending action instead of each opening their own.
+// An action waiting for the unsaved-changes prompt: every entry point sets a pending action instead of opening its own guard.
 enum class Pending { None, SwitchGame, SwitchLocale, Reload, Close };
 
-// "launcher" is the launcher's own labels. Listed here rather than special-cased
-// anywhere because the launcher dictionary folder has the same shape as a game
-// one -- meta.json with a load_order, plus dictionary files.
+// "launcher" is the launcher's own labels (same folder shape as a game dictionary, so not special-cased).
 const char* kGameNames[kDictSlotCount] = { "Path of Exile 1", "Path of Exile 2", u8"啟動器介面" };
 
-// Messages, as states rather than strings: a colour picked by searching a
-// message for "失敗" broke the moment a message said it differently.
+// Messages are states, not strings: colour must not depend on searching the text for "失敗".
 enum class Notice { None, LocaleFallback };
 
 } // namespace
@@ -434,9 +398,8 @@ public:
 		for (int i = 0; i < kDictSlotCount; i++)
 			if (h.game == DictSlotFolder((DictSlot)i)) { gi = i; break; }
 
-		// Test aid (POBTOOLS_TE_STATE, with POBTOOLS_TOOL_SHOT): a known state for a
-		// hidden-window screenshot. Either variable makes this a test run, which
-		// never writes a dictionary, opens Explorer or talks to the launcher.
+		// Test aid (POBTOOLS_TE_STATE, with POBTOOLS_TOOL_SHOT): a known state for a hidden-window screenshot.
+		// Either variable makes this a test run that never writes a dictionary, opens Explorer or talks to the launcher.
 		{
 			wchar_t st[32] = L"";
 			const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_TE_STATE", st, 32);
@@ -444,18 +407,13 @@ public:
 			testMode_ = !testState_.empty() || GetEnvironmentVariableW(L"POBTOOLS_TOOL_SHOT", nullptr, 0) > 0;
 		}
 
-		// The dictionaries the ENGINE will read, per slot. Editing the built-in copy
-		// while POB reads an external one is the one failure this whole feature has to
-		// avoid, so the editor resolves the same settings the launcher does. Resolved
-		// once for all three: switching must not re-read the ini and pick up a
-		// half-finished edit made elsewhere.
+		// The dictionaries the ENGINE will read, per slot (editing the built-in copy while POB reads an
+		// external one is the failure to avoid). Resolved once: switching must not re-read the ini mid-edit.
 		editCfg = LoadLauncherConfig(exeDir + L"pob-zh.ini");
 		for (int i = 0; i < kDictSlotCount; i++)
 			slotDir[i] = ResolveDictDir(exeDir, (DictSlot)i, editCfg.dataDir[i]);
 
-		// Locales come from disk, not a hardcoded list: the caller's choice used to be
-		// discarded outright, so opening the editor from an "en" launcher silently
-		// edited the Chinese dictionary.
+		// Locales come from disk, not a hardcoded list (the caller's choice must be honoured, e.g. an "en" launcher).
 		refreshLocales();
 		if (locales.empty()) {
 			PobLog::Error("panel", u8"翻譯編輯器找不到任何語系資料夾：" + narrow(slotRoot()));
@@ -481,8 +439,7 @@ public:
 
 	void Frame() override
 	{
-		// The host's font-size zoom can change while the panel is open (the
-		// launcher's slider; a tool window follows the ini): read it per frame.
+		// The host's font-size zoom can change while the panel is open: read it per frame.
 		scale = host_->scale;
 		editSeen_ = false;
 
@@ -506,9 +463,7 @@ public:
 		ImGui::EndChild();
 		drawFooter();
 
-		// An inline edit that ended without its cell reporting it (the row
-		// scrolled out of the clipper while the box was active) still lands on the
-		// undo stack.
+		// An inline edit that ended without its cell reporting it (row scrolled out of the clipper) still lands on the undo stack.
 		if (editActive_ && !editSeen_) finishInlineEdit();
 
 		drawMoreMenu();
@@ -517,8 +472,7 @@ public:
 		drawBigConfirm();
 		drawUnsavedDialog();
 
-		// Ctrl+Z: the editor's own undo, only while no text box is active -- typed
-		// into a box it is that box's undo.
+		// Ctrl+Z is the editor's undo only while no text box is active (else the box's own).
 		const ImGuiIO& io = ImGui::GetIO();
 		if (io.KeyCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Z, false) && !ImGui::IsAnyItemActive() &&
 		    !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
@@ -555,23 +509,20 @@ public:
 
 	void AbortClose() override
 	{
-		// Only an agreement not yet acted on is taken back. A panel mid-prompt keeps
-		// its prompt: the user is looking at it and answering it decides the outcome.
+		// Only an agreement not yet acted on is taken back; a panel mid-prompt keeps its prompt.
 		if (close_ == ToolCloseState::Closed) close_ = ToolCloseState::Open;
 	}
 
 	PobUi::Density Density() const override { return PobUi::Density::Compact; }
 	const char* PanelId() const override { return "trans"; }
 
-	// True once a save has happened, so the launcher can reload its own labels: this
-	// editor can be editing the launcher's dictionary, i.e. the very strings the
-	// launcher is drawing with. Reading it clears it.
+	// True once a save has happened, so the launcher can reload its own labels (this editor may be
+	// editing the very strings the launcher draws with). Reading it clears it.
 	bool TakeSavedFlag() { const bool f = saved_; saved_ = false; return f; }
 	// "前往設定" was pressed in a launcher tab. Reading it clears it.
 	bool TakeSettingsRequest() { const bool f = wantSettings_; wantSettings_ = false; return f; }
 
-	// ---- headless driver (--trans-editor-selftest) ------------------------------
-	// The same entry points the UI calls, without a frame.
+	// Headless driver (--trans-editor-selftest): the same entry points the UI calls, without a frame.
 	std::string TestOp(const std::string& op)
 	{
 		if (op == "edit") {
@@ -628,8 +579,7 @@ private:
 		return code;
 	}
 
-	// Load curLocale of the current slot and reset everything that pointed into the
-	// old model. Every switch, reload and the first load go through here.
+	// Load curLocale of the current slot and reset everything that pointed into the old model (every switch/reload goes here).
 	void loadModel()
 	{
 		model = LoadModel(slotRoot(), curLocale);
@@ -667,7 +617,6 @@ private:
 		searchLower = to_lower_ascii(searchBuf_);
 	}
 
-	// ---- actions --------------------------------------------------------------
 	void requestSwitchGame(int g)
 	{
 		if (g < 0 || g >= kDictSlotCount || g == gi) return;
@@ -689,8 +638,7 @@ private:
 		refreshLocales();
 		loadModel();
 	}
-	// A new slot keeps the language when it has it; otherwise the page says so
-	// (EmptyState) instead of silently opening a different language.
+	// A new slot keeps the language when it has it; otherwise the page says so (EmptyState), never a silent different language.
 	void switchedSlot()
 	{
 		refreshLocales();
@@ -704,8 +652,7 @@ private:
 		if (what == Pending::None) return;
 		if (r == PobUi::DialogResult::Cancel || r == PobUi::DialogResult::None) {
 			pending = Pending::None;
-			// The host asked; the user said no. Cancelled rather than Open, so whoever
-			// started the close abandons it instead of asking again.
+			// The host asked; the user said no: Cancelled (not Open), so whoever started the close abandons it.
 			if (close_ == ToolCloseState::Asking) close_ = ToolCloseState::Cancelled;
 			return;
 		}
@@ -757,11 +704,8 @@ private:
 		saveFailed_ = false;
 		saveFailFiles_.clear();
 		rebuildFilter();
-		// When it takes effect, checked against the code (2026-10-09): POB loads the
-		// dictionaries once, when it starts (ui_api.cpp InitAPI ->
-		// translation_init_async); nothing reloads them while it runs. The
-		// launcher's own labels are re-read right after a save when this editor is
-		// one of its tabs (launcher_ui.cpp, TranslationEditorPanelSaved).
+		// POB loads the dictionaries once at start (ui_api.cpp InitAPI -> translation_init_async), nothing
+		// reloads them while it runs. The launcher's own labels are re-read after a save (TranslationEditorPanelSaved).
 		std::string msg = u8"已儲存 " + std::to_string(entries) + u8" 筆（" + std::to_string(files) + u8" 個檔案）。";
 		if (gi == (int)DictSlot::Launcher)
 			msg += host_ && host_->embedded ? u8"啟動器文字已更新" : u8"啟動器重開後套用";
@@ -852,7 +796,7 @@ private:
 		return n;
 	}
 
-	// ---- header -----------------------------------------------------------------
+	// header
 	void drawHeader()
 	{
 		const PobUi::WidgetFonts& wf = PobUi::Fonts();
@@ -994,7 +938,7 @@ private:
 		PobUi::EndMenuPopup();
 	}
 
-	// ---- page: entries ------------------------------------------------------------
+	// page: entries
 	void drawDataBanner()
 	{
 		if (external()) {
@@ -1006,10 +950,8 @@ private:
 				externalClosed_ = true;
 		} else {
 			if (builtinClosed_) return;
-			// Built-in dictionaries are what a translation update replaces wholesale
-			// (app_update applies the data pack over Data\ in the install folder). A
-			// player who edits them loses the work on the next data-<n> and only sees
-			// "my change did nothing" (field report, 2026-09-25).
+			// Built-in dictionaries are replaced wholesale by a translation update (app_update applies the
+			// data pack over Data\), so edits there are lost on the next data-<n>.
 			const PobUi::BannerResult r = PobUi::Banner(
 				"##tebuiltin", PobUi::BannerTone::Warn, PobIcon::TriangleAlert,
 				u8"你正在改內建字典：翻譯資料自動更新時會被整份蓋掉",
@@ -1244,9 +1186,7 @@ private:
 					ImGui::PopID();
 				}
 			}
-			// One empty row of slack after the last entry, outside the clipper: the
-			// final row can then be scrolled clear of the bottom edge instead of
-			// sitting flush against it, which reads as "there is more below".
+			// One empty row of slack after the last entry, outside the clipper, so the final row scrolls clear of the bottom edge.
 			ImGui::TableNextRow(0, rowH);
 			ImGui::TableSetColumnIndex(0);
 			ImGui::Dummy(ImVec2(0, rowInner));
@@ -1345,9 +1285,7 @@ private:
 			if (ImGui::IsItemActive()) editSeen_ = true;
 			if (ImGui::IsItemDeactivated() && editActive_) finishInlineEdit();
 			cellInputBorder();
-			// The box keeps the raw escapes so they can be edited; what POB will
-			// draw is one hover away (a second line would break the clipper's
-			// uniform row height).
+			// The box keeps the raw escapes; the rendered preview is on hover (a second line would break the clipper's uniform row height).
 			if (ImGui::IsItemHovered() && !ImGui::IsItemActive() && has_pob_color(e.value)) {
 				ImGui::BeginTooltip();
 				PobUi::Hint(u8"在 POB 裡的樣子：");
@@ -1370,7 +1308,7 @@ private:
 		if (openHere) openBigEditor(ei);
 	}
 
-	// ---- page: missing strings ----------------------------------------------------
+	// page: missing strings
 	void drawMissing()
 	{
 		drawSaveFailBanner();
@@ -1479,8 +1417,7 @@ private:
 			headerRow(4, right);
 
 			const float rowH = rowInner + cellPad.y * 2.0f;
-			// Virtualised like the entries table: a long log is thousands of rows,
-			// each with a picker and a text box.
+			// Virtualised like the entries table: a long log is thousands of rows with a picker and a text box each.
 			ImGuiListClipper clipper;
 			clipper.Begin((int)visible.size(), rowH);
 			while (clipper.Step()) {
@@ -1596,7 +1533,7 @@ private:
 		}
 	}
 
-	// ---- no data for this language ----------------------------------------------
+	// no data for this language
 	void drawNoData()
 	{
 		const std::string name = localeLabel(curLocale);
@@ -1609,7 +1546,7 @@ private:
 			goSettings();
 	}
 
-	// ---- footer -----------------------------------------------------------------
+	// footer
 	void drawFooter()
 	{
 		const float avail = ImGui::GetContentRegionAvail().x;
@@ -1646,7 +1583,7 @@ private:
 		ImGui::Dummy(ImVec2(avail, h));
 	}
 
-	// ---- add dialog -------------------------------------------------------------
+	// add dialog
 	void openAddDialog()
 	{
 		addKey_.clear();
@@ -1743,7 +1680,7 @@ private:
 		PobUi::EndDialog();
 	}
 
-	// ---- multi-line editor --------------------------------------------------------
+	// multi-line editor
 	void openBigEditor(size_t ei)
 	{
 		if (editActive_) finishInlineEdit();
@@ -1835,8 +1772,7 @@ private:
 		}
 		ImGui::Dummy(ImVec2(0, D(4.0f)));
 
-		// Ctrl+Enter applies. Checked before the box processes the key -- a
-		// multi-line box would otherwise take it as one more newline.
+		// Ctrl+Enter applies; checked before the box processes the key (it would otherwise insert a newline).
 		const ImGuiIO& io = ImGui::GetIO();
 		bool apply = false;
 		if (bigActive_ && io.KeyCtrl && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false))) {
@@ -1887,8 +1823,7 @@ private:
 		if (r == PobUi::DialogResult::Primary) apply = true;
 		if (apply) {
 			if (!chk.AllOk()) {
-				// Still allowed -- a translation may reorder lines on purpose -- but
-				// asked once more, because a missing {0} shows POB a wrong number.
+				// Still allowed (a translation may reorder lines on purpose) but asked once more: a missing {0} shows POB a wrong number.
 				openBigConfirm_ = true;
 			} else {
 				applyBig();
@@ -1943,7 +1878,7 @@ private:
 		PobUi::EndDialog();
 	}
 
-	// ---- unsaved changes --------------------------------------------------------
+	// unsaved changes
 	void drawUnsavedDialog()
 	{
 		if (pending == Pending::None && !ImGui::IsPopupOpen("##teunsaved")) {
@@ -1968,7 +1903,7 @@ private:
 		if (r != PobUi::DialogResult::None) resolvePending(r);
 	}
 
-	// ---- POBTOOLS_TE_STATE (test aid, with POBTOOLS_TOOL_SHOT) -------------------
+	// POBTOOLS_TE_STATE (test aid, with POBTOOLS_TOOL_SHOT)
 	void touchRows(int n)
 	{
 		// visibly unchanged, but unsaved: a trailing space

@@ -11,8 +11,7 @@
 
 using nlohmann::ordered_json;
 
-// Same local file helper as the sibling atlas modules; kept local so this stays
-// a leaf that does not depend on the persistence layer.
+// Local file helper (keeps this a leaf with no dependency on the persistence layer).
 static bool astro_read_file(const std::wstring& path, std::string& out)
 {
 	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -95,8 +94,7 @@ bool AstrolabeDb::Load(const std::wstring& exeDir, std::string* err)
 			d.keyZh = ToLowerAscii(d.zh);
 			d.keyEnCompact = FuzzyCompactKey(d.keyEn);
 			d.keyZhCompact = FuzzyCompactKey(d.keyZh);
-			// Effects are searched as rendered, so a query matches what the user
-			// can actually see (GGG markup like [ContainsAbyss|深淵] is stripped).
+			// Effects are searched as rendered (GGG markup like [ContainsAbyss|深淵] is stripped).
 			for (const std::string& line : d.descEn) d.descKeyEn += StripStatMarkup(line) + "\n";
 			for (const std::string& line : d.descZh) d.descKeyZh += StripStatMarkup(line) + "\n";
 			d.descKeyEn = ToLowerAscii(d.descKeyEn);
@@ -151,9 +149,7 @@ std::vector<AstrolabePlacement> AstrolabeDb::Sanitize(const std::vector<Astrolab
                                                       std::string* note) const
 {
 	if (note) note->clear();
-	// No catalogue -> no basis to judge. Passing the list through unchanged is
-	// deliberate: dropping it would let a missing data file silently erase the
-	// user's saved placements on the next save.
+	// No catalogue -> no basis to judge; pass the list through (dropping it would erase saved placements on the next save).
 	if (!available()) return cur;
 
 	std::vector<AstrolabePlacement> out;
@@ -191,7 +187,7 @@ int AstrolabeDb::MatchScore(const AstrolabeDef& d, const FuzzyQuery& q) const
 	return 0;
 }
 
-// ---- self-test (folded into --atlas-selftest) --------------------------------
+// self-test (folded into --atlas-selftest)
 
 namespace {
 
@@ -217,8 +213,7 @@ int RunAstrolabeSelfTest(const std::wstring& exeDir, std::string& out)
 	AstroReport rep{ out };
 	out += "\n-- astrolabes --\n";
 
-	// --- persistence: must hold whether or not the catalogue is present,
-	// because this is what protects existing user files.
+	// persistence: must hold with or without the catalogue (protects existing user files).
 	{
 		// A project saved before astrolabes existed loads with the field empty.
 		AtlasBuildFile f;
@@ -226,8 +221,7 @@ int RunAstrolabeSelfTest(const std::wstring& exeDir, std::string& out)
 		rep.check(ok && f.builds.size() == 1 && f.builds[0].astrolabes.empty(),
 		          "pre-astrolabe project loads with an empty placement list");
 
-		// A project that uses none of the new fields must serialize exactly as
-		// before, so untouched user files stay byte-identical.
+		// A project using none of the new fields must serialize exactly as before (byte-identical).
 		std::string doc = f.SerializeDoc();
 		rep.check(doc.find("astrolabes") == std::string::npos &&
 		          doc.find("\"map\"") == std::string::npos &&
@@ -242,15 +236,11 @@ int RunAstrolabeSelfTest(const std::wstring& exeDir, std::string& out)
 			{ "SouthEast", "Metadata/Items/Currency/AstrolabeAbyss" },
 		};
 		g.builds[0].mapId = "MapWorldsShrine";
-		// The planned tier is stored INDEPENDENTLY of the map: a Voidstone lifts
-		// a whole quadrant to T16, and some strategies target a specific tier, so
-		// T3 here alongside a map whose own tier is 5 is a legitimate state.
+		// The planned tier is stored INDEPENDENTLY of the map (a Voidstone lifts a quadrant to T16), so
+		// T3 alongside a map whose own tier is 5 is legitimate.
 		g.builds[0].mapTier = 16;
 
-		// The mirror of the omission check above. Without this, "the keys are
-		// absent when unused" would also pass if the writer never emitted them
-		// at all, and the round-trip below would be the only thing standing
-		// between a silent data loss and the user.
+		// Mirror of the omission check above (else "absent when unused" also passes if the writer never emits them).
 		std::string used = g.SerializeDoc();
 		rep.check(used.find("\"astrolabes\"") != std::string::npos &&
 		          used.find("\"NorthWest\"") != std::string::npos &&
@@ -269,8 +259,7 @@ int RunAstrolabeSelfTest(const std::wstring& exeDir, std::string& out)
 		          h.builds[0].mapTier == 16,
 		          "astrolabe placements + main map + planned tier round-trip");
 
-		// The share code carries them, and the PTAT1 prefix is unchanged on
-		// purpose — bumping it would make older builds reject new codes.
+		// The share code carries them; PTAT1 prefix unchanged on purpose (bumping it would make older builds reject new codes).
 		AtlasBuildEntry src;
 		src.name = u8"星盤測試";
 		src.alloc = { 11, 22 };
@@ -297,8 +286,7 @@ int RunAstrolabeSelfTest(const std::wstring& exeDir, std::string& out)
 		          ex.find("mapTier") == std::string::npos,
 		          "export omits unused astrolabes/map/mapTier too", ex);
 
-		// A hand-written document, not one this build produced: the reader must
-		// cope with a file edited by hand or written by a future version.
+		// A hand-written document: the reader must cope with a hand-edited or future-version file.
 		AtlasBuildFile m;
 		bool handOk = m.ParseDoc(
 			u8"{\"format\":\"pobtools-atlas-builds\",\"builds\":[{\"name\":\"h\",\"alloc\":[1],"
@@ -309,8 +297,7 @@ int RunAstrolabeSelfTest(const std::wstring& exeDir, std::string& out)
 		          m.builds[0].mapId == "MapWorldsDesert",
 		          "hand-written document with an unknown extra key still loads");
 
-		// Wrong-shaped values must not throw or corrupt the entry — an
-		// astrolabes ARRAY (what a naive editor might write) is simply ignored.
+		// Wrong-shaped values must not throw or corrupt the entry (an astrolabes ARRAY is ignored).
 		AtlasBuildFile bad;
 		bool badOk = bad.ParseDoc(
 			u8"{\"builds\":[{\"name\":\"b\",\"alloc\":[1],\"astrolabes\":[\"x\"],\"map\":5,"
@@ -319,8 +306,7 @@ int RunAstrolabeSelfTest(const std::wstring& exeDir, std::string& out)
 		          bad.builds[0].mapId.empty() && bad.builds[0].mapTier == 0,
 		          "wrong-typed astrolabes/map/mapTier are ignored rather than fatal");
 
-		// The production Save/Load pair, not just the string codec. The caller's
-		// BuildGuard restores the user's real file afterwards.
+		// The production Save/Load pair. The caller's BuildGuard restores the user's real file.
 		AtlasBuildFile w;
 		w.ParseDoc(u8"{\"builds\":[{\"name\":\"p1\",\"alloc\":[1,2]},{\"name\":\"p2\",\"alloc\":[3]}]}");
 		w.builds[0].astrolabes = { { "NorthWest", "Metadata/Items/Currency/AstrolabeBlight" } };
@@ -336,7 +322,7 @@ int RunAstrolabeSelfTest(const std::wstring& exeDir, std::string& out)
 		          "Save/Load on disk preserves per-project astrolabes + main map");
 	}
 
-	// --- rules: need the catalogue.
+	// rules: need the catalogue.
 	AstrolabeDb db;
 	std::string derr;
 	if (!db.Load(exeDir, &derr)) {
@@ -358,8 +344,7 @@ int RunAstrolabeSelfTest(const std::wstring& exeDir, std::string& out)
 	rep.check(db.Regions().size() == 4, "catalogue holds 4 quadrants",
 	          std::to_string(db.Regions().size()));
 
-	// Fixtures found live rather than hard-coded, so the checks survive a season
-	// update that changes the catalogue.
+	// Fixtures found live, not hard-coded (survive a catalogue change).
 	const AtlasQuadrant& q0 = db.Regions()[0];
 	const AtlasQuadrant& q1 = db.Regions()[1];
 	const AstrolabeDef& a0 = db.All()[0];
@@ -373,8 +358,7 @@ int RunAstrolabeSelfTest(const std::wstring& exeDir, std::string& out)
 		AstrolabeAddResult r = db.CanPlace(cur, q0.id, a1.id);
 		rep.check(r.code == AstrolabeAdd::kRegionOccupied && r.occupant == &a0,
 		          "a second Shaped Region on the same quadrant is refused and names the occupant");
-		// The same astrolabe on a DIFFERENT quadrant is legal: nothing in the
-		// game data caps how many copies of one astrolabe may be in play.
+		// The same astrolabe on a DIFFERENT quadrant is legal (game data caps no copies).
 		rep.check(db.CanPlace(cur, q1.id, a0.id).ok(),
 		          "the same astrolabe on another quadrant is allowed");
 		rep.check(db.CanPlace(cur, "Nowhere", a0.id).code == AstrolabeAdd::kUnknownRegion,
@@ -427,7 +411,7 @@ int RunAstrolabeSelfTest(const std::wstring& exeDir, std::string& out)
 		          std::to_string(quadNoVault));
 	}
 	{
-		// --- fuzzy search (shared implementation; these guard the wiring) ---
+		// fuzzy search (shared implementation; these guard the wiring)
 		auto score = [&](const AstrolabeDef& d, const char* qs) {
 			return db.MatchScore(d, MakeFuzzyQuery(qs));
 		};

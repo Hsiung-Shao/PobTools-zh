@@ -14,8 +14,8 @@ placed at the same level:
 
 - Each detected game version is listed as a row showing the POB version number and a
   **Launch** button.
-- The toolbar at the top opens the translation editor, filter editor, atlas strategy,
-  timeless jewel calculator and regex generator.
+- The toolbar at the top opens the translation editor, filter editor, atlas strategy and
+  timeless jewel calculator.
 - Tools open as separate windows (since v0.5.0); the launcher stays open, so several tools
   can be used at once.
 - The status bar at the bottom switches the **UI language** (Traditional Chinese /
@@ -233,23 +233,7 @@ Calculates how each Timeless Jewel seed changes the passive nodes:
 
 ---
 
-## 6. Regex generator
-
-Produces regular expressions for the in-game search box, similar to poe.re:
-
-- Pick the game (POE1 / POE2) and then an item list; tick the affixes you want to match
-  and the search string is composed live at the top — one click copies it into the
-  in-game search box.
-- POE2 offers waystone, tablet, relic and expedition-artifact lists.
-- Frequently used combinations can be saved as **bookmarks** (kept separately per game).
-- Besides avoiding the text of the other affixes in the list, the generated fragments also
-  avoid text the in-game search box matches although it is not printed on the affix line:
-  affix names, tiers, tags, tooltip descriptions, item names and the fixed lines every item
-  has (since v1.3.0). Hover a list entry to see that text.
-
----
-
-## 7. Updating the translation data
+## 6. Updating the translation data
 
 ### Regular users
 
@@ -272,7 +256,7 @@ still updates). You are still notified when new data is available and can take i
 Dictionary format, placeholder rules, local testing and how to submit a pull request are all
 in **[TRANSLATING.en.md](TRANSLATING.en.md)**.
 
-## 8. When POB or PobTools freezes
+## 7. When POB or PobTools freezes
 
 "Open the problem log folder" at the bottom of the Settings page opens
 `PobTools\logs\`. Whenever something fails, the reason is written there; when

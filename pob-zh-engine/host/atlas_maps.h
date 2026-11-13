@@ -28,6 +28,10 @@ struct AtlasMapDef {
 	int tier = 0;              // 0 for unique maps, which have no tier of their own
 	enum Kind { kNormal, kOffAtlas, kUnique };
 	Kind kind = kNormal;
+	// Added from the patch notes before the season's GGPK shipped: name and art
+	// are real, tier (0) and region ("") are unknown. The next generator run
+	// replaces the whole file and clears it.
+	bool provisional = false;
 
 	// Prebuilt lowercase search keys (both names of both locales, plus the tier
 	// as typed digits so "t14" finds the tier-14 maps).

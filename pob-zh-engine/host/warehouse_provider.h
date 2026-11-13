@@ -1,12 +1,8 @@
 // 倉庫收益統計 — how stash contents get here, independent of who serves them.
 //
-// The tool is written against IStashProvider, not against an endpoint. Today the
-// only implementation rides the legacy character-window API with a POESESSID
-// cookie (a TEST channel: the user pastes their own session id); when the
-// official OAuth application is approved, a second implementation talks to
-// api.pathofexile.com with an access token and this file is the only boundary
-// that has to hold -- everything above it (service, snapshots, UI) sees the same
-// StashItemRaw either way.
+// The tool is written against IStashProvider, not an endpoint. Today's only implementation rides
+// the legacy character-window API with a POESESSID cookie (a TEST channel); an OAuth one can slot
+// in later, and everything above this boundary sees the same StashItemRaw.
 #pragma once
 
 #include <atomic>
@@ -25,9 +21,7 @@ struct StashTabInfo {
 	unsigned colour = 0; // 0xRRGGBB from the tab's colour swatch
 };
 
-// The minimum an item must carry to be counted and priced. Deliberately not the
-// whole GGG item JSON: a snapshot stores aggregates, so anything not needed for
-// identity, count or price-key building is dropped at the parse boundary.
+// The minimum an item must carry to be counted and priced; the rest of GGG's item JSON is dropped at the parse boundary.
 struct StashItemRaw {
 	std::string name;      // unique/rare title line; empty for normal items
 	std::string typeLine;  // full display type
@@ -46,9 +40,7 @@ struct StashItemRaw {
 
 struct StashAuth {
 	std::string accountName; // required by the sessid channel; the user types it
-	std::string secret;      // POESESSID today, an OAuth access token later.
-	                         // Lives in memory only -- persistence is
-	                         // warehouse_state's DPAPI business, and this string
+	std::string secret;      // POESESSID today. Memory only (persistence is warehouse_state's DPAPI);
 	                         // must never appear in a message or a log line.
 };
 
@@ -69,12 +61,9 @@ class IStashProvider {
 public:
 	virtual ~IStashProvider() = default;
 
-	// All synchronous, worker-thread only. Each call throttles itself (minimum
-	// spacing + whatever the server's rate-limit headers demanded); the caller
-	// just calls in sequence.
-	// charLeagues (optional): the distinct leagues this account has characters
-	// in on the provider's realm -- a free by-product of the session check that
-	// tells a caller which league a stash can exist in.
+	// All synchronous, worker-thread only. Each call throttles itself (minimum spacing + the
+	// server's rate-limit headers); the caller just calls in sequence.
+	// charLeagues (optional): leagues this account has characters in on the provider's realm.
 	virtual bool Verify(std::string* err, StashError* kind,
 	                    const std::atomic<bool>* cancel,
 	                    std::vector<std::string>* charLeagues = nullptr) = 0;
@@ -85,17 +74,13 @@ public:
 	                      std::vector<StashItemRaw>& out, std::string* err,
 	                      StashError* kind, const std::atomic<bool>* cancel) = 0;
 
-	// How long the server still wants this account left alone -- a 429's
-	// Retry-After, an exhausted bucket's penalty -- in ms from now; 0 = none.
-	// A provider lives for one job, so the caller carries this past it
-	// (warehouse_state's request guard), or the next job would start blind.
+	// How long the server still wants this account left alone (429 Retry-After, bucket penalty), ms
+	// from now; 0 = none. A provider lives for one job, so the caller carries this past it (warehouse_state's request guard).
 	virtual int RemainingBackoffMs() const { return 0; }
 };
 
-// `realm` is the legacy endpoints' realm parameter: "pc" (PoE1, default) or
-// "poe2". The official OAuth stash API is documented PoE1-only, so whether the
-// legacy path serves PoE2 stashes is an empirical question -- --warehouse-probe
-// poe2 answers it.
+// `realm` is the legacy endpoints' realm parameter: "pc" (PoE1, default) or "poe2"
+// (whether the legacy path serves PoE2 stashes: --warehouse-probe poe2).
 std::unique_ptr<IStashProvider> CreateSessidStashProvider(const StashAuth& auth,
                                                           const std::string& realm = "pc");
 
@@ -116,16 +101,12 @@ bool ParseStashTabJson(const std::string& body, int tabIndex,
                        std::vector<StashItemRaw>* items,
                        std::vector<StashTabInfo>* tabs, std::string* err);
 
-// The sessid channel's floor between two requests. GGG's account bucket is one
-// pool for everything on the account -- the site, trade tools, this -- and is
-// reported near 45 per 60 s (30 at times). At 2 s a full-stash snapshot (1 + N
-// tab requests) is spread over ~2N seconds instead of landing as one burst.
+// The sessid channel's floor between two requests. GGG's account bucket is one pool for the whole
+// account (~45 per 60 s, 30 at times); at 2 s a full-stash snapshot is spread over ~2N seconds.
 constexpr int kStashMinSpacingMs = 2000;
 
-// Conservative client-side pacing: a fixed minimum spacing between requests,
-// pushed further back by what the server's rate-limit headers report and by any
-// 429's Retry-After. Pure arithmetic over fed-in state -- the self-test drives
-// it with synthetic headers and asserts on NextDelayMs.
+// Conservative client-side pacing: fixed minimum spacing, pushed back by the rate-limit headers
+// and any 429 Retry-After. Pure arithmetic over fed-in state (self-test asserts on NextDelayMs).
 class SimpleThrottle {
 public:
 	void SetMinIntervalMs(int ms) { minMs_ = ms; }

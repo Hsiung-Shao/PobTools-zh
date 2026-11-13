@@ -10,37 +10,9 @@
 #include <cstring> // strlen
 
 #include "../engine/common/base64.h" // curl-derived, extern "C", malloc'd outputs
+#include "win_util.h"
 
 using nlohmann::ordered_json;
-
-// ---- file helpers (same conventions as atlas_tree_data.cpp) -------------------
-
-static bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 30)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
-
-static bool write_file_utf8(const std::wstring& path, const std::string& content)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	DWORD written = 0;
-	bool ok = content.empty() ||
-		(WriteFile(h, content.data(), (DWORD)content.size(), &written, nullptr) && written == content.size());
-	CloseHandle(h);
-	return ok;
-}
 
 static std::vector<int> parse_alloc_array(const ordered_json& arr)
 {
@@ -88,20 +60,16 @@ static void parse_extras(const ordered_json& obj, AtlasBuildEntry& e)
 			if (!it.key().empty() && end && *end == 0 && it.value().is_number_integer())
 				e.variants[(int)id] = it.value().get<int>();
 		}
-	// Astrolabes are an object keyed by quadrant. ordered_json preserves the
-	// insertion order, so a round trip keeps the quadrants as they were written;
-	// nothing downstream depends on that order, only on one entry per key.
-	// The caller still runs the result through AstrolabeDb::Sanitize.
+	// Astrolabes are an object keyed by quadrant (ordered_json keeps insertion order; only one entry
+	// per key matters). The caller still runs the result through AstrolabeDb::Sanitize.
 	e.astrolabes.clear();
 	if (obj.contains("astrolabes") && obj["astrolabes"].is_object())
 		for (auto it = obj["astrolabes"].begin(); it != obj["astrolabes"].end(); ++it)
 			if (it.value().is_string() && !it.key().empty())
 				e.astrolabes.push_back({ it.key(), it.value().get<std::string>() });
-	// Checked rather than obj.value("map", ...): value() THROWS when the key
-	// exists with the wrong type, and the throw unwinds all the way out of
-	// ParseDoc — one hand-edited `"map": 5` would drop every project in the
-	// file, not just that field. (The older `notes` line has the same shape and
-	// the same exposure; left alone here to keep this change to its own scope.)
+	// Checked rather than obj.value("map", ...): value() THROWS on a wrong-typed key and the throw
+	// unwinds out of ParseDoc -- one hand-edited `"map": 5` would drop every project in the file.
+	// (The older `notes` line has the same exposure.)
 	e.mapId.clear();
 	if (obj.contains("map") && obj["map"].is_string())
 		e.mapId = obj["map"].get<std::string>();
@@ -109,8 +77,7 @@ static void parse_extras(const ordered_json& obj, AtlasBuildEntry& e)
 	if (obj.contains("mapTier") && obj["mapTier"].is_number_integer())
 		e.mapTier = obj["mapTier"].get<int>();
 
-	// The bound revenue record. Every field type-checked for the reason given
-	// above: a malformed record costs the record, never the project.
+	// The bound revenue record. Every field type-checked (a malformed record costs the record, not the project).
 	e.profit = AtlasProfitRecord{};
 	auto jp = obj.find("profit");
 	if (jp != obj.end() && jp->is_object()) {
@@ -184,8 +151,7 @@ static void write_extras(ordered_json& obj, const AtlasBuildEntry& e)
 	}
 	if (!e.mapId.empty()) obj["map"] = e.mapId;
 	if (e.mapTier > 0) obj["mapTier"] = e.mapTier;
-	// Unlike mapPrice / cost, the revenue record IS shared: binding one to a
-	// project is how its measured earnings travel with the share code.
+	// Unlike mapPrice / cost, the revenue record IS shared (its measured earnings travel with the share code).
 	if (!e.profit.empty()) {
 		const AtlasProfitRecord& r = e.profit;
 		ordered_json p;
@@ -215,7 +181,7 @@ static void write_extras(ordered_json& obj, const AtlasBuildEntry& e)
 	}
 }
 
-// ---- AtlasBuildFile -----------------------------------------------------------
+// AtlasBuildFile
 
 std::wstring AtlasBuildFile::PathOf(const std::wstring& exeDir)
 {
@@ -376,7 +342,7 @@ std::string AtlasBuildFile::UniqueName(const std::string& want) const
 	return want;
 }
 
-// ---- export / share code ------------------------------------------------------
+// export / share code
 
 std::string AtlasExportJson(const AtlasBuildEntry& b, const std::string& treeVersion)
 {
@@ -450,7 +416,7 @@ bool AtlasParseShareCode(const std::string& code, AtlasBuildEntry* out, std::str
 	return AtlasParseExportJson(json, out, err);
 }
 
-// ---- AtlasUiState -------------------------------------------------------------
+// AtlasUiState
 
 static std::wstring ui_state_path(const std::wstring& exeDir)
 {

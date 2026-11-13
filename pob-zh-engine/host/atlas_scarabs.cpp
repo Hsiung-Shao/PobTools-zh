@@ -39,9 +39,8 @@ static std::vector<std::string> parse_lines(const ordered_json& arr)
 	return out;
 }
 
-// ---- fuzzy matching ----------------------------------------------------------
-// The tiers themselves live in fuzzy_match.cpp; the astrolabe and map pickers
-// need the same behaviour and a second copy would drift.
+// fuzzy matching
+// The tiers live in fuzzy_match.cpp (shared with the astrolabe and map pickers).
 
 int ScarabMatchScore(const ScarabDef& d, const ScarabQuery& q)
 {
@@ -52,8 +51,7 @@ int ScarabMatchScore(const ScarabDef& d, const ScarabQuery& q)
 	if (en > best) best = en;
 	if (best) return best;
 
-	// Nothing in the names: fall back to the effect text, always ranked below
-	// any name hit so "what is this scarab called" beats "what does it do".
+	// Nothing in the names: fall back to the effect text, always ranked below any name hit.
 	for (const std::string* k : { &d.descKeyZh, &d.descKeyEn }) {
 		int s = FuzzyTextScore(*k, q);
 		if (s) return s;
@@ -173,7 +171,7 @@ std::vector<std::string> ScarabDb::Sanitize(const std::vector<std::string>& ids,
 	return out;
 }
 
-// ---- self-test (folded into --atlas-selftest) --------------------------------
+// self-test (folded into --atlas-selftest)
 
 namespace {
 
@@ -199,8 +197,7 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 	ScarabReport rep{ out };
 	out += "\n-- scarabs + notes --\n";
 
-	// --- persistence: these must hold whether or not the catalogue is present,
-	// because they are what protects existing user files.
+	// persistence: must hold with or without the catalogue (they protect existing user files).
 	{
 		// T-legacy: a pre-scarab single-build file still loads, with the new
 		// fields simply empty.
@@ -211,9 +208,7 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		          f.builds[0].blocked.empty(),
 		          "legacy file loads with empty notes/scarabs/targets/blocked");
 
-		// T-byte-compat: a build that uses none of the features must serialize
-		// exactly as it did before the fields existed, so untouched user files
-		// stay identical.
+		// T-byte-compat: a build using none of the features must serialize exactly as before the fields existed.
 		std::string doc = f.SerializeDoc();
 		rep.check(doc.find("notes") == std::string::npos &&
 		          doc.find("scarabs") == std::string::npos &&
@@ -246,9 +241,8 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		          k.builds.size() == 1 && k.builds[0].notes == "n",
 		          "document with unknown extra keys still loads");
 
-		// T-share: the share code carries the new fields, and a code produced
-		// BEFORE they existed still parses (the PTAT1 prefix is unchanged on
-		// purpose — bumping it would make older builds reject new codes).
+		// T-share: the share code carries the new fields, and an older code still parses (PTAT1 prefix
+		// unchanged on purpose: bumping it would make older builds reject new codes).
 		AtlasBuildEntry src;
 		src.name = u8"甲蟲測試";
 		src.alloc = { 11, 22 };
@@ -283,11 +277,8 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		          ex.find("blocked") == std::string::npos,
 		          "export omits unused notes/scarabs/targets/blocked too", ex);
 
-		// T-disk: the production Save/Load pair, not just the string codec —
-		// this is the path the planner actually uses, and the one the GUI test
-		// cannot drive (ImGui ignores synthesized clicks, see
-		// error_win_gui_test_capture). The caller's BuildGuard restores the
-		// user's real file afterwards.
+		// T-disk: the production Save/Load pair (the GUI test can't drive it: ImGui ignores synthesized
+		// clicks, see error_win_gui_test_capture). The caller's BuildGuard restores the user's real file.
 		AtlasBuildFile w;
 		w.ParseDoc(u8"{\"builds\":[{\"name\":\"p1\",\"alloc\":[1,2]},{\"name\":\"p2\",\"alloc\":[3]}]}");
 		w.active = 1;
@@ -320,7 +311,7 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		          "without a catalogue Sanitize leaves the saved list untouched (unconditional)");
 	}
 
-	// --- rules: need the catalogue.
+	// rules: need the catalogue.
 	ScarabDb db;
 	std::string derr;
 	if (!db.Load(exeDir, &derr)) {
@@ -333,7 +324,7 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		return rep.failures;
 	}
 
-	// Scarabs left the catalogue ahead of 3.30; only the eight Vaal fragments stay.
+	// Only the eight Vaal fragments remain in the catalogue.
 	size_t nScarab = 0;
 	for (const ScarabDef& d : db.All())
 		if (d.id.find("/Scarabs/") != std::string::npos) nScarab++;
@@ -342,8 +333,7 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 	rep.check(db.All().size() == 8, "catalogue holds 8 Vaal map fragments",
 	          std::to_string(db.All().size()));
 	{
-		// An old build's scarab ids are dropped (user ruling 2026-11-08), its
-		// fragments kept, and the note says so.
+		// An old build's scarab ids are dropped, its fragments kept, and the note says so.
 		const std::string frag = db.All().empty() ? std::string() : db.All()[0].id;
 		std::string note;
 		std::vector<std::string> clean = db.Sanitize(

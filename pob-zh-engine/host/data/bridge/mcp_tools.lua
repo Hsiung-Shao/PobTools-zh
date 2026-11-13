@@ -8,7 +8,7 @@
 -- before the engine is up); keep the two in step.
 --
 -- Names: `name` is POB's English, `nameZh` the same words the classic window
--- draws in Traditional Chinese (使用者核准 2026-11-05: 英文＋繁中並列).
+-- draws in Traditional Chinese (English and Chinese shown side by side).
 
 return function(M, ctx)
 	local tr, gem_tr, ensure_build, main = ctx.tr, ctx.gem_tr, ctx.ensure_build, ctx.main
@@ -983,12 +983,5 @@ return function(M, ctx)
 		end
 		debug.setupvalue(loadTimeless, idx, function(name) return loadJewelFile(name, false) end)
 		return { jewelCacheOff = true }
-	end
-
-	function M.mcp_tool_names()
-		local names = {}
-		for k in pairs(T) do names[#names + 1] = k end
-		table.sort(names)
-		return { names = names }
 	end
 end

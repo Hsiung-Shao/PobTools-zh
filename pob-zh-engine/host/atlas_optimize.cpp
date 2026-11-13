@@ -1,10 +1,12 @@
 #include "atlas_optimize.h"
 
-#include "atlas_persist.h" // sandbox contract check serializes a project
+#include "atlas_persist.h"
 
 #define WIN32_LEAN_AND_MEAN
-#define NOMINMAX          // std::max/std::min are used throughout the solver
+#define NOMINMAX
 #include <windows.h>
+#include "win_util.h"
+#include "selftest_report.h"
 
 #include <algorithm>
 #include <chrono>
@@ -17,39 +19,23 @@ namespace {
 
 const int kInf = 1 << 29;
 
-// Exact-solver ceiling. The DP is O(3^k * n) in the merge step alone, so each
-// extra target roughly triples the work; this is the last size that still
-// solves inside a hover preview. Measured on the real 3.29 tree (901 nodes /
-// 1001 edges) by --atlas-opt-selftest -- do not raise it without re-running it.
+// Exact-solver ceiling. The DP is O(3^k * n) in the merge step, so each extra target roughly
+// triples the work; this is the last size that still solves inside a hover preview (measured by
+// --atlas-opt-selftest on the real tree) -- do not raise it without re-running that.
 const int kExactTargetCap = 8;
 
-// Deterministic restart count for the shortest-path heuristic. Each restart is
-// a few BFS sweeps, so this is cheap next to the quality it buys.
+// Deterministic restart count for the shortest-path heuristic.
 const int kSphRestarts = 40;
 
 // Hub candidates tried by the star construction (see star_candidates).
 const int kStarHubs = 24;
 
-// Re-insertion improvement passes, and how many of the ranked candidates get
-// that (comparatively expensive) treatment. Measured: running it on more than
-// the single best candidate cost time and bought no points.
+// Re-insertion improvement passes, and how many ranked candidates get that expensive treatment
+// (measured: more than the single best cost time and bought no points).
 const int kImprovePasses = 2;
 const int kImproveCandidates = 1;
 
-// ---- file helper (same convention as atlas_tree_data.cpp) ------------------
-
-bool write_file_utf8(const std::wstring& path, const std::string& content)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	DWORD wrote = 0;
-	bool ok = content.empty() ||
-	          (WriteFile(h, content.data(), (DWORD)content.size(), &wrote, nullptr) && wrote == content.size());
-	CloseHandle(h);
-	return ok;
-}
-
-// ---- small graph utilities --------------------------------------------------
+// small graph utilities
 
 int count_set(const std::vector<char>& in)
 {
@@ -67,7 +53,6 @@ std::vector<int> to_list(const std::vector<char>& in)
 }
 
 // Is every node of `in` reachable from root walking only through `in`?
-// (`in` is always kept connected, so this doubles as "nothing was orphaned".)
 bool induced_connected(const AtlasTreeData& d, const std::vector<char>& in)
 {
 	const int n = (int)d.nodes.size();
@@ -88,16 +73,12 @@ bool induced_connected(const AtlasTreeData& d, const std::vector<char>& in)
 	return count == count_set(in);
 }
 
-// Blocked nodes are excluded HERE, in the three primitives that walk edges
-// (bfs / path_into / dw_solve's relaxation). Every construction in this file
-// reaches the graph through one of them, so a node the user ruled out can never
-// end up on a path. The only other way into a solution is `warmStart`, which
-// AtlasPlanMinimal filters explicitly, and the selftest asserts the resulting
-// post-condition rather than trusting this reasoning.
+// Blocked nodes are excluded HERE, in the three primitives that walk edges (bfs / path_into /
+// dw_solve's relaxation), so a ruled-out node can never end up on a path. The only other way
+// into a solution is `warmStart`, which AtlasPlanMinimal filters explicitly.
 using Mask = std::vector<char>;
 
-// BFS over the whole graph from `sources`; fills dist (-1 = unreachable) and
-// prev. Used for terminal-to-everything distances and for path reconstruction.
+// BFS over the whole graph from `sources`; fills dist (-1 = unreachable) and prev.
 void bfs(const AtlasTreeData& d, const Mask& blocked, const std::vector<int>& sources,
          std::vector<int>& dist, std::vector<int>& prev)
 {
@@ -152,8 +133,7 @@ bool path_into(const AtlasTreeData& d, const Mask& blocked, const std::vector<ch
 	return false;
 }
 
-// Cheap pass: peel non-pinned nodes that hang off the set by a single edge.
-// Linear in the set size, so it runs on every candidate.
+// Cheap linear pass: peel non-pinned nodes that hang off the set by a single edge.
 void prune_leaves(const AtlasTreeData& d, std::vector<char>& in, const std::vector<char>& pinned)
 {
 	const int n = (int)d.nodes.size();
@@ -177,8 +157,7 @@ void prune_leaves(const AtlasTreeData& d, std::vector<char>& in, const std::vect
 	}
 }
 
-// Full pass: after leaf peeling, anything still removable sits on a cycle.
-// Only those survivors are re-tested, which keeps this affordable.
+// Full pass: after leaf peeling, anything still removable sits on a cycle; only those are re-tested.
 void prune_redundant(const AtlasTreeData& d, std::vector<char>& in, const std::vector<char>& pinned)
 {
 	prune_leaves(d, in, pinned);
@@ -194,8 +173,7 @@ void prune_redundant(const AtlasTreeData& d, std::vector<char>& in, const std::v
 	}
 }
 
-// Every terminal's distance/parent map, computed once and reused by the exact
-// solver's look-ahead bound and by the MST / star constructions below.
+// Every terminal's distance/parent map, computed once (look-ahead bound, MST, star).
 struct TermDists {
 	std::vector<std::vector<int>> dist, prev;
 };
@@ -210,7 +188,7 @@ TermDists term_dists(const AtlasTreeData& d, const Mask& blocked, const std::vec
 	return td;
 }
 
-// ---- exact solver: Dreyfus-Wagner on unit edge weights ----------------------
+// exact solver: Dreyfus-Wagner on unit edge weights
 
 // terms must be distinct, valid and reachable from each other; terms[0] is the
 // root. `ub` is a known-achievable edge count: states costing more than that
@@ -239,9 +217,8 @@ int dw_solve(const AtlasTreeData& d, const Mask& blocked, const std::vector<int>
 	for (int i = 0; i < k; i++)
 		dp[((size_t)1 << i) * n + terms[i]] = 0;
 
-	// Dial buckets: every edge costs 1 and no useful state exceeds ub, so a
-	// bucket queue replaces the binary heap outright. This is the difference
-	// between a hover preview and a visible stall.
+	// Dial buckets: every edge costs 1 and no useful state exceeds ub, so a bucket queue replaces
+	// the binary heap (the difference between a hover preview and a visible stall).
 	std::vector<std::vector<int>> bucket((size_t)ub + 2);
 
 	for (size_t S = 1; S < full; S++) {
@@ -251,7 +228,7 @@ int dw_solve(const AtlasTreeData& d, const Mask& blocked, const std::vector<int>
 
 		for (size_t sub = (S - 1) & S; sub; sub = (sub - 1) & S) {
 			size_t other = S ^ sub;
-			if (sub > other) continue;              // visit each split once
+			if (sub > other) continue;
 			const int* a = &dp[sub * n];
 			const int* b = &dp[other * n];
 			for (int v = 0; v < n; v++) {
@@ -268,9 +245,9 @@ int dw_solve(const AtlasTreeData& d, const Mask& blocked, const std::vector<int>
 		// only enter the buckets once)
 		for (int dcur = 0; dcur <= ub; dcur++) {
 			std::vector<int>& bk = bucket[(size_t)dcur];
-			for (size_t qi = 0; qi < bk.size(); qi++) {   // bk only grows at dcur+1
+			for (size_t qi = 0; qi < bk.size(); qi++) {
 				int v = bk[qi];
-				if (row[v] != dcur) continue;             // stale entry
+				if (row[v] != dcur) continue;
 				if (dcur + 1 > ub) continue;
 				for (int nb : d.nodes[v].adj) {
 					if (blocked[nb]) continue;
@@ -284,9 +261,8 @@ int dw_solve(const AtlasTreeData& d, const Mask& blocked, const std::vector<int>
 			}
 		}
 
-		// Look-ahead: a state that still has to reach terminal t costs at least
-		// dist(v, t) more. Retiring the states that cannot fit under ub is what
-		// keeps the O(3^k * n) merge from doing most of its work for nothing.
+		// Look-ahead: a state that still has to reach terminal t costs at least dist(v, t) more;
+		// retiring states that cannot fit under ub keeps the O(3^k * n) merge cheap.
 		if (td && S != full - 1) {
 			for (int v = 0; v < n; v++) {
 				if (row[v] > ub) { row[v] = kInf; continue; }
@@ -327,7 +303,7 @@ int dw_solve(const AtlasTreeData& d, const Mask& blocked, const std::vector<int>
 	return bestVal;
 }
 
-// ---- heuristic --------------------------------------------------------------
+// heuristic
 
 // Grow a tree one terminal at a time. Empty `order` means "always take the
 // nearest still-unconnected terminal".
@@ -342,7 +318,7 @@ std::vector<char> sph(const AtlasTreeData& d, const Mask& blocked, const std::ve
 	if (!order.empty()) {
 		for (int t : order) {
 			if (in[t]) continue;
-			if (!path_into(d, blocked, in, t, &add)) continue;   // unreachable: skip
+			if (!path_into(d, blocked, in, t, &add)) continue;
 			for (int v : add) in[v] = 1;
 		}
 		return in;
@@ -355,9 +331,8 @@ std::vector<char> sph(const AtlasTreeData& d, const Mask& blocked, const std::ve
 
 	std::vector<int> dist, prev, sources;
 	while (remaining > 0) {
-		// Full BFS, then pick the closest wanted terminal, ties by lowest node
-		// index -- picking during the BFS would make the result depend on
-		// adjacency order.
+		// Full BFS, then pick the closest wanted terminal, ties by lowest node index
+		// (picking during the BFS would depend on adjacency order).
 		sources = to_list(in);
 		bfs(d, blocked, sources, dist, prev);
 		int pick = -1;
@@ -365,7 +340,7 @@ std::vector<char> sph(const AtlasTreeData& d, const Mask& blocked, const std::ve
 			if (!want[v] || dist[v] < 0) continue;
 			if (pick == -1 || dist[v] < dist[pick]) pick = v;
 		}
-		if (pick == -1) break;                          // the rest is unreachable
+		if (pick == -1) break;
 		for (int at = pick; at != -1 && !in[at]; at = prev[at]) in[at] = 1;
 		want[pick] = 0;
 		remaining--;
@@ -406,7 +381,7 @@ std::vector<char> kmb(const AtlasTreeData& d, const std::vector<int>& terms, con
 			if (used[j] || best[j] >= kInf) continue;
 			if (pick == -1 || best[j] < best[pick]) pick = j;
 		}
-		if (pick == -1) break;                          // unreachable remainder
+		if (pick == -1) break;
 		used[pick] = 1;
 		mark_path(td, (size_t)from[pick], terms[pick], in);
 		for (int j = 0; j < k; j++) {
@@ -418,15 +393,14 @@ std::vector<char> kmb(const AtlasTreeData& d, const std::vector<int>& terms, con
 	return in;
 }
 
-// Star construction: pick a hub and route every terminal to it. The optimum
-// often shares one junction, and neither SPH nor the MST finds that junction on
-// its own -- this is what closes most of the remaining gap.
+// Star construction: pick a hub and route every terminal to it (the optimum often shares one
+// junction that neither SPH nor the MST finds).
 void star_candidates(const AtlasTreeData& d, const std::vector<int>& terms, const TermDists& td,
                      std::vector<std::vector<char>>* out)
 {
 	const int n = (int)d.nodes.size();
 	const int k = (int)terms.size();
-	std::vector<std::pair<int, int>> score;              // (sum of distances, node)
+	std::vector<std::pair<int, int>> score;
 	score.reserve(n);
 	for (int v = 0; v < n; v++) {
 		long long s = 0;
@@ -438,7 +412,7 @@ void star_candidates(const AtlasTreeData& d, const std::vector<int>& terms, cons
 		}
 		if (ok && s < kInf) score.emplace_back((int)std::min<long long>(s, kInf - 1), v);
 	}
-	std::sort(score.begin(), score.end());               // ties by node index
+	std::sort(score.begin(), score.end());
 	int take = std::min((int)score.size(), kStarHubs);
 	for (int i = 0; i < take; i++) {
 		std::vector<char> in(n, 0);
@@ -465,9 +439,7 @@ void improve(const AtlasTreeData& d, const Mask& blocked, std::vector<char>& in,
 			std::vector<char> trial = in;
 			std::vector<char> pin2 = pinned;
 			pin2[t] = 0;
-			// Leaf peeling only: t's private branch is a pendant path in every
-			// case that matters, and the full cycle-aware pass here would cost
-			// two orders of magnitude more for the same result.
+			// Leaf peeling only: t's private branch is a pendant path; the full pass costs 100x for the same result.
 			prune_leaves(d, trial, pin2);
 			if (!trial[t]) {
 				if (!path_into(d, blocked, trial, t, &add)) continue;
@@ -490,10 +462,8 @@ std::vector<char> heuristic(const AtlasTreeData& d, const Mask& blocked, const s
 	std::vector<std::vector<char>> cands;
 	if (!warm.empty()) {
 		std::vector<char> w(n, 0);
-		// Blocked nodes MUST be dropped here. The warm start is the tree already
-		// on screen, and the user may have just ruled out a node that is on it --
-		// keeping it would smuggle an excluded node into the winning candidate,
-		// which is exactly the bug this filter was reported for.
+		// Blocked nodes MUST be dropped here: the warm start is the tree on screen, which may
+		// contain a node the user just ruled out and would smuggle it into the winner.
 		for (int v : warm)
 			if (v >= 0 && v < n && !blocked[v]) w[v] = 1;
 		w[d.root] = 1;
@@ -516,8 +486,7 @@ std::vector<char> heuristic(const AtlasTreeData& d, const Mask& blocked, const s
 		std::reverse(byNear.begin(), byNear.end());
 		cands.push_back(sph(d, blocked, terms, byNear));
 	}
-	// Fixed seed: restarts must be reproducible or the tree would reshuffle
-	// between two identical solves.
+	// Fixed seed: restarts must be reproducible or identical solves would reshuffle the tree.
 	std::mt19937 rng(0x5EED2026u);
 	for (int r = 0; r < kSphRestarts; r++) {
 		std::vector<int> perm = order;
@@ -526,9 +495,7 @@ std::vector<char> heuristic(const AtlasTreeData& d, const Mask& blocked, const s
 	}
 	star_candidates(d, terms, td, &cands);
 
-	// Cheap peel first so the ranking is meaningful, then spend the expensive
-	// re-insertion pass on the few best -- the cheapest construction is often
-	// not the one that improves furthest.
+	// Cheap peel first so the ranking is meaningful, then the expensive re-insertion on the few best.
 	std::vector<std::pair<int, int>> rank;
 	for (int i = 0; i < (int)cands.size(); i++) {
 		prune_leaves(d, cands[i], pinned);
@@ -545,7 +512,7 @@ std::vector<char> heuristic(const AtlasTreeData& d, const Mask& blocked, const s
 		int cnt = count_set(c);
 		if (best.empty() || cnt < bestCount) { best = c; bestCount = cnt; }
 	}
-	prune_redundant(d, best, pinned);   // improve() peels leaves only
+	prune_redundant(d, best, pinned);
 	return best;
 }
 
@@ -569,14 +536,11 @@ AtlasPlan AtlasPlanMinimal(const AtlasTreeData& d,
 
 	Mask blocked(n, 0);
 	for (int b : blockedIdx)
-		if (b >= 0 && b < n && b != d.root) blocked[b] = 1;   // the start is never blockable
+		if (b >= 0 && b < n && b != d.root) blocked[b] = 1;
 
-	// Reachability filter first, ON THE BLOCKED-OUT GRAPH: a target the tree
-	// cannot connect -- because the data is broken, or because the user walled
-	// it off -- must not sink the whole solve. Report it and carry on. This is
-	// also what keeps a walled-off target from being left allocated but
-	// disconnected from the start, which is the failure mode this whole model
-	// has to avoid.
+	// Reachability filter first, ON THE BLOCKED-OUT GRAPH: an unconnectable target (broken data or
+	// walled off) must not sink the solve; report it and carry on. This also keeps a walled-off
+	// target from being left allocated but disconnected from the start.
 	std::vector<int> reachDist, reachPrev;
 	bfs(d, blocked, { d.root }, reachDist, reachPrev);
 
@@ -601,9 +565,8 @@ AtlasPlan AtlasPlanMinimal(const AtlasTreeData& d,
 		in[d.root] = 1;
 		plan.exact = true;
 	} else {
-		// The heuristic always runs: below the cap it supplies the upper bound
-		// and the look-ahead distances that make the exact DP affordable, above
-		// it it IS the answer.
+		// The heuristic always runs: below the cap it supplies the upper bound and look-ahead
+		// distances for the exact DP, above it it IS the answer.
 		TermDists td = term_dists(d, blocked, terms);
 		in = heuristic(d, blocked, terms, pinned, warmStart, td);
 		if (targetCount <= kExactTargetCap) {
@@ -614,11 +577,8 @@ AtlasPlan AtlasPlanMinimal(const AtlasTreeData& d,
 		}
 	}
 
-	// Stability: when the tree already on screen is a valid solution of the
-	// same size, keep it. Wiring must never shuffle unless it buys a point.
-	// A warm start can legitimately contain a node the user has just blocked
-	// (they marked something that was already allocated), so it is filtered
-	// before use -- otherwise the tie-break would smuggle it back in.
+	// Stability: when the tree on screen is a valid solution of the same size, keep it.
+	// The warm start may contain a just-blocked node, so it is filtered before use.
 	if (!warmStart.empty()) {
 		std::vector<char> w(n, 0);
 		for (int v : warmStart)
@@ -639,12 +599,12 @@ std::vector<int> AtlasTargetsAfterClick(const AtlasTreeData& d, int idx)
 	std::vector<int> out = d.TargetIdx();
 	if (idx < 0 || idx >= (int)d.nodes.size() || d.nodes[idx].kind == kAtlasStart) return out;
 
-	if (!d.nodes[idx].alloc) {                       // a new deliberate pick
+	if (!d.nodes[idx].alloc) {
 		out.push_back(idx);
 		std::sort(out.begin(), out.end());
 		return out;
 	}
-	if (d.nodes[idx].target) {                       // un-pick it
+	if (d.nodes[idx].target) {
 		out.erase(std::remove(out.begin(), out.end(), idx), out.end());
 		return out;
 	}
@@ -668,33 +628,17 @@ std::vector<int> AtlasInferTargets(const AtlasTreeData& d)
 		int deg = 0;
 		for (int nb : node.adj)
 			if (d.nodes[nb].alloc) deg++;
-		if (deg <= 1) out.push_back(i);   // leaf of the allocated subgraph
+		if (deg <= 1) out.push_back(i);
 	}
 	return out;
 }
 
-// ---- selftest ---------------------------------------------------------------
+// selftest
 
 namespace {
 
-// Selftest shorthand: most cases have nothing blocked. Named rather than
-// inlined so a case that DOES block reads as deliberate.
+// Selftest shorthand: most cases have nothing blocked.
 Mask no_block(const AtlasTreeData& g) { return Mask(g.nodes.size(), 0); }
-
-struct TestReport {
-	std::string text;
-	int failures = 0;
-
-	void check(bool ok, const char* what, const std::string& detail = std::string())
-	{
-		text += ok ? "PASS  " : "FAIL  ";
-		text += what;
-		if (!detail.empty()) { text += "  ("; text += detail; text += ")"; }
-		text += "\n";
-		if (!ok) failures++;
-	}
-	void note(const std::string& s) { text += "      " + s + "\n"; }
-};
 
 // Independent minimum over every node subset: the ground truth the DP is
 // checked against. Only usable for tiny graphs.
@@ -737,7 +681,7 @@ AtlasTreeData make_small_graph(unsigned seed, int n)
 		e.a = a; e.b = b;
 		d.edges.push_back(e);
 	};
-	for (int i = 1; i < n; i++)                       // random spanning tree
+	for (int i = 1; i < n; i++)
 		link(i, (int)(rng() % (unsigned)i));
 	int extra = (int)(rng() % (unsigned)std::max(1, n / 2));
 	for (int i = 0; i < extra; i++)
@@ -776,7 +720,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 
 	TestReport rep;
 
-	// --- O1: exactness against brute force on small random graphs ------------
+	// O1: exactness against brute force on small random graphs
 	{
 		int cases = 0, bad = 0;
 		for (unsigned seed = 1; seed <= 40; seed++) {
@@ -811,7 +755,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		          std::to_string(cases) + " cases, " + std::to_string(bad) + " mismatches");
 	}
 
-	// --- O1b: the upper-bound pruning must not change the answer -------------
+	// O1b: the upper-bound pruning must not change the answer
 	{
 		int bad = 0, cases = 0;
 		for (unsigned seed = 41; seed <= 70; seed++) {
@@ -834,7 +778,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		          std::to_string(cases) + " cases, " + std::to_string(bad) + " differ");
 	}
 
-	// --- O2: disconnected graph degrades instead of failing -------------------
+	// O2: disconnected graph degrades instead of failing
 	{
 		AtlasTreeData g = make_small_graph(3, 10);
 		AtlasNode iso;                                  // island with no edges
@@ -847,14 +791,12 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		          "unreachable target is reported, the rest still solves");
 	}
 
-	// --- the real tree --------------------------------------------------------
+	// the real tree
 	AtlasTreeData d;
 	std::string err;
 	if (!d.Load(exeDir, &err)) {
 		rep.check(false, "load atlas_tree_poe1.json", err);
-		printf("%s", rep.text.c_str());
-		write_file_utf8(exeDir + L"atlas_opt_selftest.txt", rep.text);
-		return 1;
+		return rep.finish(exeDir + L"atlas_opt_selftest.txt");
 	}
 	rep.note("nodes=" + std::to_string(d.nodes.size()) + " edges=" + std::to_string(d.edges.size()) +
 	         " totalPoints=" + std::to_string(d.TotalPoints()) +
@@ -876,7 +818,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		return tg;
 	};
 
-	// --- O3: one target == the existing shortest-path answer ------------------
+	// O3: one target == the existing shortest-path answer
 	{
 		std::mt19937 rng(11);
 		int bad = 0, checked = 0;
@@ -892,7 +834,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		          std::to_string(checked) + " sampled, " + std::to_string(bad) + " differ");
 	}
 
-	// --- O4: never worse than the old greedy, over every click order ----------
+	// O4: never worse than the old greedy, over every click order
 	{
 		std::mt19937 rng(23);
 		int worse = 0, orders = 0, sets = 0, better = 0, bestGap = 0;
@@ -915,7 +857,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		         std::to_string(orders) + " orders, by up to " + std::to_string(bestGap) + " points");
 	}
 
-	// --- O5: order independence (the headline promise) ------------------------
+	// O5: order independence (the headline promise)
 	{
 		std::mt19937 rng(31);
 		int bad = 0, sets = 0;
@@ -939,7 +881,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		          std::to_string(sets) + " sets, " + std::to_string(bad) + " order-dependent");
 	}
 
-	// --- O6: determinism + stability -----------------------------------------
+	// O6: determinism + stability
 	{
 		std::mt19937 rng(41);
 		std::vector<int> tg = pick(rng, 5);
@@ -956,7 +898,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		rep.check(e.nodes == a.nodes, "target list order does not affect the result");
 	}
 
-	// --- O7: targets always survive, removal never costs more -----------------
+	// O7: targets always survive, removal never costs more
 	{
 		std::mt19937 rng(53);
 		int missing = 0, grew = 0, rounds = 0;
@@ -975,7 +917,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		          std::to_string(rounds) + " rounds, " + std::to_string(grew) + " grew");
 	}
 
-	// --- O8: heuristic quality, measured against the exact solver -------------
+	// O8: heuristic quality, measured against the exact solver
 	{
 		std::mt19937 rng(67);
 		int samples = 0, equal = 0, worseBy = 0, maxGap = 0;
@@ -992,21 +934,20 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 			std::vector<char> exactSet;
 			int exactEdges = dw_solve(d, no_block(d), terms, count_set(h) - 1, &exactSet, &td);
 			int hEdges = count_set(h) - 1;
-			int truth = exactEdges >= 0 ? exactEdges : hEdges;   // -1 == nothing beat the bound
+			int truth = exactEdges >= 0 ? exactEdges : hEdges;
 			int gap = hEdges - truth;
 			samples++;
 			if (gap == 0) equal++;
 			else { worseBy += gap; maxGap = std::max(maxGap, gap); }
 		}
-		// The product guarantee is "exact at or below the cap, approximate and
-		// labelled above it" -- so this bounds the approximation rather than
-		// pretending it is always optimal, and prints the real numbers.
+		// The product guarantee is "exact at or below the cap, approximate and labelled above it":
+		// this bounds the approximation and prints the real numbers.
 		rep.check(maxGap <= 2, "heuristic stays within the stated bound of the optimum",
 		          std::to_string(equal) + "/" + std::to_string(samples) + " exact, worst gap " +
 		          std::to_string(maxGap) + ", total overshoot " + std::to_string(worseBy));
 	}
 
-	// --- O9: large target sets stay sane --------------------------------------
+	// O9: large target sets stay sane
 	{
 		std::mt19937 rng(71);
 		std::vector<int> tg = pick(rng, 30);
@@ -1020,7 +961,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		rep.check(allThere, "heuristic keeps every target too");
 	}
 
-	// --- O10: timings ---------------------------------------------------------
+	// O10: timings
 	{
 		std::mt19937 rng(83);
 		double capMs = 0, worstHeur = 0;
@@ -1049,19 +990,15 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 			rep.note("full solve k=" + std::to_string(k) + ": " + std::to_string((int)msec) +
 			         " ms -> " + std::to_string(p.points) + " points" + (p.exact ? " (exact)" : ""));
 		}
-		// Budget rationale: a solve only ever runs after the hover has settled
-		// (see AtlasView's debounce) or on a click, so ~150 ms is the point
-		// where it would start to feel like a stall.
+		// Budget: a solve runs after the hover settles (AtlasView's debounce) or on a click; ~150 ms feels like a stall.
 		rep.check(capMs < 150.0, "exact solve at the cap stays interactive",
 		          "k=" + std::to_string(kExactTargetCap) + " took " + std::to_string((int)capMs) + " ms");
 		rep.check(worstHeur < 150.0, "full solve stays interactive at every size",
 		          "worst " + std::to_string((int)worstHeur) + " ms");
 	}
 
-	// --- O10b: blocked nodes ---------------------------------------------------
-	// This is where PR #2's planning mode went wrong: walling a target off left
-	// it allocated but disconnected from the start, and the counter still
-	// reported "N/N reached". Both properties are asserted here directly.
+	// O10b: blocked nodes
+	// Walling a target off must not leave it allocated but disconnected while the counter reports "N/N reached".
 	{
 		std::mt19937 rng(131);
 		auto connected_from_root = [&](const std::vector<int>& nodes) {
@@ -1097,9 +1034,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		rep.check(wrongReport == 0, "unreachable targets are reported, not silently claimed",
 		          std::to_string(wrongReport) + " mismatches");
 
-		// Field-reported case: block a node that is ALREADY on the allocated
-		// path. The warm start still contains it, so this is the one route by
-		// which a blocked node could survive into the result.
+		// Block a node ALREADY on the allocated path: the one route by which a blocked node could survive via the warm start.
 		{
 			std::mt19937 r3(211);
 			int stillThere = 0, tried = 0;
@@ -1166,12 +1101,9 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		          std::to_string(cases) + " cases, " + std::to_string(mismatch) + " mismatches");
 	}
 
-	// --- O10c: the sandbox contract ------------------------------------------
-	// The planner keeps the sandbox, but the property that matters is pure
-	// state: entering (snapshot + clear), marking, then discarding must restore
-	// the three fields element for element. Replayed here because the ImGui side
-	// cannot be driven headlessly (see error_win_gui_test_capture), and because
-	// "abandoning a plan changes nothing" is the guarantee the mode is sold on.
+	// O10c: the sandbox contract
+	// Pure state: entering (snapshot + clear), marking, then discarding must restore the three
+	// fields element for element ("abandoning a plan changes nothing"); the ImGui side can't be driven headlessly.
 	{
 		std::mt19937 rng(151);
 		std::vector<int> tg = pick(rng, 4);
@@ -1211,8 +1143,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		          std::to_string(beforeTargets.size()) + " targets / " +
 		          std::to_string(beforeBlocked.size()) + " blocked");
 
-		// and the serialized project is byte-identical, which is the form the
-		// guarantee actually takes on disk
+		// and the serialized project is byte-identical
 		AtlasBuildFile f1;
 		f1.ParseDoc(u8"{\"builds\":[{\"name\":\"p\",\"alloc\":[]}]}");
 		f1.Active().alloc = beforeAlloc;
@@ -1229,8 +1160,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 	}
 
 	// --- O11: the click model itself, driven through the real entry points ----
-	// The planner's click handler is ImGui code that cannot be exercised
-	// headlessly, but the decision it makes is all here, so this replays it.
+	// The click handler is ImGui code that can't run headlessly; this replays its decision.
 	{
 		std::mt19937 rng(101);
 		auto click = [&](int idx) {
@@ -1262,14 +1192,9 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		          "re-picking it restores exactly the same point count",
 		          std::to_string(d.UsedPoints()) + " vs " + std::to_string(afterAdds));
 
-		// Clicking wiring must always cost at least one target. This is not a
-		// sampled observation but a consequence of prune_redundant: it deletes
-		// every non-target node whose removal keeps the set connected, so in any
-		// plan a surviving non-target node is a cut vertex by construction.
-		//
-		// Asserting the invariant (rather than hunting for one example) also
-		// settles what AtlasView's planNoop_ branch is for: it can only fire on
-		// an allocation that is NOT minimal, so it is a guard, not a normal path.
+		// Clicking wiring must always cost at least one target: prune_redundant deletes every
+		// non-target node whose removal keeps the set connected, so a surviving one is a cut vertex.
+		// Hence AtlasView's planNoop_ branch can only fire on a NON-minimal allocation (a guard).
 		{
 			std::vector<int> wiringNodes;
 			for (int i = 0; i < (int)d.nodes.size(); i++)
@@ -1297,7 +1222,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 		rep.check(d.UsedPoints() == 0 && d.TargetIdx().empty(), "reset clears both");
 	}
 
-	// --- O12: inferred targets reproduce a legacy build ----------------------
+	// O12: inferred targets reproduce a legacy build
 	{
 		std::mt19937 rng(97);
 		std::vector<int> tg = pick(rng, 6);
@@ -1315,9 +1240,5 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 	}
 	d.Reset();
 
-	rep.text += rep.failures == 0 ? "\nALL PASS\n"
-	                              : "\n" + std::to_string(rep.failures) + " FAILURE(S)\n";
-	printf("%s", rep.text.c_str());
-	write_file_utf8(exeDir + L"atlas_opt_selftest.txt", rep.text);
-	return rep.failures == 0 ? 0 : 1;
+	return rep.finish(exeDir + L"atlas_opt_selftest.txt");
 }

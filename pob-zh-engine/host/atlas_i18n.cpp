@@ -5,26 +5,11 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "win_util.h"
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 
 using nlohmann::ordered_json;
-
-static bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 30)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
 
 bool AtlasI18n::Load(const std::wstring& exeDir)
 {
@@ -119,7 +104,7 @@ const std::string& AtlasI18n::StatLine(const std::string& en) const
 	return it != statByEn_.end() ? it->second : en;
 }
 
-// ---- whole-tree node search ---------------------------------------------------
+// whole-tree node search
 
 std::vector<std::string> AtlasNodeSearchKeys(const AtlasTreeData& d, const AtlasI18n* zh)
 {
@@ -149,7 +134,7 @@ std::vector<int> AtlasSearchNodes(const std::vector<std::string>& keys, const st
 	return hits;
 }
 
-// ---- self-test (folded into --atlas-selftest) --------------------------------
+// self-test (folded into --atlas-selftest)
 
 namespace {
 

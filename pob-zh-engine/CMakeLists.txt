@@ -484,6 +484,8 @@ if (WIN32)
         host/atlas_planner.cpp
         host/atlas_import.cpp
         host/atlas_update.cpp
+        host/data_updater.cpp
+        host/data_update_selftest.cpp
         host/atlas_stat_agg.cpp
         host/atlas_scarabs.cpp
         host/atlas_threads.cpp
@@ -523,34 +525,10 @@ if (WIN32)
         # ...or, where WebView2 cannot run (Wine / CrossOver), the same page in
         # the system browser over a loopback HTTP server
         host/modern_ui_browser.cpp
+        host/modern_ui_shared.cpp
         host/zip_extract.cpp
         host/hash_sha256.cpp
         host/sig_verify.cpp
-        # 搜尋字串產生器：核心 + 資料 + UI + 自檢
-        host/regex_gen.cpp
-        host/regex_match.cpp
-        host/regex_numeric.cpp
-        host/regex_frag.cpp
-        host/regex_algo_pages.cpp
-        host/regex_data.cpp
-        host/regex_state.cpp
-        host/regex_folders.cpp
-        host/regex_embed.cpp
-        host/regex_itemmods.cpp
-        host/regex_share.cpp
-        host/regex_bookmarks_share.cpp
-        host/regex_send.cpp
-        host/regex_tool_ui.cpp
-        host/regex_selftest.cpp
-        host/regex_selftest_r3.cpp
-        host/regex_selftest_r4.cpp
-        host/regex_selftest_r5.cpp
-        host/regex_selftest_r7.cpp
-        host/regex_selftest_r8.cpp
-        host/regex_selftest_send.cpp
-        host/regex_selftest_r9.cpp
-        host/regex_selftest_r10.cpp
-        host/regex_selftest_parity.cpp
         # 倉庫收益統計（測試性質，POESESSID 通道）：provider + 資料層 + 服務 + UI + 自檢
         host/warehouse_provider_sessid.cpp
         host/warehouse_snapshot.cpp
@@ -588,6 +566,17 @@ if (WIN32)
         message(STATUS "pob-zh: 更新來源改為 ${POBTOOLS_UPDATE_REPO}(測試建置,不可發布)")
         target_compile_definitions(pob-zh PRIVATE "POBTOOLS_UPDATE_REPO=\"${POBTOOLS_UPDATE_REPO}\"")
     endif()
+    # beta 建置的版號後綴(beta-<commit 短雜湊 7 碼>),不設就是正式版號。
+    #   cmake -B build -DPOBTOOLS_VERSION_SUFFIX=beta-1ef80a6
+    #   cmake -B build -UPOBTOOLS_VERSION_SUFFIX   # 發完立刻改回
+    # ⚠ cache 會留著:打包腳本 -Mode App 遇到帶後綴的 exe 會擋。
+    if(POBTOOLS_VERSION_SUFFIX)
+        if(NOT POBTOOLS_VERSION_SUFFIX MATCHES "^beta-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]$")
+            message(FATAL_ERROR "POBTOOLS_VERSION_SUFFIX 必須是 beta-<7 碼小寫 hex>,收到 ${POBTOOLS_VERSION_SUFFIX}")
+        endif()
+        message(STATUS "pob-zh: beta 建置,版號後綴 ${POBTOOLS_VERSION_SUFFIX}")
+        target_compile_definitions(pob-zh PRIVATE "POBTOOLS_VERSION_SUFFIX=\"${POBTOOLS_VERSION_SUFFIX}\"")
+    endif()
     # host sources contain UTF-8 CJK string literals; force UTF-8 source parsing
     # so MSVC does not misread them under the system (Big5) code page.
     target_compile_options(pob-zh PRIVATE "/utf-8")
@@ -608,13 +597,8 @@ if (WIN32)
     target_link_options(pob-zh PRIVATE "/DELAYLOAD:glfw3.dll" "/DELAYLOAD:libGLESv2.dll" "/DELAYLOAD:WebView2Loader.dll" "/DELAYLOAD:libwebpdecoder.dll")
     set_target_properties(pob-zh PROPERTIES OUTPUT_NAME "pob-zh")
     install(TARGETS pob-zh RUNTIME DESTINATION ".")
-    # Bundled base-type -> item-class map (generated from POB Data/Bases) and
-    # item-name -> icon art-path map (generated from RePoE).
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/base_classes.json" DESTINATION "Data")
+    # Bundled item-name -> icon art-path map (generated from RePoE).
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/icon_paths.json" DESTINATION "Data")
-    # Static economy prices + value->tier thresholds (offline fallback; live in 5b).
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/economy_poe1.json" DESTINATION "Data")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/economy_tiers_poe1.json" DESTINATION "Data")
     # Complete Traditional-Chinese item dataset (repoe-fork: names + class + tags).
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/filter_items_zh.json" DESTINATION "Data")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/item_meta.json" DESTINATION "Data")
@@ -652,30 +636,6 @@ if (WIN32)
     # so a new league needs a fresh run of both.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/astrolabes_poe1.json" DESTINATION "Data")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas_maps_poe1.json" DESTINATION "Data")
-    # Search-string generator catalogue: every list the tool can build a query
-    # over (map and logbook modifiers for PoE1; waystone, tablet, relic and
-    # remnant modifiers for PoE2), each entry carrying the line the game prints
-    # with '#' where a roll goes. Regenerated from a local Content.ggpk by
-    # tools/gen_regex_data.py and gen_regex_data2.py; like the scarabs neither has
-    # an online updater, so a new league needs a fresh run.
-    # BOTH files ship: the panel loads every catalogue it finds and labels each
-    # page with its game, so a PoE1 player can still read the PoE2 list.
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_poe1.json" DESTINATION "Data")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_poe2.json" DESTINATION "Data")
-    # Label stand-ins for the numeric sections / vendor pages: exile-appraiser
-    # data/regex/labels.<game>.json verbatim; the catalogue's own `labels` win key by key.
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_labels_poe1.json" DESTINATION "Data")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_labels_poe2.json" DESTINATION "Data")
-    # Item-mod values page: exile-appraiser's stats.ndjson (trade stat ids, so share
-    # codes interoperate), gzip-compressed (6.8 MB -> 0.9 MB); loaded the first time the
-    # page is opened. Source commit and hashes: host/data/regex_stats/MANIFEST.json.
-    # Also item-mod-forms.json.gz (exile-appraiser data/regex/item-mod-forms.json, the
-    # multi-form arbitration; covered by the same *.gz pattern).
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_stats/" DESTINATION "Data/regex_stats"
-            FILES_MATCHING PATTERN "*.gz")
-    # Share-code templates (R8): exile-appraiser data/regex/templates.json copied verbatim
-    # (hand-written; keys are language-neutral English lines / algorithmic entry ids).
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_templates.json" DESTINATION "Data")
     # The shipped CJK font. Until 2026-08 this file existed ONLY in dist\Fonts\,
     # which is gitignored and has no install rule -- so a `cmake --install` into a
     # fresh prefix, or any cleanup of dist\, silently lost it. Nothing reported the

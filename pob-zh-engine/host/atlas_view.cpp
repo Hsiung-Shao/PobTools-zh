@@ -14,9 +14,7 @@
 #include <cmath>
 #include <cstdio>
 
-// ---- palette ----------------------------------------------------------------
-
-// Every hue is a design token (ui_theme.h, tree-*); only the alpha is local.
+// palette: every hue is a design token (ui_theme.h, tree-*); only the alpha is local.
 namespace Tok = PobUi::Tok;
 static constexpr ImU32 WithA(ImU32 c, unsigned a) { return (c & 0x00FFFFFFu) | ((ImU32)a << 24); }
 static const ImU32 kColEdgeOff = WithA(Tok::TreeLink, 140);
@@ -30,11 +28,9 @@ static const ImU32 kColAvoidRing = WithA(Tok::TreeRemove, 245);   // ruled out b
 static const ImU32 kColMechRing = WithA(Tok::TreeHit, 235);       // mechanic highlight
 static const ImU32 kColSearchRing = WithA(Tok::AccentText, 245);  // side-panel search hit
 
-// How long the cursor must rest on a node before its minimum-point plan is
-// solved. Without this, sweeping the tree would run one solve per node passed.
+// Cursor rest time on a node before its minimum-point plan is solved (else one solve per node swept).
 static const float kSolveDelay = 0.12f;
-// Target rings turn into visual noise on a zoomed-out map, so they only appear
-// once nodes are big enough to read.
+// Target rings are noise on a zoomed-out map; shown only once nodes are big enough to read.
 static const float kTargetRingMinZoom = 0.10f;
 
 static const float kRejectFlash = 2.5f;    // "not enough points" banner lifetime
@@ -42,8 +38,6 @@ static const float kRejectFlash = 2.5f;    // "not enough points" banner lifetim
 // side-panel click-to-focus
 static const float kFocusDuration = 1.6f;  // highlight ring fade time (seconds)
 static const float kFocusMinZoom = 0.16f;  // readable zoom floor when jumping in
-
-// ---- texture management -------------------------------------------------------
 
 bool AtlasView::LoadTextures(const std::wstring& exeDir, const AtlasTreeData& d, std::string* err)
 {
@@ -53,8 +47,7 @@ bool AtlasView::LoadTextures(const std::wstring& exeDir, const AtlasTreeData& d,
 	pickRequest_ = false;
 	focusAnim_ = false;
 	focusTimer_ = 0.0f;
-	// Sprite sheets live beside the tree data (versioned: Data/atlas_versions/
-	// <tag>/atlas/; legacy flat: Data/atlas/). DataDir() is the resolved folder.
+	// Sprite sheets live beside the tree data (versioned Data/atlas_versions/<tag>/atlas/; legacy Data/atlas/).
 	std::wstring base = d.DataDir().empty() ? (exeDir + L"Data\\") : d.DataDir();
 	tex_.assign(d.sheets.size(), 0);
 	for (size_t i = 0; i < d.sheets.size(); i++) {
@@ -89,7 +82,7 @@ void AtlasView::DestroyTextures()
 	tex_.clear();
 }
 
-// ---- camera -------------------------------------------------------------------
+// camera
 
 ImVec2 AtlasView::worldToScreen(ImVec2 w) const
 {
@@ -103,7 +96,7 @@ ImVec2 AtlasView::screenToWorld(ImVec2 s) const
 	              center_.y + (s.y - vpPos_.y - vpSize_.y * 0.5f) / zoom_);
 }
 
-// ---- hover / preview ------------------------------------------------------------
+// hover / preview
 
 void AtlasView::solvePreview(AtlasTreeData& d)
 {
@@ -118,12 +111,8 @@ void AtlasView::solvePreview(AtlasTreeData& d)
 	mark_.assign(d.nodes.size(), 0);
 	if (hover_ < 0 || d.nodes[hover_].kind == kAtlasStart) return;
 
-	// Normal mode: connect the shortest path from whatever is already allocated
-	// and never move a node the user has already bought. Re-deriving the whole
-	// tree from the target set (what planning mode does) is minimal but it
-	// reroutes paths the user deliberately walked -- clicking a second node
-	// visibly scrambles the first one's route, and it compounds from there.
-	// Minimality is available on demand instead, from the toolbar button.
+	// Normal mode: connect the shortest path from what is already allocated, never moving a bought node (re-deriving
+	// the whole tree, as planning mode does, reroutes paths the user walked). Minimality is on demand, from the toolbar.
 	if (!planning_) {
 		if (d.nodes[hover_].alloc) {
 			hoverDrop_ = d.FindRemoveSet(hover_);
@@ -175,9 +164,8 @@ void AtlasView::updateHover(AtlasTreeData& d, ImVec2 mouseWorld, float dt)
 			bestSq = dsq;
 		}
 	}
-	// Mastery icons sit at cluster centres, where there is no node, so they are
-	// only considered when nothing else claimed the cursor. That also keeps the
-	// mechanic click from ever colliding with an allocation click.
+	// Mastery icons sit at cluster centres (no node there), so they only count when nothing else claimed the cursor;
+	// that keeps the mechanic click from colliding with an allocation click.
 	hoverMastery_ = -1;
 	if (found == -1) {
 		float bestM = 0.0f;
@@ -202,10 +190,8 @@ void AtlasView::updateHover(AtlasTreeData& d, ImVec2 mouseWorld, float dt)
 		allocDirty_ = false;
 	}
 
-	// A full minimum-point solve is far heavier than the old BFS, so in planning
-	// mode it waits for the cursor to settle -- sweeping across the tree must
-	// not solve once per node passed over. The normal-mode BFS is cheap enough
-	// to run on every hover change, so its preview stays instant.
+	// A full minimum-point solve is heavy, so in planning mode it waits for the cursor to settle (no solve per node
+	// swept over); the normal-mode BFS is cheap and runs on every hover change.
 	if (hover_ != -1 && hover_ != previewFor_) {
 		dwell_ += dt;
 		if (!planning_ || dwell_ >= kSolveDelay) {
@@ -215,7 +201,7 @@ void AtlasView::updateHover(AtlasTreeData& d, ImVec2 mouseWorld, float dt)
 	}
 }
 
-// ---- drawing --------------------------------------------------------------------
+// drawing
 
 void AtlasView::drawDecos(const AtlasTreeData& d, ImDrawList* dl, const std::vector<AtlasDeco>& decos)
 {
@@ -329,28 +315,21 @@ void AtlasView::drawNodes(const AtlasTreeData& d, ImDrawList* dl)
 				              (std::max(n.on.w, n.on.h) * 0.5f + 16.0f) * zoom_, it->second, 0, 3.5f);
 		}
 
-		// mechanic overlay: the "this is the same mechanic" ring, drawn under the
-		// interaction rings so it never hides what a click would do
-		// The floors keep both rings readable when zoomed all the way out; that is
-		// exactly the view you use to answer "where else is this" / "what did I
-		// mark", so shrinking them into dots would defeat the purpose.
+		// mechanic overlay: the "same mechanic" ring, under the interaction rings so it never hides what a click does.
+		// The size floors keep rings readable fully zoomed out.
 		if (!mechNodes_.empty() && mechNodes_.count(i))
 			dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)),
 			              std::max((std::max(n.on.w, n.on.h) * 0.5f + 14.0f) * zoom_, 7.0f),
 			              kColMechRing, 0, 3.0f);
 
-		// search overlay: outside the mechanic ring so both read when both are on;
-		// same zoomed-out floor, for the same "where is it" reason
+		// search overlay: outside the mechanic ring so both read; same zoomed-out floor
 		if (!searchNodes_.empty() && searchNodes_.count(i))
 			dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)),
 			              std::max((std::max(n.on.w, n.on.h) * 0.5f + 20.0f) * zoom_, 9.0f),
 			              kColSearchRing, 0, 3.0f);
 
-		// Deliberately picked nodes, so wiring is distinguishable from what the
-		// user actually asked for. In planning mode that distinction IS the mode
-		// -- everything not ringed was put there by the solver -- so the ring is
-		// bold and drawn at every zoom. In normal mode nothing ever re-routes,
-		// so the marker stays a quiet hint.
+		// Deliberately picked nodes, to tell them from wiring. In planning mode that distinction IS the mode (unringed =
+		// solver-placed), so the ring is bold at every zoom; in normal mode nothing re-routes, so it stays a quiet hint.
 		if (n.target) {
 			if (planning_)
 				dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)),
@@ -361,9 +340,7 @@ void AtlasView::drawNodes(const AtlasTreeData& d, ImDrawList* dl)
 				              (std::max(n.on.w, n.on.h) * 0.5f + 8.0f) * zoom_, kColTargetRing, 0, 2.0f);
 		}
 
-		// ruled out: ring plus a cross, because a ring alone reads as "selected"
-		// and this is the opposite. Drawn at every zoom -- an avoided node the
-		// user cannot see is exactly the one they would wonder about.
+		// ruled out: ring plus a cross (a ring alone reads as "selected"); drawn at every zoom.
 		if (n.blocked) {
 			ImVec2 c = worldToScreen(ImVec2(n.x, n.y));
 			float r = (std::max(n.on.w, n.on.h) * 0.5f + 10.0f) * zoom_;
@@ -410,9 +387,7 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 	}
 	if (hover_ == -1) return;
 	const AtlasNode& n = d.nodes[hover_];
-	// Whole pixels: a size constraint makes ImGui floor the window size, and with
-	// a fractional padding the content then needs a fraction more than it got --
-	// which shows up as a vertical scrollbar eating the right edge of the text.
+	// Whole pixels: with a fractional padding the floored window is a fraction too small, and a vertical scrollbar eats the text edge.
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(std::floor(16.0f * uiScale), std::floor(12.0f * uiScale)));
 	ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(460.0f * uiScale, FLT_MAX));
 	ImGui::BeginTooltip();
@@ -440,8 +415,7 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 		ImGui::TextColored(PobUi::TokV4(Tok::TreeNotable), u8"[目標]");
 	}
 
-	// 明確 wrap 寬度:TextWrapped 會跟著「目前視窗寬」換行,而 auto-resize
-	// tooltip 的寬度由最寬的不換行元件(短標題)決定 → 一行七八字的窄條。
+	// 明確 wrap 寬度:TextWrapped 跟「目前視窗寬」換行,auto-resize tooltip 寬度由最寬的不換行元件決定 → 窄條。
 	ImGui::PushTextWrapPos(380.0f * uiScale);
 	for (const std::string& s : n.stats) {
 		ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(Tok::AccentText));
@@ -534,7 +508,7 @@ void AtlasView::CenterOn(const AtlasTreeData& d, int nodeIdx)
 	focusTimer_ = kFocusDuration;
 }
 
-// ---- main entry -------------------------------------------------------------------
+// main entry
 
 bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool planning)
 {
@@ -615,18 +589,14 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool 
 	else
 		hover_ = -1;
 
-	// A mastery icon is the mechanic marker for its cluster, so clicking one asks
-	// "where else is this mechanic" rather than touching the allocation. It can
-	// only fire when no node is under the cursor (see updateHover), which is why
-	// it sits outside the two click models below instead of racing them.
+	// A mastery icon is its cluster's mechanic marker: clicking asks "where else is this mechanic", not allocation.
+	// Fires only when no node is under the cursor (updateHover), hence outside the two click models below.
 	if (hover_ == -1 && hoverMastery_ != -1 && ImGui::IsItemDeactivated() &&
 	    ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Left)) < 16.0f * uiScale * uiScale)
 		clickedMastery_ = hoverMastery_;
 
-	// Planning mode: mark first, solve after. Left click cycles the node through
-	// want -> avoid -> clear so a handful of core nodes can be marked quickly;
-	// right click clears in one step. Nothing here writes to disk -- the caller
-	// keeps the sandbox and decides at the end whether to keep the result.
+	// Planning mode: mark first, solve after. Left click cycles want -> avoid -> clear; right click clears.
+	// Nothing here writes to disk; the caller keeps the sandbox and decides whether to keep the result.
 	if (planning) {
 		bool markChanged = false;
 		const bool shortLeft = ImGui::IsItemDeactivated() &&
@@ -664,21 +634,16 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool 
 			planReady_ = false;
 		}
 	} else
-	// Normal mode: click allocates the shortest path to the node, or removes it
-	// along with whatever it was holding on to. Nothing already allocated ever
-	// moves -- see solvePreview for why the minimum-point model was pulled back
-	// out of the click path.
-	// IsMouseReleased(Left): the canvas button takes the right button as well,
-	// and a right click (the option picker) must not also remove the node.
+	// Normal mode: click allocates the shortest path to the node, or removes it with what it held on to; nothing
+	// already allocated moves (see solvePreview). IsMouseReleased(Left): the canvas button takes the right button
+	// too, and a right click (option picker) must not also remove the node.
 	if (ImGui::IsItemDeactivated() && ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
 	    ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Left)) < 16.0f * uiScale * uiScale &&
 	    hover_ != -1 && d.nodes[hover_].kind != kAtlasStart) {
-		// A click before the hover settled has no cached preview yet; build it
-		// now rather than ignoring the click.
+		// A click before the hover settled has no cached preview yet; build it now.
 		if (!planReady_) { previewFor_ = hover_; solvePreview(d); }
 		if (planReady_ && d.nodes[hover_].alloc) {
-			// Targets are bookkeeping for the on-demand "compress" button; a
-			// node that is gone must not stay pinned.
+			// Targets feed the on-demand "compress" button; a removed node must not stay pinned.
 			for (int v : hoverDrop_)
 				if (v >= 0 && v < (int)d.nodes.size()) d.nodes[v].target = false;
 			d.Remove(hoverDrop_);
@@ -714,16 +679,14 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool 
 	}
 	if (rejectFlash_ > 0.0f) rejectFlash_ -= io.DeltaTime;
 
-	// Option picker of a multiple-choice node: opened by allocating one (above)
-	// or by right-clicking an allocated one. Normal mode only -- the planning
-	// sandbox re-derives the allocation on every mark and has its own right click.
+	// Option picker of a multiple-choice node: opened by allocating one or right-clicking an allocated one.
+	// Normal mode only (the planning sandbox re-derives on every mark and has its own right click).
 	if (!planning && hovered && hover_ != -1 && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
 	    ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Right)) < 16.0f * uiScale * uiScale &&
 	    d.nodes[hover_].alloc && !d.nodes[hover_].variants.empty()) {
 		OpenVariantPicker(hover_);
 	}
-	// Opened once per request: re-opening whenever it is closed would undo the
-	// user dismissing it.
+	// Opened once per request: re-opening whenever closed would undo the user's dismissal.
 	if (pickRequest_) ImGui::OpenPopup("##atlasvariant");
 	pickRequest_ = false;
 	bool pickerOpen = false;
@@ -771,8 +734,7 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool 
 	drawDecos(d, dl, d.groupBg);
 	drawEdges(d, dl);
 	drawDecos(d, dl, d.masteries);
-	// Mechanic markers: the highlighted clusters, plus a hover ring so the icon
-	// reads as clickable at all (it used to be pure decoration).
+	// Mechanic markers: the highlighted clusters, plus a hover ring so the icon reads as clickable.
 	for (int i = 0; i < (int)d.masteries.size(); i++) {
 		if (i != hoverMastery_ && !mechMasteries_.count(i)) continue;
 		const AtlasDeco& m = d.masteries[i];
@@ -793,8 +755,7 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool 
 		dl->AddText(p0 + pad, Tok::Text, buf);
 	}
 
-	// Refused click: a single line in the toolbar reads as "nothing happened",
-	// so say it on the canvas, where the user is actually looking.
+	// Refused click: say it on the canvas, where the user looks (a toolbar line reads as "nothing happened").
 	if (rejectFlash_ > 0.0f && !status_.empty()) {
 		float fade = std::min(1.0f, rejectFlash_ / 0.6f);
 		ImVec2 ts = ImGui::CalcTextSize(status_.c_str());

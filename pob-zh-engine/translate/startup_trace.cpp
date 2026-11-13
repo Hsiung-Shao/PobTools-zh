@@ -47,8 +47,7 @@ void startup_trace_begin(const char* role)
 	for (; role && role[i] && i < 31; i++) wrole[i] = (wchar_t)(unsigned char)role[i];
 	wrole[i] = L'\0';
 	swprintf_s(path, L"%sPobTools\\startup_%s.txt", exe, wrole);
-	/* The folder normally exists (the updater and the tools log there); create
-	** it for a brand-new install so the very first start is traced too. */
+	/* Create the folder so a brand-new install's first start is traced too. */
 	wchar_t dir[MAX_PATH + 16];
 	swprintf_s(dir, L"%sPobTools", exe);
 	CreateDirectoryW(dir, nullptr);
@@ -56,9 +55,8 @@ void startup_trace_begin(const char* role)
 	s_file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
 	                     FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (s_file == INVALID_HANDLE_VALUE && GetLastError() == ERROR_SHARING_VIOLATION) {
-		/* Another instance of the same role is alive and holds the plain name
-		** (two POBs open at once). Its timeline stays intact; this one gets a
-		** per-process file instead of vanishing. */
+		/* Another instance of the same role holds the plain name (two POBs open):
+		** this one gets a per-process file. */
 		swprintf_s(path, L"%sPobTools\\startup_%s_%lu.txt", exe, wrole, (unsigned long)GetCurrentProcessId());
 		s_file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
 		                     FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -83,8 +81,7 @@ void startup_trace_mark(const char* fmt, ...)
 	if (len <= 0) return;
 	std::lock_guard<std::mutex> g(s_lock);
 	DWORD w = 0;
-	/* No FlushFileBuffers: WriteFile already hands the line to the OS cache, which
-	** survives a process crash; a disk flush per mark would cost more than some of
-	** the stages being measured. */
+	/* No FlushFileBuffers: the OS cache survives a process crash, and a flush per mark would
+	** cost more than some stages being measured. */
 	WriteFile(s_file, line, (DWORD)len, &w, nullptr);
 }

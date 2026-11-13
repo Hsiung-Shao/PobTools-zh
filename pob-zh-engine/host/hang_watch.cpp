@@ -19,7 +19,7 @@
 
 namespace {
 
-// ---- shared state ------------------------------------------------------------
+// shared state
 
 const size_t kStageMax   = 96;        // breadcrumb, fixed size so it can live in a seqlock
 const size_t kStackBytes = 256 * 1024;// how much of a thread's stack we copy
@@ -31,22 +31,17 @@ std::atomic<unsigned long long> g_beat{0};
 std::atomic<bool>               g_running{false};
 std::atomic<int>                g_reports{0};
 
-// The breadcrumb, written by the watched thread and read by the watchdog while
-// that thread may be suspended. A mutex here would deadlock exactly when it
-// matters, so this is a seqlock: odd sequence means a write is in progress and
-// the reader retries. Torn reads are impossible; a reader that keeps losing the
-// race simply reports the breadcrumb as unknown.
+// The breadcrumb, written by the watched thread and read by the watchdog while that thread may be suspended. A mutex
+// would deadlock exactly then, so it is a seqlock (odd sequence = write in progress, reader retries; a reader that
+// keeps losing reports the breadcrumb as unknown).
 std::atomic<unsigned>           g_stageSeq{0};
 char                            g_stage[kStageMax] = {};
 std::atomic<unsigned long long> g_stageSince{0};
 
 DWORD           g_mainTid = 0;
-// On the heap, never a namespace-scope std::thread: this file is linked into
-// both the exe and SimpleGraphic.dll, and a static std::thread that is still
-// joinable when static destructors run is std::terminate -- abort, 0xC0000409,
-// and a Windows Error Reporting cycle that held the exiting POB process (and
-// the launcher waiting on it) for seconds in v1.4.0. Stop() joins and deletes
-// it on the orderly paths; on ExitProcess paths the thread is simply killed.
+// On the heap, never a namespace-scope std::thread: this file is linked into both the exe and SimpleGraphic.dll, and a
+// static std::thread still joinable at static destruction is std::terminate (abort, 0xC0000409, a WER cycle holding the
+// exiting POB and the launcher for seconds). Stop() joins and deletes it on orderly paths; ExitProcess paths just kill it.
 std::thread*    g_watch = nullptr;
 HANDLE          g_stopEvt = nullptr;
 std::string     g_role    = "app";
@@ -92,7 +87,7 @@ std::string ReadStage()
 	return std::string();
 }
 
-// ---- small helpers -----------------------------------------------------------
+// small helpers
 
 std::wstring InstallDir()
 {
@@ -112,8 +107,7 @@ std::string Narrow(const std::wstring& w)
 	return s;
 }
 
-// Only what a file name may contain. A role reaches this from an env var and a
-// command line, and a report that cannot be written is a report that is not read.
+// Only what a file name may contain (a role reaches this from an env var / command line; an unwritable report is never read).
 std::string SafeRole(const std::string& role)
 {
 	std::string out;
@@ -133,10 +127,8 @@ std::string Hex(unsigned long long v, int width)
 	return std::string(buf);
 }
 
-// ---- module table ------------------------------------------------------------
-// Built ourselves rather than asked of dbghelp, because this is what a report
-// without symbols lives on: name + offset here, plus the size and PE timestamp
-// so the exact build can be matched to its PDB months later.
+// module table: built ourselves, not asked of dbghelp -- a report without symbols lives on name + offset, plus size and
+// PE timestamp so the exact build can be matched to its PDB later.
 struct ModuleRec {
 	std::string name;
 	uintptr_t   base = 0;
@@ -179,11 +171,8 @@ std::string FormatAddr(const std::vector<ModuleRec>& mods, uintptr_t addr)
 	return "0x" + Hex(addr, 16);
 }
 
-// ---- stack capture -----------------------------------------------------------
-// The suspended window contains nothing but ReadProcessMemory. No allocation, no
-// loader lock, no dbghelp: every one of those is a lock the stalled thread may
-// already hold, and taking it here would wedge the watchdog against the very
-// thread it is trying to describe.
+// stack capture: the suspended window contains nothing but ReadProcessMemory. No allocation, loader lock or dbghelp --
+// each is a lock the stalled thread may already hold, which would wedge the watchdog against the thread it describes.
 struct StackSnap {
 	CONTEXT ctx{};
 	uintptr_t stackBase = 0;
@@ -214,8 +203,7 @@ StackSnap CaptureThread(DWORD tid)
 				if (end > sp && end - sp < want) want = (size_t)(end - sp);
 			}
 			SIZE_T got = 0;
-			// ReadProcessMemory rather than memcpy: a stack overflow is one of the
-			// hangs worth reporting, and its guard page must not fault us too.
+			// ReadProcessMemory, not memcpy: a stack overflow is worth reporting and its guard page must not fault us too.
 			if (ReadProcessMemory(GetCurrentProcess(), (void*)sp, s.stack.data(), want, &got) && got > 0) {
 				s.stack.resize(got);
 				s.stackBase = sp;
@@ -229,8 +217,7 @@ StackSnap CaptureThread(DWORD tid)
 	return s;
 }
 
-// The walk runs after the thread is back on its feet, out of the copy above, so
-// dbghelp's lock is taken with nobody suspended.
+// The walk runs after the thread resumes, out of the copy above, so dbghelp's lock is taken with nobody suspended.
 const StackSnap* g_walkSnap = nullptr;   // guarded by g_reportMx
 
 BOOL CALLBACK ReadMemCb(HANDLE, DWORD64 addr, PVOID buf, DWORD size, LPDWORD read)
@@ -259,11 +246,9 @@ void EnsureSyms()
 	static bool done = false;
 	if (done) return;
 	done = true;
-	// DEFERRED_LOADS means no PDB is touched unless SymFromAddr asks for one, and
-	// the search path is pinned to the install directory: never a symbol server,
-	// which would turn a frozen program into a frozen program making network
-	// requests. A developer can point POB_ZH_SYMPATH at a build directory to get
-	// function names; a shipped install has no PDB and prints module+offset.
+	// DEFERRED_LOADS: no PDB is touched unless SymFromAddr asks, and the search path is pinned to the install
+	// directory (never a symbol server: a frozen program must not make network requests). POB_ZH_SYMPATH points at a
+	// build directory for function names; a shipped install has no PDB and prints module+offset.
 	SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_FAIL_CRITICAL_ERRORS |
 	              SYMOPT_NO_PROMPTS | SYMOPT_UNDNAME);
 	std::wstring path;
@@ -339,7 +324,7 @@ std::vector<DWORD> OtherThreads()
 	return out;
 }
 
-// ---- the report --------------------------------------------------------------
+// the report
 
 std::string Stamp(const SYSTEMTIME& st)
 {
@@ -355,10 +340,7 @@ bool WriteFileUtf8(const std::wstring& path, const std::string& body)
 	                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (h == INVALID_HANDLE_VALUE) return false;
 	DWORD wrote = 0;
-	// With a BOM, unlike the error log. This one is a whole document a user opens
-	// and reads before deciding to send it; without the BOM an editor that guesses
-	// the local code page turns the Chinese half of it into rubbish, and a report
-	// that looks corrupt is a report nobody attaches.
+	// With a BOM, unlike the error log: without it an editor guessing the local code page turns the Chinese half into rubbish.
 	const char bom[3] = { (char)0xEF, (char)0xBB, (char)0xBF };
 	WriteFile(h, bom, 3, &wrote, nullptr);
 	const BOOL ok = WriteFile(h, body.data(), (DWORD)body.size(), &wrote, nullptr);
@@ -449,13 +431,11 @@ std::string WriteReport(const char* kind, const std::string& head,
 	return name;
 }
 
-// ---- the watchdog thread -----------------------------------------------------
+// the watchdog thread
 
 bool WindowAnswers()
 {
-	// Our own top-level windows. One that answers WM_NULL means the message pump
-	// is alive -- a window drag, a menu or a modal file dialog all look like this
-	// while the frame loop is stopped, and none of them is a hang.
+	// Our own top-level windows. One answering WM_NULL means the message pump is alive (a window drag, menu or modal file dialog look like this while the frame loop is stopped; none is a hang).
 	struct Ctx { DWORD pid; bool answered; bool found; } ctx{GetCurrentProcessId(), false, false};
 	EnumWindows([](HWND h, LPARAM lp) -> BOOL {
 		Ctx* c = (Ctx*)lp;
@@ -542,8 +522,7 @@ void PollPeers()
 
 void WatchLoop()
 {
-	// Checks are frequent relative to the threshold so a stall is noticed near
-	// the moment it crosses, not up to a full period later.
+	// Checks are frequent relative to the threshold so a stall is noticed near the moment it crosses.
 	DWORD period = g_stallMs / 4;
 	if (period < 100) period = 100;
 	if (period > 2000) period = 2000;

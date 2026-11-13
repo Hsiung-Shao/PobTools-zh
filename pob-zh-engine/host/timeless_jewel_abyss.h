@@ -79,17 +79,14 @@ int TJAbyssSeedIndex(const TJAbyssLUT& lut, int seed);
 bool TJAbyssReadSocket(const TJDataset& ds, const std::string& blob, TJAbyssLUT& lut,
                        int socketId, int seed, std::map<int, TJAbyssMod>& out);
 
-// ---- Zorath (ABYN) ------------------------------------------------------------
+// Zorath (ABYN)
 //
-// This file answers a different question. Measured on the real container: for
-// EVERY seed, EVERY one of its 2143 passive blocks holds a non-empty
-// modification. So the seed decides what each passive would become, and the
-// character's allocated path from the socket to their class start decides which
-// of those actually apply. PobTools has no character, so it cannot name that
-// path — but "what would this passive become" is exact for any passive asked.
-//
-// That is why the socket is only a starting point to look around from here,
-// where for types 7-10 it is the lookup key.
+// For EVERY seed, EVERY one of its 2143 passive blocks holds a non-empty
+// modification. The seed decides what each passive would become; the character's
+// allocated path from the socket to their class start decides which apply.
+// PobTools has no character, so it cannot name that path, but "what would this
+// passive become" is exact. The socket is only a starting point here (for types
+// 7-10 it is the lookup key).
 
 // What one passive becomes under this seed. Exact.
 bool TJAbyssReadNode(const TJDataset& ds, const std::string& blob, TJAbyssLUT& lut,
@@ -127,12 +124,10 @@ TJTransform TJAbyssApply(const TJDataset& ds, const TJAbyssMod& mod);
 // silently scoring the whole tree.
 //
 // `nodeKind` maps a passive id to passive_tree_data.h's kPt* value and decides
-// what q.scope means. It is not optional in practice: the Abyss walk conquers
-// keystones, and 48 of the ones it reaches are absent from ds.nodeIndex (the
-// Legion LUT only indexes what that LUT addresses). Falling back to the index
-// would file every keystone under "small passive", so a "notables only" search
-// would silently drop Crimson Dance and friends. Pass nullptr only when no tree
-// is available, and expect that blind spot.
+// what q.scope means. Not optional in practice: 48 keystones the Abyss walk
+// reaches are absent from ds.nodeIndex, so the index fallback files them under
+// "small passive" and a "notables only" search silently drops them. Pass nullptr
+// only when no tree is available, and expect that blind spot.
 std::vector<TJSeedHit> TJAbyssSearch(const TJDataset& ds, const std::string& blob,
                                      TJAbyssLUT& lut, const TJSearchQuery& q,
                                      int socketId, int topN,

@@ -1,19 +1,11 @@
 // --hang-selftest: the watchdog's own contract.
 //
-// Two properties matter and neither can be checked by looking at the code:
+// Two properties: it fires when the frame loop really stops (usable stack + current breadcrumb), and
+// IT DOES NOT FIRE OTHERWISE (false alarms make users stop sending the files). The second gate (a
+// window that still answers) has its own case; stack capture is checked against a thread parked in a known function.
 //
-//   * it fires when the frame loop really stops, with a usable stack and the
-//     breadcrumb that was current at the time; and
-//   * IT DOES NOT FIRE OTHERWISE. A report directory that fills up with false
-//     alarms is worse than no watchdog: the user stops sending the files, and
-//     the one real report arrives already discounted.
-//
-// So the second gate (a window that still answers) gets its own case, and the
-// stack capture is verified against a thread parked in a known function.
-//
-// Everything runs in a scratch directory under %TEMP% via PobLog::SetDirForTest
-// -- HangWatch writes through PobLog::LogDir(), so that one redirect moves both
-// the reports and the summary lines away from the user's real evidence.
+// Runs in a scratch directory under %TEMP% via PobLog::SetDirForTest (HangWatch writes through
+// PobLog::LogDir(), so one redirect keeps reports and summary lines away from the user's real evidence).
 
 #include "hang_watch.h"
 
@@ -100,10 +92,8 @@ void Clear(const std::wstring& dir)
 	for (const std::wstring& n : Find(dir, L"*")) DeleteFileW((dir + n).c_str());
 }
 
-// A window that answers messages, on its own thread, standing in for the POB
-// window during the false-alarm case. Deliberately NOT pumped by the thread the
-// watchdog is watching: that is the whole point -- a stopped frame loop with a
-// live message pump is somebody dragging a window, not a hang.
+// A window that answers messages on its own thread, standing in for the POB window in the false-alarm
+// case. Deliberately NOT pumped by the watched thread (stopped frame loop + live pump = a drag, not a hang).
 struct PumpWindow {
 	std::thread th;
 	std::atomic<HWND> hwnd{nullptr};
@@ -142,9 +132,7 @@ struct PumpWindow {
 	}
 };
 
-// The function the stack-capture case looks for by name is irrelevant (there is
-// no PDB in a release build); what matters is that the frames land inside this
-// executable and that there are several of them.
+// The parked function's name is irrelevant (no PDB in release); frames must land in this exe, several of them.
 void ParkedInner(std::atomic<bool>* go)
 {
 	while (!go->load()) Sleep(5);
@@ -170,9 +158,8 @@ int RunHangWatchSelfTest(const std::wstring& exeDir)
 	PobLog::SetDirForTest(box);
 	PobLog::ResetCapsForTest();
 
-	// T1 -- the breadcrumb survives a round trip, and a scope puts the previous
-	// one back. A breadcrumb that leaked its innermost value would point every
-	// later report at whatever last finished, which is worse than none.
+	// T1 -- the breadcrumb survives a round trip, and a scope puts the previous one back (a leaked
+	// innermost value would point every later report at whatever last finished).
 	{
 		HangWatch::ResetForTest();
 		HangWatch::Options o;
@@ -224,8 +211,7 @@ int RunHangWatchSelfTest(const std::wstring& exeDir)
 			check("T2e the file name is hang-<date>-<time>-<role>.txt",
 			      files[0].size() > 20 && files[0].compare(0, 5, L"hang-") == 0 &&
 			          files[0].find(L"-selftest.txt") != std::wstring::npos);
-			// Frames of the watched thread. Without these the report answers
-			// "it stopped" but not "where", which is the whole point.
+			// Frames of the watched thread (without them the report says "stopped" but not "where").
 			check("T2f the stalled thread has frames",
 			      body.find("#00 ") != std::string::npos);
 		}
@@ -236,9 +222,8 @@ int RunHangWatchSelfTest(const std::wstring& exeDir)
 		check("T2g a one-line summary lands in the error log", summary);
 	}
 
-	// T3 -- THE CASE THAT MATTERS. Same stopped heartbeat, but a window that
-	// still answers: dragging, resizing, a menu, a modal file dialog. Nothing
-	// may be written.
+	// T3 -- THE CASE THAT MATTERS. Stopped heartbeat but a window that still answers (drag, resize,
+	// menu, modal dialog): nothing may be written.
 	Clear(box);
 	{
 		PumpWindow pump;
@@ -261,8 +246,7 @@ int RunHangWatchSelfTest(const std::wstring& exeDir)
 		      std::to_string(Find(box, L"hang-*.txt").size()) + " file(s)");
 	}
 
-	// T4 -- the per-run cap. A hang that repeats says the same thing; three
-	// reports is generous and unbounded growth is not an option.
+	// T4 -- the per-run cap (three reports; repeated hangs say the same thing).
 	Clear(box);
 	{
 		HangWatch::ResetForTest();
@@ -280,9 +264,7 @@ int RunHangWatchSelfTest(const std::wstring& exeDir)
 		check("T4 at most three reports per run", n <= 3 && n >= 1, std::to_string(n));
 	}
 
-	// T5 -- the stack capture really walks somebody else's stack. A capture that
-	// silently returned nothing would leave every report above passing on the
-	// strength of its header alone.
+	// T5 -- the stack capture really walks somebody else's stack (an empty capture would pass the reports above on header alone).
 	Clear(box);
 	{
 		std::atomic<bool> go{false};
@@ -308,8 +290,7 @@ int RunHangWatchSelfTest(const std::wstring& exeDir)
 			const std::string body = ReadAll(box + files[0]);
 			size_t pos = 0;
 			while ((pos = body.find("#0", pos)) != std::string::npos) { frameLines++; pos += 2; }
-			// The parked thread is not the main thread, so it appears under its
-			// own heading -- proof the walk is not just describing the caller.
+			// The parked thread is not the main thread: its own heading proves the walk isn't describing the caller.
 			sawOther = body.find(u8"執行緒") != std::string::npos &&
 			           body.find("pob-zh.exe+0x") != std::string::npos;
 		}
@@ -337,8 +318,7 @@ int RunHangWatchSelfTest(const std::wstring& exeDir)
 		er.ExceptionInformation[0] = 1;          // write
 		er.ExceptionInformation[1] = 0xdead0000;
 		EXCEPTION_POINTERS ep{&er, &ctx};
-		// ReportCrash, not CrashFilter: the filter chains on to whatever was
-		// installed before us, and this exception is a prop, not a real one.
+		// ReportCrash, not CrashFilter: the filter chains to the previously installed handler and this exception is a prop.
 		HangWatch::ReportCrash(&ep);
 		HangWatch::Stop();
 
@@ -359,9 +339,7 @@ int RunHangWatchSelfTest(const std::wstring& exeDir)
 		check("T6e a one-line summary lands in the error log", summary);
 	}
 
-	// T7 -- retention covers the new files too. Reports are bigger than log
-	// lines; thirty days of them left behind would be the first thing a user
-	// noticed about this feature.
+	// T7 -- retention covers the report files too (they are bigger than log lines).
 	Clear(box);
 	{
 		Touch(box + L"hang-2000-01-01-101010-engine.txt");
@@ -384,8 +362,7 @@ int RunHangWatchSelfTest(const std::wstring& exeDir)
 		check("T7c a file that is not ours is untouched", exists(L"hang-notes.txt"));
 	}
 
-	// T8 -- the kill switch. Somebody with a machine where suspending threads is
-	// a problem has to be able to turn this off without a new build.
+	// T8 -- the kill switch (turn it off without a new build where suspending threads is a problem).
 	Clear(box);
 	{
 		SetEnvironmentVariableW(L"POB_ZH_HANGWATCH", L"0");
@@ -403,8 +380,7 @@ int RunHangWatchSelfTest(const std::wstring& exeDir)
 		check("T8c it is on again once the variable is gone", HangWatch::Enabled());
 	}
 
-	// T9 -- the checkers can fail. Without this every PASS above is worth
-	// nothing: a Find() that always returned empty would make T3 and T8 green.
+	// T9 -- the checkers can fail (a Find() that always returned empty would make T3 and T8 green).
 	{
 		Clear(box);
 		Touch(box + L"hang-fake.txt");
@@ -413,9 +389,7 @@ int RunHangWatchSelfTest(const std::wstring& exeDir)
 		check("T9b and really reports empty", Find(box, L"hang-*.txt").empty());
 	}
 
-	// T10 -- Stop() is safe in every state. Nothing running: a no-op. Running:
-	// the thread is joined and gone. Twice: still fine. The launcher calls it
-	// from a scope guard on every way out, so "harmless when redundant" matters.
+	// T10 -- Stop() is safe in every state (idle no-op, running joined, twice fine); the launcher calls it from a scope guard on every exit.
 	{
 		HangWatch::ResetForTest();
 		HangWatch::Stop();
@@ -432,14 +406,10 @@ int RunHangWatchSelfTest(const std::wstring& exeDir)
 		check("T10d a second Stop is harmless", !HangWatch::RunningForTest());
 	}
 
-	// T11 -- a process that started the watchdog and never stopped it still
-	// exits 0, and promptly. This is the v1.4.0 regression: a static std::thread
-	// left joinable at exit is std::terminate, the exit code becomes 0xC0000409,
-	// and Windows Error Reporting holds the dying process for seconds -- which is
-	// what kept the launcher from coming back after POB closed. The probe is a
+	// T11 -- a process that started the watchdog and never stopped it still exits 0, promptly. A
+	// static std::thread left joinable at exit is std::terminate (0xC0000409) and WER holds the dying
+	// process for seconds, which kept the launcher from coming back after POB closed. The probe is a
 	// separate process because the failure only happens at process exit.
-	// (Verified to go red: with a joinable static std::thread planted in the
-	// probe, T11b reports exit code 0xC0000409 after ~2.4 s.)
 	{
 		wchar_t exe[MAX_PATH] = {};
 		GetModuleFileNameW(nullptr, exe, MAX_PATH);
@@ -499,7 +469,6 @@ int RunHangProbe(const std::wstring& exeDir, int seconds)
 	Sleep((DWORD)seconds * 1000);
 	HangWatch::Stop();
 
-	// Where to look, printed into the same place every other probe writes.
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
 	const std::wstring dir = PobLog::LogDir();
 	HANDLE h = CreateFileW((exeDir + L"PobTools\\hang_probe.txt").c_str(), GENERIC_WRITE, 0,
@@ -521,7 +490,6 @@ int RunHangExitProbe()
 	o.requireWindow = false;
 	HangWatch::Start(o);
 	HangWatch::Beat();
-	// Deliberately no Stop(): the point is what happens to a process that exits
-	// with the watchdog thread still alive. See RunHangWatchSelfTest T11.
+	// Deliberately no Stop(): see RunHangWatchSelfTest T11.
 	return 0;
 }

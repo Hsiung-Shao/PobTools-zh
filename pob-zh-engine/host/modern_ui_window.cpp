@@ -8,6 +8,7 @@
 #include "bridge_gate.h"
 #include "pob_protocol.h" // a link handed over by a second pob-zh.exe (WM_COPYDATA)
 #include "modern_ui_browser.h"
+#include "modern_ui_shared.h"
 #include "clipboard_util.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -15,6 +16,7 @@
 #include <shellapi.h>
 #include <wrl.h>
 #include <WebView2.h>
+#include "win_util.h"
 
 #include <json.hpp>
 
@@ -38,30 +40,6 @@ constexpr wchar_t kHostFonts[] = L"fonts.pobtools";
 constexpr wchar_t kHostCache[] = L"cache.pobtools";
 // Background images (PobTools\Backgrounds\, shared with the launcher's Appearance tab).
 constexpr wchar_t kHostBg[] = L"bg.pobtools";
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
-
-std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return {};
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), n);
-	return w;
-}
-
-bool file_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
-}
 
 // Per-monitor-v2 without a manifest: the launcher gets it from glfwInit, this
 // process never calls GLFW. Resolved at run time so Windows 8/early 10 still start.
@@ -93,9 +71,7 @@ struct Window {
 	InstallInfo installs;
 	std::wstring pobDir, launchLua;
 	bool pageReady = false;
-	// Lines from the child that arrived before the page could take them
-	// (WebView2 creation is asynchronous; the child is started first so its
-	// boot overlaps). Flushed on navigation completed.
+	// Child lines that arrived before the page could take them (WebView2 creation is async; the child starts first). Flushed on navigation completed.
 	std::vector<std::string> backlog;
 	int exitCode = 0;
 
@@ -113,13 +89,9 @@ struct Window {
 		PostToPage(json{ {"event", name}, {"data", data} }.dump());
 	}
 
-	// Closing. The user's X asks the page first (unsaved build: Save / Don't
-	// save / Cancel, the classic window's CanExit); the page answers at once
-	// with host.close_ack and later with host.close, or with nothing if the
-	// user cancels. A page that does not ack within kCloseAckMs (hung, or the
-	// engine is gone and the page with it) is not waited for. Closes the host
-	// decides on itself -- a POB update handing over, WebView2 failing -- go
-	// straight through CloseNow.
+	// Closing. The user's X asks the page first (unsaved build: Save / Don't save / Cancel); the page answers at once
+	// with host.close_ack, later host.close, or nothing if the user cancels. A page not acking within kCloseAckMs
+	// is not waited for. Host-decided closes (POB update handover, WebView2 failing) go straight through CloseNow.
 	static constexpr UINT_PTR kCloseTimer = 7;
 	static constexpr UINT kCloseAckMs = 3000;
 	bool closeApproved = false;
@@ -171,42 +143,9 @@ struct Window {
 		return true;
 	}
 
-	void StopChild()
-	{
-		if (child) {
-			child->SetLineSink(nullptr);
-			child->SetExitSink(nullptr);
-			child->Stop(3000);
-			child.reset();
-		}
-	}
+	void StopChild() { StopHeadlessChild(child); }
 
-	json Prefs() const
-	{
-		json fonts = json::array();
-		for (const std::wstring& f : ListAvailableFonts(exeDir)) fonts.push_back(narrow(f));
-		// The launcher's own choice, re-read: "follow the launcher" must show what
-		// the launcher uses NOW, not what it used when this window opened.
-		const LauncherConfig fromIni = LoadLauncherConfig(exeDir + L"pob-zh.ini");
-		const std::wstring launcherFont = fromIni.fontFile;
-		// Background: this window's game only. "launcherLook" is the launcher's
-		// Appearance set, re-read for the same reason as the font.
-		const int g = GameIndex(game);
-		// The launcher's set never carries a video (it cannot play one) nor a scope.
-		auto lookJson = [](const AppearanceConfig& a, bool follow, int scope, bool video) {
-			return json{ {"follow", follow}, {"background", narrow(NormalizeBackgroundFile(a.background, video))},
-			             {"bgBright", ClampPercent(a.bgBright, kBgBrightDefault)}, {"panelOpacity", ClampWindowOpacity(a.windowOpacity)},
-			             {"glassBlur", ClampPercent(a.glassBlur, 0)}, {"treeBg", ClampPercent(a.treeBg, 100)},
-			             {"bgScope", scope == 1 ? 1 : 0} };
-		};
-		json backgrounds = json::array();
-		for (const std::wstring& f : ListAvailableBackgrounds(exeDir, true)) backgrounds.push_back(narrow(f));
-		return json{ {"zoom", ClampModernZoom(cfg.modernZoom)}, {"fontSize", ClampModernFontSize(cfg.modernFontSize)},
-		             {"theme", narrow(NormalizeModernTheme(cfg.modernTheme))}, {"accent", narrow(NormalizeModernAccent(cfg.modernAccent))},
-		             {"font", narrow(NormalizeModernFont(cfg.modernFont))}, {"launcherFont", narrow(launcherFont)}, {"fonts", fonts},
-		             {"look", lookJson(cfg.modernLook[g].look, cfg.modernLook[g].follow, cfg.modernLook[g].bgScope, true)},
-		             {"launcherLook", lookJson(fromIni.look[g], true, 0, false)}, {"backgrounds", backgrounds} };
-	}
+	json Prefs() const { return ModernUiPrefs(exeDir, game, cfg); }
 
 	json Info() const
 	{
@@ -234,37 +173,20 @@ struct Window {
 		if (controller) controller->put_ZoomFactor(ClampModernZoom(cfg.modernZoom) / 100.0);
 	}
 
-	// The bridge's compatibility verdict (`gate_result`, once per Lua state).
-	// Remembered in PobTools\bridge_gate.json for the launcher; a failing one
-	// means this POB version cannot drive the new interface, so the classic
-	// window opens on the same install and this one closes. Returns true when
-	// the line was that failing verdict (nothing else should be sent to the
-	// page then).
+	// The bridge's compatibility verdict (`gate_result`, once per Lua state), remembered in PobTools\bridge_gate.json.
+	// A failing one means this POB cannot drive the new interface: the classic window opens on the same install and
+	// this one closes. Returns true when the line was that failing verdict (send nothing else to the page).
 	bool OnGateLine(const std::string& line)
 	{
-		if (line.find("\"gate_result\"") == std::string::npos) return false;
-		json msg;
-		try { msg = json::parse(line); } catch (...) { return false; }
-		if (!msg.is_object() || msg.value("event", "") != "gate_result") return false;
-		const json& d = msg.contains("data") ? msg["data"] : json::object();
 		BridgeGate::Verdict v;
-		v.ok = d.value("ok", false);
-		if (d.contains("failed") && d["failed"].is_array())
-			for (auto& f : d["failed"]) if (f.is_string()) v.failed.push_back(f.get<std::string>());
-		v.pobVersion = d.value("pobVersion", "");
-		v.pobBranch = d.value("pobBranch", "");
-		v.pobDir = pobDir;
-		v.bridgeHash = BridgeGate::BridgeFingerprint(exeDir);
-		BridgeGate::Write(exeDir, v);
-		if (v.ok || gateFellBack) return false;
+		if (!ModernUiRecordGate(exeDir, pobDir, line, v) || v.ok || gateFellBack) return false;
 		gateFellBack = true;
 		std::string why;
 		for (size_t i = 0; i < v.failed.size() && i < 5; i++) why += (i ? "; " : "") + v.failed[i];
 		PobLog::Error("modernui", "bridge gate failed for POB " + v.pobVersion + " (" + std::to_string(v.failed.size()) + " probes): " + why +
 		                          " -- opening the classic window instead");
 		PostEvent("host.gate_fallback", json{ {"failed", v.failed}, {"pobVersion", v.pobVersion} });
-		// The classic window on the same install; the engine mutex it holds
-		// keeps the launcher's "a POB is running" logic honest.
+		// The classic window on the same install; its engine mutex keeps the launcher's "a POB is running" logic honest.
 		PobLaunch::SpawnPobDetached(launchLua, game, nullptr, importUri);
 		exitCode = 3;
 		CloseNow();
@@ -274,10 +196,8 @@ struct Window {
 	// The child told us it handed POB to Update.exe (PobLaunch::IsUpdaterHandoffLine).
 	bool updaterHandoff = false;
 
-	// The page asked the host itself for something. Anything not understood is
-	// answered with an error rather than silently forwarded to the child, where
-	// the bridge would report "unknown method" and the page could not tell the
-	// two apart.
+	// The page asked the host itself for something. Anything not understood gets an error, not a silent forward to the
+	// child (whose "unknown method" the page could not tell apart).
 	void HandleHostRequest(const json& req)
 	{
 		const long long id = req.value("id", -1LL);
@@ -304,23 +224,10 @@ struct Window {
 			SetWindowTextW(hwnd, t.empty() ? L"PobTools" : (t + L" - PobTools").c_str());
 			reply(json{ {"ok", true} });
 		} else if (method == "host.read_clipboard") {
-			// The page's paste: WebView2 asks the user before navigator.clipboard
-			// reads (or refuses outright), so the import page reads it here.
+			// The page's paste: WebView2 prompts before navigator.clipboard reads (or refuses), so it is read here.
 			reply(json{ {"text", ReadClipboardUtf8(hwnd)} });
-		} else if (method == "host.open_folder" && params.value("which", "") == "backgrounds") {
-			// The one folder outside the POB install the page may open: where the
-			// launcher and the page both look for background images.
-			ShellExecuteW(nullptr, L"explore", BackgroundsDir(exeDir).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-			reply(json{ {"ok", true} });
 		} else if (method == "host.open_folder") {
-			// Only folders under the POB install: the page is ours, but the rule
-			// costs nothing and keeps "open a folder" from becoming "open anything".
-			std::wstring p = widen(params.value("path", ""));
-			for (auto& c : p) if (c == L'/') c = L'\\';
-			std::wstring root = pobDir;
-			bool under = !root.empty() && _wcsnicmp(p.c_str(), root.c_str(), root.size()) == 0;
-			if (!under) { fail("denied", "path is outside the POB install"); return; }
-			ShellExecuteW(nullptr, L"explore", p.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+			if (!ModernUiOpenFolder(exeDir, pobDir, params)) { fail("denied", "path is outside the POB install"); return; }
 			reply(json{ {"ok", true} });
 		} else if (method == "host.restart_engine") {
 			StopChild();
@@ -329,48 +236,8 @@ struct Window {
 		} else if (method == "host.get_prefs") {
 			reply(Prefs());
 		} else if (method == "host.set_prefs") {
-			// The page's gear popover. Zoom applies at once; both persist to the
-			// ini the way SaveWindowSize does (re-read, change ours, write).
-			LauncherConfig fresh = LoadLauncherConfig(exeDir + L"pob-zh.ini");
-			if (params.contains("zoom")) fresh.modernZoom = ClampModernZoom(params.value("zoom", kModernZoomDefault));
-			if (params.contains("fontSize")) fresh.modernFontSize = ClampModernFontSize(params.value("fontSize", kModernFontSizeDefault));
-			cfg.modernZoom = fresh.modernZoom;
-			cfg.modernFontSize = fresh.modernFontSize;
-			if (params.contains("theme") && params["theme"].is_string()) fresh.modernTheme = NormalizeModernTheme(widen(params["theme"].get<std::string>()));
-			if (params.contains("accent") && params["accent"].is_string()) fresh.modernAccent = NormalizeModernAccent(widen(params["accent"].get<std::string>()));
-			if (params.contains("font") && params["font"].is_string()) {
-				// Only a file that is actually under Fonts\ -- anything else means "follow the launcher".
-				std::wstring f = NormalizeModernFont(widen(params["font"].get<std::string>()));
-				bool listed = false;
-				for (const std::wstring& a : ListAvailableFonts(exeDir)) if (_wcsicmp(a.c_str(), f.c_str()) == 0) listed = true;
-				fresh.modernFont = listed ? f : L"";
-			}
-			cfg.modernTheme = fresh.modernTheme;
-			cfg.modernAccent = fresh.modernAccent;
-			cfg.modernFont = fresh.modernFont;
-			if (params.contains("look") && params["look"].is_object()) {
-				// {follow:true} = back to the launcher's set; anything else is the
-				// page's own set (the page sends all five values with it).
-				const json& l = params["look"];
-				ModernLookConfig& m = fresh.modernLook[GameIndex(game)];
-				m.follow = l.value("follow", false);
-				if (!m.follow) {
-					if (l.contains("background") && l["background"].is_string()) {
-						std::wstring f = NormalizeBackgroundFile(widen(l["background"].get<std::string>()), true);
-						bool listed = f.empty();
-						for (const std::wstring& a : ListAvailableBackgrounds(exeDir, true)) if (_wcsicmp(a.c_str(), f.c_str()) == 0) listed = true;
-						m.look.background = listed ? f : L"";
-					}
-					auto num = [&](const char* k, int def) { return l.contains(k) && l[k].is_number() ? l[k].get<int>() : def; };
-					m.look.bgBright = ClampPercent(num("bgBright", m.look.bgBright), kBgBrightDefault);
-					m.look.windowOpacity = ClampWindowOpacity(num("panelOpacity", m.look.windowOpacity));
-					m.look.glassBlur = ClampPercent(num("glassBlur", m.look.glassBlur), 0);
-					m.look.treeBg = ClampPercent(num("treeBg", m.look.treeBg), 100);
-					m.bgScope = num("bgScope", m.bgScope) == 1 ? 1 : 0;
-				}
-				cfg.modernLook[GameIndex(game)] = m;
-			}
-			SaveLauncherConfig(exeDir + L"pob-zh.ini", fresh);
+			// The page's gear popover. Zoom applies at once; both persist to the ini.
+			ModernUiSetPrefs(exeDir, game, params, cfg);
 			ApplyZoom();
 			reply(Prefs());
 		} else {
@@ -381,8 +248,7 @@ struct Window {
 	void OnWebMessage(const std::wstring& msg)
 	{
 		std::string line = narrow(msg);
-		// Cheap routing: parse only to find the method. The child gets the
-		// original text, untouched.
+		// Cheap routing: parse only to find the method; the child gets the original text untouched.
 		json req;
 		try {
 			req = json::parse(line);
@@ -403,8 +269,7 @@ struct Window {
 
 	std::wstring BootScript() const
 	{
-		// The page's only door to the outside. `info` is baked in so the page
-		// knows game/locale before its first round trip.
+		// The page's only door to the outside; `info` is baked in so the page knows game/locale before its first round trip.
 		std::string info = Info().dump();
 		return widen(
 			"window.pobtools = {"
@@ -447,12 +312,9 @@ struct Window {
 			CloseNow();
 			return E_FAIL;
 		}
-		// Four folders, four origins. The page fetches ui.json from data and
-		// @font-face pulls from fonts, and both are CORS requests from the app
-		// origin, so those two must ALLOW (the first build used DENY_CORS and
-		// the page silently stayed in English with the system font). The POB
-		// install is only ever drawn from with <img>/drawImage, which CORS does
-		// not gate, so it stays the strictest.
+		// Four folders, four origins. ui.json (data) and @font-face (fonts) are CORS requests from the app origin, so
+		// those two must ALLOW (DENY_CORS silently left the page in English with the system font). The POB install is
+		// only drawn via <img>/drawImage, which CORS does not gate, so it stays the strictest.
 		wv3->SetVirtualHostNameToFolderMapping(kHostApp, (exeDir + L"ui").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
 		if (!pobDir.empty())
 			wv3->SetVirtualHostNameToFolderMapping(kHostPob, pobDir.c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
@@ -496,7 +358,7 @@ struct Window {
 		GetClientRect(hwnd, &rc);
 		controller->put_Bounds(rc);
 		ApplyZoom(); // before the first paint, so the remembered scale never flashes
-		webview->Navigate((std::wstring(L"https://") + kHostApp + L"/index.html").c_str());
+		webview->Navigate((std::wstring(L"https://") + kHostApp + L"/" + ModernUiPage(cfg.uiMode)).c_str());
 		return S_OK;
 	}
 
@@ -543,10 +405,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_CHILD_EXIT:
 		if (w) {
 			unsigned long code = w->child ? w->child->ExitCode() : (unsigned long)-1;
-			// POB's "basic" self-update: the engine wrote the relaunch marker,
-			// handed the runtime files to Update.exe and exited. Update.exe ends
-			// by starting pob-zh.exe, which reads the marker and reopens this
-			// window on the updated POB; this instance gets out of its way.
+			// POB's "basic" self-update: the engine wrote the relaunch marker, handed the runtime files to Update.exe and
+			// exited; Update.exe restarts pob-zh.exe, which reads the marker and reopens this window. This instance steps aside.
 			if (w->updaterHandoff || file_exists(w->exeDir + L"pob-zh.relaunch")) {
 				PobLog::Error("modernui", "headless child exited for a POB self-update; closing so the updater can reopen the window");
 				w->PostEvent("host.updating", json{ {"exitCode", (long long)code} });
@@ -559,8 +419,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return 0;
 	case WM_SIZE:
 		if (w && w->controller) {
-			// Minimized: tell WebView2 the page is hidden, so it stops drawing (and
-			// a video background pauses -- document.visibilityState follows this).
+			// Minimized: tell WebView2 the page is hidden so it stops drawing (a video background pauses via document.visibilityState).
 			w->controller->put_IsVisible(wParam == SIZE_MINIMIZED ? FALSE : TRUE);
 			if (wParam != SIZE_MINIMIZED) {
 				RECT rc{};
@@ -570,9 +429,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		}
 		return 0;
 	case WM_COPYDATA: {
-		// An "Open in PoB" link for this game while this window is open
-		// (open_pob_link in host_main): the page asks about an unsaved build,
-		// then imports it here instead of a second window opening.
+		// An "Open in PoB" link for this game while open (open_pob_link in host_main): the page asks about an unsaved build, then imports it here.
 		const COPYDATASTRUCT* cds = (const COPYDATASTRUCT*)lParam;
 		std::wstring uri;
 		if (!w || !cds || !PobProtocol::ParseLinkCopyData((unsigned long)cds->dwData, cds->lpData, cds->cbData, &uri)) {
@@ -621,7 +478,8 @@ bool ModernUiAvailable(const std::wstring& exeDir, std::wstring* why)
 	auto no = [&](const wchar_t* reason) { if (why) *why = reason; return false; };
 	if (PobLaunch::RunningUnderWine()) return no(L"WebView2 does not run under Wine");
 	if (!file_exists(exeDir + L"engine\\WebView2Loader.dll")) return no(L"engine\\WebView2Loader.dll is missing");
-	if (!file_exists(exeDir + L"ui\\index.html")) return no(L"ui\\index.html is missing (run `npm run build` in ui/)");
+	if (!ModernUiBrowserAvailable(exeDir))
+		return no(L"ui\\index.html or ui\\theme2.html is missing (run `npm run build` in ui/)");
 	// Loader present: the delay-load below resolves from engine\ (SetDllDirectoryW
 	// in wWinMain). The function answers whether an Evergreen Runtime is installed.
 	LPWSTR ver = nullptr;
@@ -644,10 +502,8 @@ int ShowModernUi(const std::wstring& exeDir, const std::wstring& game,
 {
 	std::wstring why;
 	if (!ModernUiAvailable(exeDir, &why) && ModernUiBrowserAvailable(exeDir)) {
-		// Wine / CrossOver, or Windows without the WebView2 Runtime: the same
-		// page in the system browser.
-		// Not a failure: on Wine and on CrossOver this IS the supported path, so
-		// it belongs in the diagnostic trace rather than the failures-only log.
+		// Wine / CrossOver, or no WebView2 Runtime: the same page in the system browser. Not a failure (the supported
+		// path on Wine), so it goes to the diagnostic trace, not the failures-only log.
 		PobLog::Diag("modernui", "no WebView2 (" + narrow(why) + "): opening the new interface in the system browser");
 		return ShowModernUiInBrowser(exeDir, game, locale, cfg, openBuild, L"", importUri);
 	}
@@ -709,9 +565,7 @@ int ShowModernUi(const std::wstring& exeDir, const std::wstring& game,
 		return 1;
 	}
 	SetWindowLongPtrW(w.hwnd, GWLP_USERDATA, (LONG_PTR)&w);
-	// Which game this window drives: a later "Open in PoB" link for the same
-	// game is handed to it (PobProtocol::FindModernUiWindow) rather than
-	// opening a second window on the same install.
+	// Which game this window drives: a later "Open in PoB" link for it is handed here (PobProtocol::FindModernUiWindow).
 	SetPropW(w.hwnd, PobProtocol::kPropGame, (HANDLE)(INT_PTR)(poe2 ? 2 : 1));
 	ShowWindow(w.hwnd, SW_SHOWNORMAL);
 

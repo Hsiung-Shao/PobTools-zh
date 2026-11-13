@@ -37,7 +37,7 @@ std::vector<CardSchema> build_table()
 	std::vector<CardSchema> t;
 	auto add = [&t](CardSchema c) { t.push_back(std::move(c)); };
 
-	// ---- 物品相關 (conditions) ------------------------------------------
+	// 物品相關 (conditions)
 	add({ "Class", u8"物品類別", false, CardKind::StringList, kGrpCommon, kOpsEq, {}, 0, 0,
 	      "Class \"Stackable Currency\"", 0, nullptr,
 	      u8"物品大類（英文內部名，可部分比對；== 為精確）" });
@@ -63,7 +63,7 @@ std::vector<CardSchema> build_table()
 	add({ "SocketGroup", u8"連線組", false, CardKind::SocketSpec, kGrpCommon, kOpsAll, {}, 0, 6,
 	      "SocketGroup >= 5GGG", 0, nullptr, u8"連在一起的一組插槽" });
 
-	// ---- 進階條件 --------------------------------------------------------
+	// 進階條件
 	add({ "MapTier", u8"地圖階級", false, CardKind::IntOp, kGrpAdv, kOpsAll, {}, 1, 17,
 	      "MapTier >= 15", 0, nullptr, nullptr });
 	add({ "GemLevel", u8"寶石等級", false, CardKind::IntOp, kGrpAdv, kOpsAll, {}, 1, 21,
@@ -115,7 +115,7 @@ std::vector<CardSchema> build_table()
 	add({ "Continue", u8"繼續比對（Continue）", false, CardKind::Toggle, kGrpAdv, kOpsNone, {}, 0, 0,
 	      "Continue", 0, nullptr, u8"符合此區塊後仍繼續往下比對（疊加樣式用）" });
 
-	// ---- 詞綴相關 --------------------------------------------------------
+	// 詞綴相關
 	add({ "GemQualityType", u8"替代技能", false, CardKind::EnumMulti, kGrpMods, kOpsNone, kGemQuality, 0, 0,
 	      "GemQualityType Divergent", 0, nullptr, u8"寶石品質類型（相異 / 異常 / 幻影）" });
 	add({ "TransfiguredGem", u8"變體技能", false, CardKind::Bool, kGrpMods, kOpsNone, kBool, 0, 0,
@@ -136,7 +136,7 @@ std::vector<CardSchema> build_table()
 	      "HasExplicitMod \"of Haast\"", 0, nullptr,
 	      u8"依詞綴名篩選；op+數字＝至少 N 條相符，如 >=2" });
 
-	// ---- 顏色圖標 (actions) ----------------------------------------------
+	// 顏色圖標 (actions)
 	add({ "SetBackgroundColor", u8"背景顏色", true, CardKind::Color, kGrpLook, kOpsNone, {}, 0, 255,
 	      "SetBackgroundColor 0 0 0 255", 0, nullptr, nullptr });
 	add({ "SetBorderColor", u8"邊框顏色", true, CardKind::Color, kGrpLook, kOpsNone, {}, 0, 255,
@@ -146,7 +146,7 @@ std::vector<CardSchema> build_table()
 	add({ "SetFontSize", u8"字體大小", true, CardKind::IntRange, kGrpLook, kOpsNone, {}, 1, 45,
 	      "SetFontSize 40", 0, nullptr, u8"1~45；垃圾用小字、重要物品用大字" });
 
-	// ---- 音效 (exclusive group 1) ----------------------------------------
+	// 音效 (exclusive group 1)
 	add({ "PlayAlertSound", u8"內置音效", true, CardKind::SoundBuiltin, kGrpSound, kOpsNone, {}, 1, 16,
 	      "PlayAlertSound 1 300", 1, "PlayAlertSoundPositional",
 	      u8"內建音效編號 1~16 + 音量 0~300" });
@@ -156,7 +156,7 @@ std::vector<CardSchema> build_table()
 	add({ "DisableDropSound", u8"關閉落地音", true, CardKind::Toggle, kGrpSound, kOpsNone, {}, 0, 0,
 	      "DisableDropSound", 0, nullptr, u8"關閉該物品的預設落地音" });
 
-	// ---- 視覺提示 --------------------------------------------------------
+	// 視覺提示
 	add({ "MinimapIcon", u8"物品圖標", true, CardKind::MinimapIcon, kGrpVisual, kOpsNone, {}, 0, 2,
 	      "MinimapIcon 1 White Circle", 0, nullptr, u8"小地圖圖示：大小(0 最大) 顏色 形狀" });
 	add({ "PlayEffect", u8"物品光柱", true, CardKind::PlayEffect, kGrpVisual, kOpsNone, {}, 0, 0,

@@ -27,13 +27,8 @@
 #include <string>
 #include <vector>
 
-// 倉庫收益統計 — paste a POESESSID, pick tabs, snapshot the stash, watch the
-// value move. The panel is drawing and bookkeeping only: every network byte and
-// every price lives in WarehouseService's worker.
-//
-// Drawn with the design system (ui_widgets.h, 2026-10-08): an action row, four
-// KPI cards, the host's cost card beside 主要增減, the value chart, and the
-// snapshot list beside the detail table.
+// 倉庫收益統計 — paste a POESESSID, pick tabs, snapshot the stash, watch the value move. The panel is
+// drawing and bookkeeping only: every network byte and price lives in WarehouseService's worker.
 
 namespace {
 
@@ -88,9 +83,7 @@ std::string FormatUtcLocal(long long utc)
 	return buf;
 }
 
-// The longest prefix of `s` that fits `maxW` pixels with a trailing "…", cut on
-// a UTF-8 boundary; unchanged when it already fits. For names that would
-// otherwise run underneath the value beside them.
+// The longest prefix of `s` that fits `maxW` pixels with a trailing "…" (cut on a UTF-8 boundary).
 std::string Ellipsize(const std::string& s, float maxW)
 {
 	if (maxW <= 0.0f || ImGui::CalcTextSize(s.c_str()).x <= maxW) return s;
@@ -109,8 +102,7 @@ std::string Ellipsize(const std::string& s, float maxW)
 	return out + ell;
 }
 
-// A muted note in the small face that wraps at `width` (the column or card it
-// sits in) instead of running under the edge.
+// A muted note in the small face that wraps at `width`.
 void HintWrapped(const char* text, float width)
 {
 	PobUi::Hint(text, width > 0.0f ? width : ImGui::GetContentRegionAvail().x);
@@ -125,8 +117,7 @@ void RightText(const char* text, const ImVec4& col)
 	ImGui::TextColored(col, "%s", text);
 }
 
-// Shared with the atlas planner's cost card (warehouse_format.h), so a value
-// reads the same in both windows.
+// Shared with the atlas planner's cost card (warehouse_format.h).
 using WhFmt::FormatChaos;
 using WhFmt::FormatValue;
 
@@ -139,34 +130,27 @@ public:
 	{
 		host_ = &host;
 		exeDir_ = host.exeDir;
-		// Copy follows the interface language: 繁中 copies the Chinese name,
-		// everything else the English one (user rule, 2026-10-08).
+		// Copy follows the interface language: 繁中 copies the Chinese name, else the English one.
 		copyZh_ = host.locale == L"zh-rTW";
 		state_.Load(exeDir_);
-		// PoE1 only for now: no channel can read a PoE2 stash (the legacy
-		// endpoints silently ignore realm=poe2 and answer for PoE1; the OAuth
-		// stash API is PoE1-only -- verified 2026-09-11). The per-game plumbing
-		// and the PoE2 price tables stay, ready for a PoE2 stash API.
+		// PoE1 only: no channel can read a PoE2 stash (legacy endpoints silently ignore realm=poe2;
+		// the OAuth stash API is PoE1-only). The per-game plumbing stays, ready for a PoE2 stash API.
 		state_.game = "poe1";
-		// One history file per league since 2026-09-11. The old single file is
-		// split once, by whichever panel starts first (a repeat is a no-op).
+		// One history file per league; the old single file is split once by whichever panel starts first.
 		if (WarehouseHistory::MigrateLegacy(exeDir_, state_.game) < 0)
 			PobLog::Error("warehouse", u8"舊快照歷史搬移失敗，原檔保留");
 		historyLeague_ = state_.sel().league;
 		history_.Load(exeDir_, state_.game, historyLeague_);
-		// Auto snapshots count from opening (user rule): an old snapshot never
-		// makes one fire the moment the panel appears.
+		// Auto snapshots count from opening: an old snapshot never fires one the moment the panel appears.
 		autoArmedUtc_ = NowUtc();
 		guard_ = WarehouseGuardLoad(exeDir_);
 		i18n_.Load(exeDir_, NarrowUtf8(host.locale));
 		icons_.Init(exeDir_);
 		svc_.Init(exeDir_);
 		svc_.SetGame(state_.game);
-		// Standalone: a first run with no session id saved opens on the page that
-		// explains what this is and what pasting one means.
+		// Standalone: a first run with no session id opens on the explanation page.
 		ownPage_ = state_.sessid.empty() ? 1 : 0;
-		// Test aid (POBTOOLS_WAREHOUSE_PAGE, with POBTOOLS_TOOL_SHOT): open the
-		// standalone window on a page. Embedded, the host picks the page.
+		// Test aid (POBTOOLS_WAREHOUSE_PAGE, with POBTOOLS_TOOL_SHOT): open the standalone window on a page.
 		if (!embed_.page) {
 			wchar_t pg[32] = L"";
 			const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_WAREHOUSE_PAGE", pg, 32);
@@ -175,16 +159,13 @@ public:
 			else if (page == L"help") ownPage_ = 1;
 			else if (page == L"settings") ownPage_ = 2;
 		}
-		// No network here: the launcher Inits every panel it opens (and the panel
-		// selftest Inits all of them); requests wait for a click.
+		// No network here: every panel is Init'ed on open; requests wait for a click.
 		return true;
 	}
 
-	// What the panel must do whether or not it is drawn this frame: take the
-	// worker's status, follow the league, fold a finished snapshot in, and keep
-	// the auto-snapshot schedule. Frame and RunDeferred both call it -- hosts
-	// call RunDeferred every frame, also for a panel whose tab is hidden (the
-	// atlas planner's embed included) -- and it runs once per frame.
+	// What the panel must do whether or not it is drawn this frame: take the worker's status, follow the
+	// league, fold a finished snapshot in, keep the auto-snapshot schedule. Frame and RunDeferred both
+	// call it (hosts call RunDeferred every frame, even for a hidden tab); it runs once per frame.
 	void pump()
 	{
 		const int frame = ImGui::GetFrameCount();
@@ -195,14 +176,11 @@ public:
 		if (state_.sel().league != historyLeague_) switchHistoryLeague();
 		reloadIfChanged();
 
-		// A finished snapshot is folded into the history right here, so the file
-		// on disk is always one frame behind at most. Read-modify-write: another
-		// panel may share this history file.
+		// A finished snapshot is folded into the history here (read-modify-write: another panel may share the file).
 		if (st_.snapshotReady) {
 			Snapshot snap;
 			if (svc_.TakeSnapshot(&snap)) {
-				// Into the league it was taken in: the picker may have moved on
-				// while the tabs were being fetched.
+				// Into the league it was taken in: the picker may have moved on meanwhile.
 				const std::string lg = snap.league.empty() ? historyLeague_ : snap.league;
 				if (!history_.AppendAndSave(exeDir_, state_.game, lg, snap))
 					PobLog::Error("warehouse", u8"快照歷史存檔失敗");
@@ -224,15 +202,12 @@ public:
 		icons_.Pump();
 		pump();
 
-		// A job that just finished says so once, as a toast; a failure stays on
-		// the revenue page as a banner until the next action.
+		// A finished job toasts once; a failure stays as a banner until the next action.
 		if (st_.phase == WarehousePhase::Done && lastPhase_ != WarehousePhase::Done &&
 		    !st_.message.empty())
 			PobUi::ShowToast(st_.message.c_str(), PobUi::Tone::Ok);
 		lastPhase_ = st_.phase;
 
-		// Which page: the host's own tab bar when it has one (the atlas planner's
-		// 收益 / 說明 / 設定), else ours.
 		Page page = Page::Revenue;
 		if (embed_.page) {
 			const int p = *embed_.page;
@@ -251,8 +226,7 @@ public:
 		}
 		persistIfDirty();
 
-		// Applied after drawing: the write reloads history_, and the frame above
-		// held pointers into it.
+		// Applied after drawing: the write reloads history_, which the frame above held pointers into.
 		if (setStartRequest_) {
 			history_.SetSessionStartAndSave(exeDir_, state_.game, historyLeague_, setStartRequest_);
 			setStartRequest_ = 0;
@@ -261,10 +235,8 @@ public:
 
 	ToolCloseState RequestClose() override
 	{
-		// History is not saved here: every change already went to disk as a
-		// read-modify-write, and saving this copy could erase a snapshot another
-		// panel took since. A session id typed but not yet persisted counts as a
-		// credential save; anything else must not touch the file's own.
+		// History is not saved here: every change already went to disk as read-modify-write, and saving
+		// this copy could erase another panel's snapshot. Only a typed-but-unsaved session id counts as a credential save.
 		saveState(secretDirty_);
 		close_ = ToolCloseState::Closed;
 		return close_;
@@ -288,17 +260,13 @@ private:
 		       st_.phase != WarehousePhase::Error;
 	}
 
-	// The history file may also be written by another panel (the standalone
-	// tool and the atlas planner's embed). Writes are read-modify-write, so
-	// nothing is lost; this is what makes the other panel's snapshots SHOW UP
-	// here within a couple of seconds.
+	// The history file may also be written by another panel (standalone tool / atlas planner embed);
+	// writes are read-modify-write, and this reload makes their snapshots show up within seconds.
 	void reloadIfChanged()
 	{
 		const double now = ImGui::GetTime();
 		if (now - lastStatCheck_ < 2.0) return;
 		lastStatCheck_ = now;
-		// Tiny file: another panel or process may have started a snapshot or been
-		// told to wait.
 		guard_ = WarehouseGuardLoad(exeDir_);
 		WIN32_FILE_ATTRIBUTE_DATA fa{};
 		if (!GetFileAttributesExW(
@@ -312,9 +280,7 @@ private:
 		filterDirty_ = true;
 	}
 
-	// The league picker moved: drop what is shown and let reloadIfChanged read
-	// the new league's file this same frame (a league never snapshotted has no
-	// file, and then the view is simply empty).
+	// The league picker moved: drop what is shown and let reloadIfChanged read the new league's file this frame.
 	void switchHistoryLeague()
 	{
 		historyLeague_ = state_.sel().league;
@@ -326,10 +292,8 @@ private:
 		filterDirty_ = true;
 	}
 
-	// withSecret: this save is about the session id itself (typing it, the 記住
-	// box, the 清除 button). Everything else must leave the file's credential
-	// fields alone -- another panel may have cleared them since we loaded, and
-	// this copy is then stale (see WarehouseUiState::Save).
+	// withSecret: this save is about the session id itself; everything else must leave the file's
+	// credential fields alone (another panel may have cleared them; see WarehouseUiState::Save).
 	void saveState(bool withSecret)
 	{
 		if (!state_.Save(exeDir_, withSecret))
@@ -337,11 +301,8 @@ private:
 		if (withSecret) secretDirty_ = false;
 	}
 
-	// The 清除 button: the session id leaves this panel, the worker and the
-	// settings file at once, and the session verdict goes with it. Everything
-	// else the player set up -- account name, league, tab picks, snapshot
-	// history -- stays. Saved even when the save would otherwise be deferred:
-	// "cleared" must mean the file no longer has it.
+	// The 清除 button: the session id leaves the panel, worker and settings file at once (other setup and
+	// history stay). Saved even when otherwise deferred: "cleared" must mean the file no longer has it.
 	void clearSessid()
 	{
 		WarehouseWipe(state_.sessid);
@@ -352,9 +313,8 @@ private:
 		stateDirty_ = false;
 	}
 
-	// Every snapshot -- the button or the schedule -- claims the shared guard
-	// first: one start per 10 minutes across all panels and processes, and
-	// none while the server has asked for a pause. False = refused.
+	// Every snapshot claims the shared guard first: one start per 10 minutes across all panels and
+	// processes, none while the server asked for a pause. False = refused.
 	bool requestSnapshot()
 	{
 		long long next = 0;
@@ -378,14 +338,12 @@ private:
 			autoBlock_ = AutoBlock::Missing;
 			return;
 		}
-		// A dead session needs the player; retrying it on a timer would only
-		// spend the account's requests. A successful verify resumes.
+		// A dead session needs the player; a timer retry would only spend the account's requests.
 		if (st_.authFailed) {
 			autoBlock_ = AutoBlock::Auth;
 			return;
 		}
-		// A failed attempt counts like the arming: the next try waits a full
-		// interval instead of retrying the moment the cooldown ends.
+		// A failed attempt counts like the arming: the next try waits a full interval.
 		const long long armed = (std::max)(autoArmedUtc_, autoLastAttemptUtc_);
 		const long long latest = history_.snaps.empty() ? 0 : history_.snaps.back().utc;
 		autoDueUtc_ = WarehouseAutoDueUtc(latest, armed, state_.autoMinutes, guard_);
@@ -417,7 +375,7 @@ private:
 		}
 	}
 
-	// ---- 收益 page -----------------------------------------------------------
+	// 收益 page
 
 	void drawRevenuePage()
 	{
@@ -426,14 +384,10 @@ private:
 		ImGui::EndChild();
 	}
 
-	// ---- 說明 page -----------------------------------------------------------
+	// 說明 page
 
-	// What this tool does, how to drive it, and -- the part that matters before
-	// anyone publishes it -- what pasting a POESESSID means, what GGG has said
-	// about that, and exactly what this program does and does not do with it.
-	// Prose lives here rather than in a data file: every other tool panel keeps
-	// its strings in the .cpp too, and the launcher's string table carries only
-	// the button label. One card per section (design system, 2026-10-08).
+	// What this tool does, how to drive it, and what pasting a POESESSID means (what GGG has said about it
+	// and exactly what this program does with it). Prose lives here like the other tool panels' strings.
 	void drawHelpPage()
 	{
 		ImGui::BeginChild("##wh_help", ImVec2(0, 0), false);
@@ -444,8 +398,7 @@ private:
 			ImGui::TextWrapped("%s", s);
 			ImGui::PopStyleColor();
 		};
-		// Bullet + SameLine + TextWrapped: wrapped lines align under the text
-		// instead of running back under the bullet.
+		// Bullet + SameLine + TextWrapped: wrapped lines align under the text, not the bullet.
 		auto item = [](const char* s) {
 			ImGui::Bullet();
 			ImGui::SameLine();
@@ -477,8 +430,7 @@ private:
 
 		section("##h_sessid", u8"POESESSID 怎麼取得");
 		item(u8"用瀏覽器登入 www.pathofexile.com。");
-		// "›", not an arrow: the tool window's faces have no U+2190 block, and
-		// the arrows drew as "?" (seen on the 2026-10-08 screenshots).
+		// "›", not an arrow: the tool window's faces have no U+2190 block (arrows draw as "?").
 		item(u8"按 F12 開開發者工具 › 應用程式（Application）/ 儲存空間 › Cookies › "
 		     u8"https://www.pathofexile.com。");
 		item(u8"複製 POESESSID 的值（32 個十六進位字元）。");
@@ -530,10 +482,9 @@ private:
 		ImGui::EndChild();
 	}
 
-	// ---- 設定 page -----------------------------------------------------------
+	// 設定 page
 
-	// The session verdict as a pill: the same words on the 設定 page and in the
-	// revenue page's action row.
+	// The session verdict as a pill (same words on the 設定 page and the revenue action row).
 	void sessionPill(bool withLeague)
 	{
 		PobUi::Tone tone = PobUi::Tone::Idle;
@@ -559,9 +510,7 @@ private:
 		              false, nullptr, false);
 		ImGui::Dummy(ImVec2(0, D(4.0f)));
 
-		// Two columns: account, league, schedule (and the host's record buttons)
-		// on the left; the stash tab list -- the page's longest thing -- filling
-		// the right.
+		// Two columns: account, league, schedule on the left; the stash tab list fills the right.
 		const float gap = D(12.0f);
 		const float avail = ImGui::GetContentRegionAvail().x;
 		const float leftW = (std::min)(D(560.0f), (avail - gap) * 0.58f);
@@ -624,8 +573,7 @@ private:
 		                    : u8"不記住：session id 只留在記憶體，關掉程式就沒了，下次要重貼",
 		                PobUi::SwitchWidth());
 		if (PobUi::Switch("##wh_remember", &state_.rememberSessid)) {
-			// Turning it off must not wait for the next settings change: save now,
-			// which overwrites the blob on disk with an empty field.
+			// Turning it off must not wait for the next settings change: save now (empties the blob on disk).
 			stateDirty_ = true;
 			secretDirty_ = true;
 			persistIfDirty();
@@ -646,7 +594,6 @@ private:
 				svc_.SetAuth(a);
 				svc_.AckDone();
 				svc_.RequestVerify();
-				// The button's whole point is the credential the player just typed.
 				saveState(true);
 				stateDirty_ = false;
 			}
@@ -723,8 +670,7 @@ private:
 		snprintf(note, sizeof(note), u8"%d 個已選", (int)state_.sel().tabIds.size());
 		PobUi::CardBegin("##wh_tabs_card", nullptr, u8"倉庫分頁", note, true, w);
 		const float innerW = PobUi::CardInnerWidth();
-		// Tab ids are per league, so this is always the league picked on the
-		// left. The fetch checks the session itself -- no separate verify first.
+		// Tab ids are per league (always the one picked on the left); the fetch checks the session itself.
 		if (PobUi::Button(u8"取得倉庫分頁清單", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, nullptr, 0.0f,
 		                  !busy() && !state_.sessid.empty() && !state_.accountName.empty() &&
 		                      !state_.sel().league.empty())) {
@@ -772,18 +718,15 @@ private:
 	void persistIfDirty()
 	{
 		if (stateDirty_ && !busy()) {
-			// Settings persist on change, same as the launcher's own rule; the
-			// session id rides along as a DPAPI blob -- but only when this panel
-			// is the one that changed it.
+			// Settings persist on change; the session id rides along as a DPAPI blob only when this panel changed it.
 			saveState(secretDirty_);
 			stateDirty_ = false;
 		}
 	}
 
-	// ---- revenue page -------------------------------------------------------
+	// revenue page
 
-	// The selected snapshot (sidebar click), and the one taken just before it
-	// -- the pair every "change" view compares.
+	// The selected snapshot and the one just before it: the pair every "change" view compares.
 	const Snapshot* selectedSnap() const
 	{
 		if (history_.snaps.empty()) return nullptr;
@@ -822,8 +765,6 @@ private:
 	{
 		drawActionRow();
 
-		// Setup and failures, as banners under the row: what is wrong and the way
-		// to the page that fixes it.
 		const char* missing = setupMissing();
 		const char* goLabel = (embed_.page && !embed_.goPage) ? nullptr : u8"前往設定";
 		if (st_.phase == WarehousePhase::Error) {
@@ -867,8 +808,7 @@ private:
 		drawKpis(d, *start, latest);
 		ImGui::Dummy(ImVec2(0, D(2.0f)));
 
-		// Second row: the host's cost card (or, standalone, the chart) beside
-		// 主要增減, 1.15 : 1 as in the design; each as tall as the taller.
+		// Second row: the host's cost card (standalone: the chart) beside 主要增減, 1.15 : 1, each as tall as the taller.
 		const float gap = D(12.0f);
 		const float avail = ImGui::GetContentRegionAvail().x;
 		const float w1 = std::floor((avail - gap) * 1.15f / 2.15f);
@@ -899,13 +839,11 @@ private:
 	// 立即快照 | session pill | last / next snapshot ...... host's bind button.
 	void drawActionRow()
 	{
-		// The shared guard's word, as of its last 2-second refresh (a click
-		// re-reads it under the lock anyway).
+		// The shared guard's word as of its last 2-second refresh (a click re-reads it under the lock).
 		const long long now = NowUtc();
 		const long long nextOk = WarehouseNextSnapshotUtc(guard_);
 		const bool cooling = now < nextOk;
-		// No verify-first: the snapshot job checks the session itself and says
-		// so when it is dead (the verify button lives on the 設定 page).
+		// No verify-first: the snapshot job checks the session itself.
 		const bool canSnap = !busy() && !*setupMissing() && !cooling;
 
 		const ImVec2 row = ImGui::GetCursorScreenPos();
@@ -974,8 +912,7 @@ private:
 		ImGui::Dummy(ImVec2(rowW, rowH));
 	}
 
-	// A big figure (ToolPanelHost::big, digits and money only) with an optional
-	// small unit after it on the same baseline.
+	// A big figure (ToolPanelHost::big, digits and money only) with an optional small unit on the same baseline.
 	void bigFigure(const std::string& value, std::uint32_t col, const char* unit = nullptr)
 	{
 		ImFont* big = host_->big ? host_->big : ImGui::GetFont();
@@ -1047,8 +984,7 @@ private:
 		};
 		const std::uint32_t good = Tok::Success, bad = Tok::Danger;
 
-		// What farming earned per hour -- count changes only. The market moving
-		// stock already held is money, but not the maps' doing.
+		// Farming earned per hour: count changes only (market moves on held stock are not the maps' doing).
 		card(0, "##kpi_farm");
 		PobUi::Hint(u8"刷圖收益");
 		if (d.summaryOnly) bigFigure("--", Tok::TextMuted, u8"/ 小時");
@@ -1056,8 +992,7 @@ private:
 		PobUi::Hint(u8"只算數量增減，不含市價漲跌");
 		done(u8"（收益 − 支出）÷ 經過時間，只算數量變化；市價波動不算在內");
 
-		// Money split by cause: 收益 / 支出 are count changes (farmed, spent),
-		// 市價波動 the market re-pricing stock held throughout.
+		// Money split by cause: 收益 / 支出 are count changes, 市價波動 is re-pricing of stock held throughout.
 		card(1, "##kpi_net");
 		PobUi::Hint(u8"區間淨值變化");
 		bigFigure(WhFmt::FormatDivChaos(d.dTotalChaos, rate, true), d.dTotalChaos >= 0 ? good : bad);
@@ -1092,8 +1027,7 @@ private:
 		kpiMinH_ = tallest;
 	}
 
-	// One heading line inside a padded card: title, a muted note after it, and
-	// a right-aligned figure.
+	// One heading line inside a padded card: title, muted note, right-aligned figure.
 	void cardHead(const char* title, const char* note, const std::string& right, std::uint32_t rightCol)
 	{
 		const ImVec2 p = ImGui::GetCursorScreenPos();
@@ -1114,9 +1048,7 @@ private:
 		ImGui::Dummy(ImVec2(0, D(2.0f)));
 	}
 
-	// 主要增減: the biggest count changes since the start, by value -- what was
-	// farmed and what was spent. Market moves on held stock are the 變化
-	// table's 市價波動 column.
+	// 主要增減: the biggest count changes since the start, by value (market moves are the 變化 table's 市價波動 column).
 	void drawMoversCard(const SnapshotDiff& d, const Snapshot& latest, float w, float minH)
 	{
 		const double rate = latest.divineRate;
@@ -1147,8 +1079,7 @@ private:
 			drawIcon(pick->icon, D(22.0f));
 			const std::string val = signedValue(pick->dQtyChaos, rate);
 			const float valW = ImGui::CalcTextSize(val.c_str()).x;
-			// A long name is cut with an ellipsis before the value instead of
-			// running underneath it; the full name is in the tooltip.
+			// A long name is cut with an ellipsis before the value; the full name is in the tooltip.
 			const std::string zh = i18n_.DisplayName(pick->dispEn);
 			const float nameX = innerX + D(22.0f) + D(8.0f);
 			const std::string nameShown = Ellipsize(zh, innerX + innerW - valW - D(12.0f) - nameX);
@@ -1168,9 +1099,8 @@ private:
 		PobUi::CardEnd();
 	}
 
-	// 總值走勢: a card of its own -- title and "start ～ now" on top, three ticks
-	// on the left (0 / half / top), the line and its fill, the session start in
-	// warning and the newest point in success. No label sits on the plot.
+	// 總值走勢: its own card -- title and "start ～ now" on top, three ticks on the left, the line and fill,
+	// session start in warning and the newest point in success.
 	void drawCurveCard(float w, float minH, float plotH)
 	{
 		PobUi::CardBegin("##wh_curve_card", nullptr, nullptr, nullptr, true, w, minH);
@@ -1189,8 +1119,7 @@ private:
 			curveChrome_ = PobUi::CardNaturalHeight();
 			return;
 		}
-		// At most 256 points: an even-stride sample keeps the shape; the tooltip
-		// below reads from the sampled arrays so hover and pixels agree.
+		// At most 256 points (even stride); the tooltip reads the sampled arrays so hover and pixels agree.
 		const size_t n = history_.snaps.size();
 		const size_t stride = (n + 255) / 256;
 		curvePts_.clear();
@@ -1211,12 +1140,10 @@ private:
 			lo = v < lo ? v : lo;
 			hi = v > hi ? v : hi;
 		}
-		// The axis starts at zero (a stash is never worth less), so the slope
-		// reads as the real proportion; a negative value would extend it down.
+		// The axis starts at zero so the slope reads as the real proportion.
 		if (lo > 0.0f) lo = 0.0f;
 		if (hi <= lo) hi = lo + 1.0f;
 
-		// Ticks, in divine like every other value on the page, at today's rate.
 		const float mid = lo + (hi - lo) * 0.5f;
 		const std::string tHi = FormatValue(hi, true, rateNow), tMid = FormatValue(mid, true, rateNow),
 		                  tLo = lo == 0.0f ? std::string("0") : FormatValue(lo, true, rateNow);
@@ -1234,7 +1161,6 @@ private:
 		ImDrawList* dl = ImGui::GetWindowDrawList();
 		const float pad = D(5.0f);
 		auto yOf = [&](float v) { return p0.y + pad + (1.0f - (v - lo) / (hi - lo)) * (plotH - 2.0f * pad); };
-		// Grid and tick labels.
 		const float tickVals[3] = { hi, mid, lo };
 		const std::string* tickTxt[3] = { &tHi, &tMid, &tLo };
 		for (int t = 0; t < 3; t++) {
@@ -1252,8 +1178,7 @@ private:
 		const ImU32 lineCol = base;
 		const ImU32 fillCol = (base & 0x00FFFFFFu) | (0x24u << 24); // ~14 %
 		const float baseY = yOf(lo);
-		// One quad per segment, without anti-aliased edges: AA fringes on the
-		// shared sides showed as a vertical seam at every sample.
+		// One quad per segment without anti-aliased edges (AA fringes on shared sides show as a seam at every sample).
 		const ImDrawListFlags keepFlags = dl->Flags;
 		dl->Flags &= ~ImDrawListFlags_AntiAliasedFill;
 		for (int i = 0; i + 1 < pts; i++) {
@@ -1262,7 +1187,6 @@ private:
 		}
 		dl->Flags = keepFlags;
 		for (int i = 0; i + 1 < pts; i++) dl->AddLine(ptAt(i), ptAt(i + 1), lineCol, 2.0f);
-		// The session start (the sample at or just before it) and the newest one.
 		int startIdx = 0;
 		for (int i = 0; i < pts; i++)
 			if (curveUtc_[i] <= history_.sessionStartUtc) startIdx = i;
@@ -1274,7 +1198,6 @@ private:
 			const float fx = (ImGui::GetIO().MousePos.x - p0.x) / (pw > 1.0f ? pw : 1.0f);
 			int idx = (int)(fx * (pts - 1) + 0.5f);
 			idx = idx < 0 ? 0 : idx >= pts ? pts - 1 : idx;
-			// A ring marks the hovered sample so the tooltip has an anchor.
 			dl->AddCircle(ptAt(idx), dotR + D(2.0f), Tok::Text, 16, 1.5f);
 			// In divine at that snapshot's own rate.
 			const std::string tip = FormatUtcLocal(curveUtc_[idx]) + "\n" + FormatValue(curvePts_[idx], true, curveRate_[idx]);
@@ -1283,13 +1206,11 @@ private:
 		ImGui::SetCursorScreenPos(ImVec2(innerX, top.y));
 		ImGui::Dummy(ImVec2(innerW, plotH));
 		PobUi::CardEnd();
-		// What the card needs besides its plot, so the standalone chart can grow
-		// its plot to the height of 主要增減 beside it.
+		// What the card needs besides its plot, so the standalone chart can grow to 主要增減's height.
 		curveChrome_ = PobUi::CardNaturalHeight() - plotH;
 	}
 
-	// The bottom of the page: the snapshot list on the left, the selected
-	// snapshot's detail on the right, both filling what is left of the height.
+	// The bottom of the page: snapshot list on the left, selected snapshot's detail on the right.
 	void drawBottom()
 	{
 		const Snapshot* sel = selectedSnap();
@@ -1300,8 +1221,7 @@ private:
 		const ImVec2 p = ImGui::GetCursorScreenPos();
 		const float availW = ImGui::GetContentRegionAvail().x;
 
-		// The list sits on a card; the card is drawn here because the list
-		// scrolls (a child window), which a PobUi card cannot hold.
+		// The card is drawn here because the list scrolls (a child window), which a PobUi card cannot hold.
 		ImDrawList* dl = ImGui::GetWindowDrawList();
 		dl->AddRectFilled(p, p + ImVec2(leftW, h), Tok::Surface1, D(8.0f));
 		dl->AddRect(p, p + ImVec2(leftW, h), Tok::Border, D(8.0f), 0, 1.0f);
@@ -1322,8 +1242,7 @@ private:
 		ImGui::Dummy(ImVec2(availW, h));
 	}
 
-	// The filter row over the table: view, category, search, and -- on 變化 --
-	// what the selected snapshot changed against the one before it.
+	// The filter row over the table: view, category, search, and (on 變化) the change against the previous snapshot.
 	void drawDetail(const Snapshot* prev, const Snapshot* sel)
 	{
 		static const char* const kViews[] = { u8"變化", u8"持有明細" };
@@ -1394,8 +1313,7 @@ private:
 		}
 	}
 
-	// Category = the price-key's namespace, so the filter can never disagree
-	// with how a line was priced.
+	// Category = the price-key's namespace, so the filter never disagrees with how a line was priced.
 	static bool LineInCategory(const SnapshotLine& l, int cat)
 	{
 		switch (cat) {
@@ -1417,9 +1335,7 @@ private:
 		return s;
 	}
 
-	// Fixed table columns sized from what they hold rather than a constant: at
-	// a larger font (with the scrollbar taking its share) a fixed width cut the
-	// figures.
+	// Table columns are sized from their content, not a constant (a fixed width cut figures at larger fonts).
 	float fitCol(const char* header, const char* sample) const
 	{
 		// The header also carries the sort arrow.
@@ -1428,8 +1344,6 @@ private:
 		return (h > s ? h : s) + ImGui::GetStyle().CellPadding.x * 2.0f;
 	}
 
-	// The two tables share their look (design system): a muted header on
-	// surface-1, rows split by border-subtle, no zebra.
 	void pushTableStyle()
 	{
 		ImGui::PushStyleColor(ImGuiCol_TableHeaderBg, V(Tok::Surface1));
@@ -1438,8 +1352,7 @@ private:
 	}
 	void popTableStyle() { ImGui::PopStyleColor(3); }
 
-	// The header row spelled out: labels muted, numeric columns right-aligned
-	// (before the sort arrow), and a tooltip where a column needs explaining.
+	// The header row: labels muted, numeric columns right-aligned, tooltip where a column needs explaining.
 	void headerRow(int cols, const bool* rightAlign, const char* const* tips)
 	{
 		ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
@@ -1463,9 +1376,8 @@ private:
 		}
 	}
 
-	// One click copies the name in the interface language (user rule,
-	// 2026-10-08): the Chinese name under 繁中, the English one otherwise.
-	// Callers wrap each row in PushID, which keeps the buttons' IDs apart.
+	// One click copies the name in the interface language (Chinese under 繁中, else English).
+	// Callers wrap each row in PushID to keep the buttons' IDs apart.
 	void copyCell(const std::string& dispEn)
 	{
 		const std::string name = copyZh_ ? i18n_.DisplayName(dispEn) : dispEn;
@@ -1529,8 +1441,7 @@ private:
 			return;
 		}
 
-		// Value-sorted, filtered view of the selected snapshot; rebuilt when the
-		// snapshot or the filter changes.
+		// Value-sorted, filtered view of the selected snapshot; rebuilt when the snapshot or filter changes.
 		if (linesForUtc_ != latest->utc || filterDirty_) {
 			const std::string needle = LowerAscii(search_);
 			sortedLines_.clear();
@@ -1704,8 +1615,7 @@ private:
 				                                  nullptr };
 			headerRow(7, kRight, kTips);
 
-			// The diff is recomputed per frame anyway, so the sort is applied per
-			// frame too -- a few hundred rows cost nothing.
+			// The diff is recomputed per frame anyway, so the sort is too.
 			if (const ImGuiTableSortSpecs* sp = ImGui::TableGetSortSpecs()) {
 				if (sp->SpecsCount > 0) {
 					const ImGuiTableColumnSortSpecs& s0 = sp->Specs[0];
@@ -1788,8 +1698,7 @@ private:
 
 			ImGui::PushID(i);
 			const std::string date = FormatUtcLocal(s.utc);
-			// The change, uniformly in divine (user request): raw chaos numbers at
-			// this width were unreadable (+214262). Chaos only when no rate is known.
+			// The change, uniformly in divine (raw chaos numbers are unreadable at this width); chaos only when no rate is known.
 			std::string txt = "--";
 			if (prev) {
 				if (s.divineRate > 0) {
@@ -1822,8 +1731,7 @@ private:
 				snprintf(tip, sizeof(tip), u8"摘要快照：只保留總值（原有 %d 種物品）", s.lineCount);
 				PobUi::Tooltip(tip);
 			}
-			// Date left (dim for a summary), the start pill after it, the change
-			// right-aligned: all measured, so nothing runs into anything.
+			// Date left, start pill after it, change right-aligned: all measured so nothing overlaps.
 			ImDrawList* dl = ImGui::GetWindowDrawList();
 			const float ty = p.y + std::floor((rowH - ImGui::GetFontSize()) * 0.5f);
 			const float x0 = p.x + D(6.0f);
@@ -1843,9 +1751,7 @@ private:
 		ImGui::PopStyleColor(3);
 	}
 
-	// The three pages, whether our own tab bar or a host's picks them. The host
-	// speaks in ints (WarehouseEmbed::page) so warehouse_tool.h need not know
-	// this type.
+	// The three pages, picked by our own tab bar or a host's; the host speaks in ints (WarehouseEmbed::page).
 	enum class Page { Revenue, Help, Settings };
 
 	const ToolPanelHost* host_ = nullptr;
@@ -1874,8 +1780,7 @@ private:
 	std::vector<StashTabInfo> tabs_;
 	std::vector<std::string> leagues_;
 
-	// Side-by-side cards share a height: each row's tallest content as measured
-	// last frame (ImGui 1.90 has no child auto-resize to lean on).
+	// Side-by-side cards share a height: each row's tallest content as measured last frame (no child auto-resize in ImGui 1.90).
 	float kpiMinH_ = 0.0f;
 	float row2MinH_ = 0.0f;
 	float moversNat_ = 0.0f;   // 主要增減's own height: the standalone chart fills to it

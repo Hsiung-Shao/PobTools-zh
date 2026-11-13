@@ -1,13 +1,7 @@
-// PobTools drop-preview (掉落預覽): evaluate the currently-edited filter for a
-// synthetic item exactly like the game does — first matching Show/Hide block
-// wins, blocks with Continue apply their style and keep evaluating — then render
-// the in-game-style label (font size / text / border / background colours, beam,
-// minimap icon) and play the block's custom alert sound.
-//
-// Conditions the preview item does not model (HasExplicitMod, SocketGroup,
-// BaseDefencePercentile, ...) are treated as NOT matching — the same outcome a
-// plain drop without those mods would get — and reported in unknownConds so the
-// UI can disclose the approximation.
+// PobTools drop-preview (掉落預覽): evaluate the edited filter for a synthetic item like the game (first matching
+// Show/Hide block wins; Continue blocks apply their style and keep evaluating), then render the in-game-style label
+// and play the block's alert sound. Conditions the preview item does not model (HasExplicitMod, SocketGroup,
+// BaseDefencePercentile, ...) count as NOT matching and are reported in unknownConds so the UI can disclose it.
 #pragma once
 
 #include "filter_model.h"
@@ -18,9 +12,8 @@
 
 struct EditorShell;
 
-// Influence bits for PreviewItem::influence. The six HasInfluence tokens; the
-// Searing Exarch / Eater of Worlds marks are implicit-based (HasSearingExarch-
-// Implicit / HasEaterOfWorldsImplicit) and stay unmodelled.
+// Influence bits for PreviewItem::influence: the six HasInfluence tokens; Searing Exarch / Eater of Worlds marks are
+// implicit-based (HasSearingExarchImplicit / HasEaterOfWorldsImplicit) and stay unmodelled.
 enum : unsigned {
 	kInfShaper   = 1u << 0,
 	kInfElder    = 1u << 1,

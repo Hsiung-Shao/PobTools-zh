@@ -78,20 +78,15 @@ float BadgeWidth(const char* text)
 
 } // namespace
 
-// ---- deferred dialogs --------------------------------------------------------
-//
-// Every Win32 common dialog this editor opens goes through here, and here is only
-// ever reached after a frame has been presented. See EdDialog in the header for
-// why: a common dialog runs its own modal message loop, so opening one from inside
-// a frame leaves that frame half-drawn -- and as a launcher tab it stops the
-// launcher's loop, which is what keeps docked POB windows hidden and positioned.
+// deferred dialogs: every Win32 common dialog goes through here, reached only after a frame has been presented (see
+// EdDialog in the header): a common dialog runs its own modal loop, which would leave the frame half-drawn and, as a
+// launcher tab, stop the launcher's loop that keeps docked POB windows hidden and positioned.
 
 void EdRunDeferredDialogs(EditorShell& s)
 {
 	const EdDialog want = s.pendingDialog;
 	if (want == EdDialog::None) return;
-	// Cleared FIRST. If the dialog itself somehow left the intent set, the next
-	// frame would reopen it, and the user could not get out of it.
+	// Cleared FIRST: a leftover intent would reopen the dialog every frame.
 	s.pendingDialog = EdDialog::None;
 	// A test run never opens a Win32 dialog: it would sit on an invisible window.
 	if (s.testMode) return;
@@ -143,7 +138,7 @@ void EdRunDeferredDialogs(EditorShell& s)
 	}
 }
 
-// ---- EditorShell methods -----------------------------------------------------
+// EditorShell methods
 
 bool EditorShell::OpenByPath(const std::wstring& path, bool force)
 {
@@ -262,7 +257,7 @@ int EditorShell::UnsavedCount()
 	return doc.UnsavedBlockCount(true);
 }
 
-// ---- recently used colours ----------------------------------------------------
+// recently used colours
 
 namespace {
 std::uint32_t PackRgba(const int c[4])
@@ -312,16 +307,11 @@ std::vector<std::uint32_t> DecodeRecentColors(const std::string& text)
 	return out;
 }
 
-// ---- settings persistence (pob-zh.ini [PobTools]) ---------------------------
+// settings persistence (pob-zh.ini [PobTools])
 
 void LoadEditorSettings(EditorShell& s)
 {
 	std::wstring ini = s.exeDir + L"pob-zh.ini";
-	wchar_t buf[128] = L"";
-	GetPrivateProfileStringW(L"PobTools", L"League", L"Mirage", buf, 128, ini.c_str());
-	s.league = EdNarrow(buf);
-	if (s.league.empty()) s.league = "Mirage";
-	s.economyEnabled = GetPrivateProfileIntW(L"PobTools", L"EconomyEnabled", 0, ini.c_str()) != 0;
 	wchar_t rc[512] = L"";
 	GetPrivateProfileStringW(L"PobTools", L"FilterRecentColors", L"", rc, 512, ini.c_str());
 	s.recentColors = DecodeRecentColors(EdNarrow(rc));
@@ -331,8 +321,6 @@ void SaveEditorSettings(EditorShell& s)
 {
 	if (s.testMode) return;   // a test run writes nothing
 	std::wstring ini = s.exeDir + L"pob-zh.ini";
-	WritePrivateProfileStringW(L"PobTools", L"League", EdWiden(s.league).c_str(), ini.c_str());
-	WritePrivateProfileStringW(L"PobTools", L"EconomyEnabled", s.economyEnabled ? L"1" : L"0", ini.c_str());
 	WritePrivateProfileStringW(L"PobTools", L"FilterRecentColors", EdWiden(EncodeRecentColors(s.recentColors)).c_str(),
 	                           ini.c_str());
 }
@@ -353,7 +341,7 @@ void EdRefreshFileList(EditorShell& s)
 	}
 }
 
-// ---- "save first?" -----------------------------------------------------------
+// "save first?"
 
 EdSaveAnswer DrawSaveFirstDialog(EditorShell& s, const char* popupId, bool* open, bool closing)
 {
@@ -375,7 +363,7 @@ EdSaveAnswer DrawSaveFirstDialog(EditorShell& s, const char* popupId, bool* open
 	}
 }
 
-// ---- header ------------------------------------------------------------------
+// header
 
 namespace {
 
@@ -404,9 +392,7 @@ void DrawMoreMenu(EditorShell& s, bool& openMore, ImVec2 anchor)
 		if (sel.empty()) {
 			s.Notify(u8"先選一條規則（或在批量修改裡勾選幾條）再匯出", true);
 		} else {
-			// Carried to the deferred step: the selection can change between the
-			// click and the dialog closing, and what was exported has to be what was
-			// selected when the menu was used.
+			// Carried to the deferred step: the selection may change before the dialog closes, but the export must match the menu click.
 			s.pendingExportSel = sel;
 			s.pendingDialog = EdDialog::ExportCustom;
 		}
@@ -578,7 +564,7 @@ void DrawEditorHeader(EditorShell& s)
 	}
 }
 
-// ---- banners -------------------------------------------------------------------
+// banners
 
 void DrawEditorBanners(EditorShell& s)
 {
@@ -620,7 +606,7 @@ void DrawEditorBanners(EditorShell& s)
 	}
 }
 
-// ---- footer ------------------------------------------------------------------
+// footer
 
 void DrawStatusBar(EditorShell& s)
 {

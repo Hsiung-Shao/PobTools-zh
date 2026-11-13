@@ -145,8 +145,7 @@ void WarehouseService::ForgetAuth()
 {
 	{
 		std::lock_guard<std::mutex> lk(authMx_);
-		// Overwrite before releasing: "cleared" should not leave the bytes
-		// readable in whatever memory the string had.
+		// Overwrite before releasing, so the bytes don't stay readable in freed memory.
 		WarehouseWipe(auth_.secret);
 		auth_ = StashAuth{};
 	}
@@ -284,9 +283,7 @@ void WarehouseService::workerLoop()
 			cmdQ_.pop_front();
 		}
 		const StashAuth auth = authCopy();
-		// Last line of defence: an exception leaving a worker thread terminates
-		// the whole process. Whatever slips through the parsers' own guards
-		// becomes an Error phase the UI can show, not a crash.
+		// Last line of defence: an exception leaving a worker thread terminates the process; make it an Error phase.
 		try {
 			switch (cmd.kind) {
 			case Cmd::Kind::Verify: doVerify(auth, cmd); break;
@@ -307,8 +304,7 @@ bool WarehouseService::guardRefuses()
 	const long long until = WarehouseGuardLoad(exeDir_).blockedUntilUtc;
 	const long long now = NowUtc();
 	if (now >= until) return false;
-	// Not logged: this is the guard working, and a retry-happy click would
-	// otherwise fill the error log.
+	// Not logged: this is the guard working (a retry-happy click would fill the error log).
 	std::lock_guard<std::mutex> lk(stMx_);
 	st_.phase = WarehousePhase::Error;
 	st_.message = u8"帳號請求額度冷卻中，約 " + std::to_string(until - now) + u8" 秒後再試";
@@ -324,10 +320,8 @@ void WarehouseService::noteBackoff(const IStashProvider& p)
 		// (429, exhausted bucket) is worth carrying to the next job.
 		if (ms > kStashMinSpacingMs) WarehouseNoteBlocked(exeDir_, NowUtc() + (ms + 999) / 1000);
 	} catch (...) {
-		// Swallowed on purpose. This runs from ~BackoffCarry, i.e. during
-		// stack unwinding, where an escaping exception calls std::terminate:
-		// losing one backoff note costs the next job a wait it did not need,
-		// while letting it out costs the whole process.
+		// Swallowed on purpose: this runs from ~BackoffCarry during unwinding, where an escaping
+		// exception calls std::terminate (losing one backoff note only costs a wait).
 	}
 }
 

@@ -273,7 +273,7 @@ void FilterDocumentEditor::RebuildBlocks()
 	version_++;
 }
 
-// ---- baseline -----------------------------------------------------------------
+// baseline
 
 namespace {
 

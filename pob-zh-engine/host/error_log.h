@@ -1,35 +1,21 @@
 // One place every failure in PobTools gets written down: PobTools\logs\error-<date>.log
 //
-// Why this exists: until v0.28.0 the only log in the project was app_update.cpp's
-// own app_update_log.txt. Everything else -- a POB source patch whose anchor
-// drifted, a bookmark that failed to save, a data file that would not parse --
-// failed on screen for a second and left nothing behind. When a user says "it
-// stopped working" there was nothing to ask them for.
-//
-// Three rules follow from that purpose:
+// Rules:
 //
 //   * AT MOST TEN LINES PER INCIDENT. The same feature tag with the same message
-//     is written ten times per run and then never again; the tenth line says so,
-//     because silence that is not announced cannot be told apart from the problem
-//     having stopped. A failure on a per-frame path would otherwise write sixty
-//     lines a second, and a log that floods is a log nobody opens.
+//     is written ten times per run and the tenth line says so (unannounced
+//     silence looks like the problem stopping); a per-frame failure must not flood.
 //
-//   * FAILURES ONLY. A file that also records normal events cannot answer "did
-//     anything go wrong today?" at a glance. An empty (or absent) file means the
-//     install is healthy; anything in it is something that actually broke.
+//   * FAILURES ONLY. An empty (or absent) file means the install is healthy.
 //
-//   * ONE FAILURE IS ONE LINE, carrying the version and which feature produced
-//     it. A report that says "v0.28.0 [inject] ..." tells us where to look
-//     without a round trip; embedded newlines are collapsed so a multi-line
-//     message cannot masquerade as several separate failures.
+//   * ONE FAILURE IS ONE LINE, carrying the version and feature tag
+//     ("v0.28.0 [inject] ..."); embedded newlines are collapsed so one message
+//     cannot masquerade as several failures.
 //
-//   * LOGGING NEVER FAILS LOUDLY. Every entry point swallows its own errors. A
-//     logger that interrupts the user because it could not write a log is worse
-//     than no logger at all.
+//   * LOGGING NEVER FAILS LOUDLY. Every entry point swallows its own errors.
 //
-// Linked into BOTH pob-zh.exe and SimpleGraphic.dll -- the engine's ui_api.cpp
-// is where the POB patches live, and those are the failures worth catching. The
-// two copies are independent, which is fine: appends through FILE_APPEND_DATA
+// Linked into BOTH pob-zh.exe and SimpleGraphic.dll (the engine's POB patches
+// live there). The two copies are independent: appends through FILE_APPEND_DATA
 // are atomic, so a line is never torn even with two writers.
 #pragma once
 
@@ -44,17 +30,12 @@ void Error(const char* feature, const std::string& msg);
 
 // One NORMAL event, one line, in a separate file: PobTools\logs\diag-<date>.log.
 //
-// The error log above is failures only, on purpose -- an empty file means a
-// healthy install, and that answer is worth keeping. But some paths we cannot
-// run here (CrossOver on a Mac: no Apple hardware, and a licence we do not
-// have) can only be diagnosed from what the machine that CAN run them writes
-// down. For those, "nothing went wrong" is not the same as "it worked": we need
-// to know which browser the desktop actually opened, or that it opened none.
+// The error log stays failures-only; paths we cannot run here (CrossOver on a
+// Mac) are diagnosed from what the machine that CAN run them writes down, where
+// "nothing went wrong" is not the same as "it worked".
 //
-// Same guarantees as Error: one line each, newlines collapsed, never throws,
-// never interrupts the user. The cap is per feature tag and higher (200), since
-// a diagnostic trace is useless truncated at ten lines; it is still a cap, so a
-// per-frame mistake cannot fill the disk.
+// Same guarantees as Error (one line, newlines collapsed, never throws). The cap
+// is per feature tag and higher (200): a trace truncated at ten lines is useless.
 void Diag(const char* feature, const std::string& msg);
 
 // <install>\PobTools\logs\, created if absent. Also what the settings page's
@@ -72,9 +53,8 @@ int PruneOlderThan(int keepDays);
 // below is per process on purpose, so nothing in the product should clear it.
 void ResetCapsForTest();
 
-// Redirects the log to `dir` for the duration of a self-test. The install's real
-// log must never be written to by a test run, for the same reason the regex
-// self-test uses a scratch directory: it is the user's evidence, not ours.
+// Redirects the log to `dir` for the duration of a self-test: the install's real
+// log is the user's evidence and must not be written by a test run.
 // Pass an empty string to go back to the real location.
 void SetDirForTest(const std::wstring& dir);
 

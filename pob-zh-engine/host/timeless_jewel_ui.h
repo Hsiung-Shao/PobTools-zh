@@ -1,4 +1,4 @@
-// Timeless Jewel calculator window (Phase 3): a Vilsol-style search form in
+// Timeless Jewel calculator window: a Vilsol-style search form in
 // Traditional Chinese. Standalone GLFW+ImGui window, like the atlas planner.
 #pragma once
 
@@ -19,16 +19,13 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale);
 // jewel socket, and are exact. 11 (Zorath) reads ABYN, which answers "what does
 // THIS passive become" for every passive; which of those apply depends on the
 // character's allocated path from the socket to their class start, and PobTools
-// has no character. It is offered anyway, on the user's call (2026-08-07), with
+// has no character. It is offered anyway (user's call), with
 // the estimate labelled in the window — the seed's effect on any single passive
 // is exact, and its Ascendancy pick is exact and path-independent.
 constexpr int kMaxJewelType = 11;
 
-// ---- trade site regions -----------------------------------------------------
-//
-// The trade site exists per region with the same API shape and the same
-// language-independent stat ids; only the host, the league names and the
-// available console realms differ. Adding a region is one row here plus a
+// trade site regions: same API shape and stat ids; only the host, league names
+// and console realms differ. Adding a region is one row here plus a
 // --tj-realm-check run to confirm its stat ids line up.
 struct TradeRealm {
 	const char* label;    // UI label (zh-TW)
@@ -58,8 +55,7 @@ std::string TradeSearchUrl(int realmIdx, const std::string& league, int platform
 int RunTradeRealmCheck(const std::wstring& exeDir);
 
 // Trade-export choices, remembered across sessions in PobTools/tj_ui.json
-// (same tiny-state pattern as AtlasUiState). Without this a .tw player would
-// re-pick their region every single time the window opens.
+// (same tiny-state pattern as AtlasUiState).
 struct TjUiState {
 	int realm = 0;
 	int platform = 0;

@@ -6,6 +6,8 @@ import { dataKey } from "./lang.svelte";
 import { parentFolder, ViewHistory } from "./nav";
 
 export type ViewId = "builds" | "tree" | "items" | "skills" | "config" | "calcs" | "notes" | "party" | "import" | "compare" | "settings";
+/** The tabs with a POB undo stack tab_undo reaches (the tree has its own calls). */
+const UNDO_TABS = new Set<ViewId>(["items", "skills", "config", "calcs"]);
 
 class AppState {
   engine = $state<"booting" | "ready" | "gone">("booting");
@@ -175,7 +177,7 @@ class AppState {
   treeNonce = $state(0);
   /** A tree jewel socket to bring into view on the Items tab (right-click on the tree). */
   focusSocketNode = $state<number | null>(null);
-  /** Bumped to ask BuildBar for its Save As dialog (a build that has no file yet). */
+  /** Bumped to ask TitleBar for its Save As dialog (a build that has no file yet). */
   saveAsRequest = $state(0);
   /** Runs once after the next successful Save As (closing the window after "Save"). */
   afterSaveAs: (() => void) | null = null;
@@ -249,6 +251,27 @@ class AppState {
     await this.refresh();
   }
 
+  /**
+   * Undo / redo on the current tab's own POB stack (UndoHandler): the top bar's
+   * buttons and Ctrl+Z / Ctrl+Y. Notes and Party have none (tab_undo errored;
+   * their text boxes' own Ctrl+Z is the undo that works).
+   */
+  get canUndo(): boolean {
+    return this.loaded && (this.#view === "tree" || UNDO_TABS.has(this.#view));
+  }
+  async undo(redo = false) {
+    if (!this.canUndo) return;
+    if (this.#view === "tree") {
+      // TreeView re-reads its state on the new revision afterTreeChange brings
+      const r = await this.run(() => (redo ? api.treeRedo() : api.treeUndo()));
+      if (r) await this.afterTreeChange();
+      return;
+    }
+    const tab = this.#view;
+    const r = await this.run(() => api.tabUndo(tab, redo));
+    if (r) await this.refresh();
+  }
+
   /** The tab a freshly loaded build opens on: POB_ZH_UI_VIEW (developer knob) or the tree. */
   landingView(): ViewId {
     const v = hostInfo.view as ViewId | undefined;
@@ -260,6 +283,9 @@ class AppState {
     if (this.info?.unsaved && !confirm(t("builds.unsavedOpen"))) return;
     const ok = await this.run(async () => {
       await api.loadBuildFile(path);
+      // Build:Init restarts POB's revision at 1: without this two freshly opened
+      // builds share a revision and everything keyed on it keeps the old build's data
+      this.rev = 0;
       return this.refresh();
     });
     if (ok) this.view = this.landingView();

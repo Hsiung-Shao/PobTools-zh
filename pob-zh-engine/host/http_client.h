@@ -11,18 +11,13 @@
 #include <unordered_map>
 #include <vector>
 
-// ---- proxy -------------------------------------------------------------------
-// Manual proxy for every host-side WinHTTP session ("host:port"; a pasted
-// http:// prefix is tolerated). Empty = follow the system proxy automatically
-// (the Clash / V2Ray "system proxy" toggle included), which is also the
-// fallback when the manual value cannot be applied. Set at startup from
-// pob-zh.ini and again when the setting changes; sessions created afterwards
-// pick it up.
+// Manual proxy for every host-side WinHTTP session ("host:port"; a pasted http:// prefix is tolerated). Empty =
+// follow the system proxy (also the fallback when the manual value cannot be applied). Set at startup from
+// pob-zh.ini and when the setting changes; sessions created afterwards pick it up.
 void HttpSetManualProxy(const std::wstring& proxy);
 
-// WinHttpOpen honouring the proxy policy above (returns an HINTERNET as void*,
-// null on failure). Every host-side WinHTTP session must come from here, or it
-// silently bypasses the proxy setting.
+// WinHttpOpen honouring the proxy policy above (HINTERNET as void*, null on failure). Every host-side WinHTTP
+// session must come from here, or it silently bypasses the proxy setting.
 void* HttpOpenSession(const wchar_t* userAgent);
 
 // Extra request configuration for GetEx. Everything is optional; a
@@ -43,6 +38,14 @@ struct HttpResult {
 	std::unordered_map<std::string, std::string> headers;
 	std::string body;                                     // filled for any status
 };
+
+// Selftest seam: while set, HttpsClient::Get/GetString answer from this instead of the network.
+// Return true with the body in out, or false with *err set. cancel is the caller's flag (may be null).
+// Set before any worker thread starts; pass nullptr to restore the network.
+using HttpTestSource = std::function<bool(const std::wstring& host, const std::wstring& path,
+                                          std::vector<unsigned char>& out, std::string* err,
+                                          const std::atomic<bool>* cancel)>;
+void HttpSetTestSource(HttpTestSource src);
 
 class HttpsClient {
 public:
@@ -68,15 +71,10 @@ public:
 	bool GetString(const std::wstring& path, std::string& out, std::string* err,
 	               const std::atomic<bool>* cancel = nullptr);
 
-	// GET with request headers and response-header collection. Unlike Get, a
-	// transport-level success returns true for ANY status code -- the caller
-	// inspects out.status (an API talks in 401/403/429 and their bodies and
-	// headers carry the answer, so collapsing them into false would throw it
-	// away). false = could not talk to the server at all.
-	//
-	// Automatic WinHTTP cookies are disabled for these requests: the only
-	// cookies sent are what extra.headers spells out, and a Set-Cookie in the
-	// response cannot leak into later requests.
+	// GET with request headers and response-header collection. Unlike Get, a transport-level success returns true
+	// for ANY status code -- the caller inspects out.status (401/403/429 bodies and headers carry the answer).
+	// false = could not talk to the server at all.
+	// Automatic WinHTTP cookies are disabled: only extra.headers' cookies are sent, and Set-Cookie cannot leak into later requests.
 	bool GetEx(const std::wstring& path, const HttpExtra& extra, HttpResult& out,
 	           std::string* err, const std::atomic<bool>* cancel = nullptr);
 

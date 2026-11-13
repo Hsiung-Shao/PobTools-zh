@@ -1,0 +1,662 @@
+<!-- 技能頁:左 = 插槽組清單(啟用、標籤、槽位、主技能標記),右 = 選中組的寶石表
+     (名稱搜尋、等級/品質/啟用/全域/數量)。每個改動都經 POB 的 ProcessSocketGroup。 -->
+<script lang="ts" src="$lib/views/SkillsView.ts"></script>
+
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="page" onmouseleave={hideTip}>
+  <section class="col left">
+    <div class="head">
+      <div class="setctl">
+      <span class="label">{t("skills.groups")}</span>
+      {#if data}
+        <Select class="select sm" value={String(data.activeSkillSetId)} options={data.skillSets.map((s) => ({ value: String(s.id), label: setTitle(s) }))} onchange={(v) => setChange(String(v))} title={t("skills.skillSet")} />
+        <button class="btn ghost sm" onclick={() => (setDialog = { mode: "new", title: t("skills.newSetName"), copy: false })}>+</button>
+        <button class="btn ghost sm" onclick={() => (setDialog = { mode: "rename", title: data!.skillSets.find((s) => s.id === data!.activeSkillSetId)?.title ?? "", copy: false })}>✎</button>
+        <button class="btn ghost sm" disabled={data.skillSets.length <= 1} onclick={deleteSet}>×</button>
+      {/if}
+      </div>
+      <div class="grpctl">
+        <button class="btn sm" onclick={addGroup}>{t("skills.newGroup")}</button>
+        <button class="btn sm danger" disabled={!group || group.source} onclick={deleteGroup}>{t("skills.deleteGroup")}</button>
+      </div>
+    </div>
+    <div class="scroll">
+      {#if data}
+        {#each data.groups as g (g.index)}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <div
+            class="grow"
+            class:sel={g.index === sel}
+            class:off={!g.enabled || !g.slotEnabled}
+            role="option"
+            aria-selected={g.index === sel}
+            tabindex="0"
+            onclick={(e) => rowClick(e, g)}
+            oncontextmenu={(e) => rowContext(e, g)}
+            onmouseenter={(e) => showTip(`g${g.index}`, () => api.groupTooltip(g.index), e)}
+            onmouseleave={hideTip}
+          >
+            <input type="checkbox" checked={g.enabled} onclick={(e) => e.stopPropagation()} onchange={(e) => app.run(() => api.setGroup(g.index, { enabled: e.currentTarget.checked })).then(changed)} />
+            <span class="gname">{g.displayLabelZh || g.displayLabel || g.label || "—"}</span>
+            {#if g.isMain}<span class="badge gold">{t("skills.main")}</span>{/if}
+            {#if g.includeInFullDPS}<span class="badge">{t("skills.inFullDps")}</span>{/if}
+            {#if g.slot}<span class="badge">{data.slotOptions.find((s) => s.name === g.slot)?.labelZh ?? g.slot}</span>{/if}
+            {#if g.source}<span class="badge dim">{g.sourceName ?? t("skills.fromItem")}</span>{/if}
+          </div>
+        {/each}
+        {#if !data.groups.length}<p class="dim pad">{t("skills.noGroups")}</p>{/if}
+      {/if}
+    </div>
+    <div class="actions">
+      <button class="btn ghost sm" disabled={!group || group.index <= 1} onclick={() => moveGroup(-1)}>↑</button>
+      <button class="btn ghost sm" disabled={!group || !data || group.index >= data.groups.length} onclick={() => moveGroup(1)}>↓</button>
+      <button class="btn ghost sm" disabled={!group} title={t("skills.copyGroupHint")} onclick={copyGroup}>{t("skills.copyGroup")}</button>
+      <button class="btn ghost sm" onclick={openPaste}>{t("skills.pasteGroup")}</button>
+    </div>
+    <p class="dim small mousehint">{t("skills.mouseHint")}</p>
+    <div class="gemopts">
+      <button class="btn ghost sm" onclick={toggleGemOpts}>{gemOptsOpen ? "▾" : "▸"} {t("skills.gemOptions")}</button>
+      {#if gemOptsOpen && gemOpts}
+        <div class="optgrid">
+          <label class="chk"><input type="checkbox" checked={gemOpts.sortGemsByDPS} onchange={(e) => patchGemOpts({ sortGemsByDPS: e.currentTarget.checked })} /> {t("skills.sortByDps")}</label>
+          <Select class="select sm" value={gemOpts.sortGemsByDPSField} disabled={!gemOpts.sortGemsByDPS} options={gemOpts.sortFields.map((c) => ({ value: c.value, label: choiceLabel(c) }))} onchange={(v) => patchGemOpts({ sortGemsByDPSField: String(v) })} />
+          <span class="k">{t("skills.defaultLevel")}</span>
+          <Select
+            class="select sm"
+            value={gemOpts.defaultGemLevel}
+            options={gemOpts.defaultGemLevels.map((c) => ({ value: c.value, label: choiceLabel(c), title: c.description || undefined }))}
+            onchange={(v) => patchGemOpts({ defaultGemLevel: String(v) })}
+            title={gemOpts.defaultGemLevels.find((c) => c.value === gemOpts!.defaultGemLevel)?.description ?? ""}
+          />
+          <span class="k">{t("skills.defaultQuality")}</span>
+          <input class="input sm num" type="number" min="0" max="23" bind:value={qualityDraft}
+            onchange={() => patchGemOpts({ defaultGemQuality: Math.max(0, Math.min(23, Math.floor(Number(qualityDraft) || 0))) })} />
+          <span class="k">{t("skills.showSupports")}</span>
+          <Select class="select sm" value={gemOpts.showSupportGemTypes} options={gemOpts.supportGemTypes.map((c) => ({ value: c.value, label: choiceLabel(c) }))} onchange={(v) => patchGemOpts({ showSupportGemTypes: String(v) })} />
+          <label class="chk"><input type="checkbox" checked={gemOpts.showLegacyGems} onchange={(e) => patchGemOpts({ showLegacyGems: e.currentTarget.checked })} /> {t("skills.showLegacy")}</label>
+        </div>
+      {/if}
+    </div>
+  </section>
+
+  <section class="col right">
+    {#if group && data}
+      <div class="detail">
+        <div class="frow">
+          <label class="f">
+            <span class="k">{t("skills.label")}</span>
+            <input class="input sm" placeholder={t("skills.labelPlaceholder")} bind:value={labelDraft} onblur={() => labelDraft !== group!.label && patchGroup({ label: labelDraft })} onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()} />
+          </label>
+          <div class="f">
+            <span class="k">{t("skills.slot")}</span>
+            <Select
+              class="select sm"
+              ariaLabel={t("skills.slot")}
+              value={group.slot ?? ""}
+              options={[{ value: "", label: t("skills.slotNone") }, ...data.slotOptions.map((s) => ({ value: s.name, label: s.labelZh || s.label }))]}
+              onchange={(v) => patchGroup({ slot: String(v) })}
+            />
+          </div>
+          <label class="chk"><input type="checkbox" checked={group.enabled} onchange={(e) => patchGroup({ enabled: e.currentTarget.checked })} /> {t("skills.enabled")}</label>
+          <label class="chk"><input type="checkbox" checked={group.includeInFullDPS} onchange={(e) => patchGroup({ includeInFullDPS: e.currentTarget.checked })} /> {t("skills.fullDps")}</label>
+          {#if group.isMain}
+            <span class="badge gold">{t("skills.main")}</span>
+          {:else}
+            <button class="btn sm" disabled={!group.skills.length} onclick={setMain}>{t("skills.setMain")}</button>
+          {/if}
+        </div>
+        {#if group.skills.length > 1}
+          <div class="frow">
+            <div class="f">
+              <span class="k">{t("skills.mainSkill")}</span>
+              <Select class="select sm" ariaLabel={t("skills.mainSkill")} value={group.mainActiveSkill} options={group.skills.map((s) => ({ value: s.index, label: s.nameZh || s.name || "" }))} onchange={(v) => patchGroup({ mainActiveSkill: Number(v) })} />
+            </div>
+          </div>
+        {/if}
+        {#if extras && (extras.countShown || extras.imbued?.shown || extras.optimiseSockets?.shown)}
+          <div class="frow">
+            {#if extras.countShown}
+              <label class="f">
+                <span class="k">{t("skills.groupCount")}</span>
+                <input class="input sm num cnt" type="number" min="1" bind:value={countDraft} onblur={applyCount} onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()} />
+              </label>
+            {/if}
+            {#if extras.optimiseSockets?.shown}
+              <button class="btn sm" disabled={!extras.optimiseSockets.enabled} title={t("skills.optimiseHint")} onclick={optimise}>{t("skills.optimise")}</button>
+            {/if}
+            {#if extras.imbued?.shown}
+              <span class="f">
+                <span class="k">{t("skills.imbued")}</span>
+                <span class="combo imb">
+                  <input class="input sm" disabled={!extras.imbued.enabled} placeholder={extras.imbued.nameZh || extras.imbued.name || t("skills.imbuedNone")}
+                    bind:value={imbuedQuery}
+                    oninput={() => { imbuedOpen = true; searchImbued(imbuedQuery); }}
+                    onfocus={() => (imbuedOpen = true)}
+                    onblur={() => setTimeout(() => (imbuedOpen = false), 150)} />
+                  {#if imbuedOpen && imbuedHits.length}
+                    <div class="drop">
+                      {#each imbuedHits as h}
+                        <button class="hit" onmousedown={(e) => { e.preventDefault(); void setImbued(h.gemId); }}>
+                          <span style:color={gemColor(h)}>{h.nameZh || h.name}</span>
+                          <span class="dim small">{h.name}</span>
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
+                </span>
+                {#if extras.imbued.name}
+                  <span class="imbname">{extras.imbued.nameZh || extras.imbued.name}</span>
+                  <button class="btn ghost sm" disabled={!extras.imbued.enabled} title={t("skills.imbuedClear")} onclick={() => setImbued()}>×</button>
+                {/if}
+              </span>
+            {/if}
+          </div>
+        {/if}
+        {#if group.enabled && !group.slotEnabled}<div class="warn small">{t("skills.disabledSet")}</div>{/if}
+
+        <table class="gems">
+          <thead>
+            <tr>
+              <th class="w"></th>
+              <th>{t("skills.gemName")}</th>
+              <th class="n">{t("skills.level")}</th>
+              <th class="n">{t("skills.quality")}</th>
+              <th class="c" title={t("skills.enabled")}>✓</th>
+              <th class="c">{t("skills.global1")}</th>
+              <th class="c">{t("skills.global2")}</th>
+              <th class="n">{t("skills.count")}</th>
+              <th class="w2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each group.gems as g (g.index)}
+              <tr class:off={!g.enabled}>
+                <td class="w"><span class="dot" style:background={gemColor(g)}></span></td>
+                <td class="name">
+                  {#if editGem && editGem.index === g.index}
+                    <div class="combo">
+                      <!-- svelte-ignore a11y_autofocus -->
+                      <input class="input sm" autofocus bind:value={editGem.query} oninput={() => search(editGem!.query, (h) => (editGem!.hits = h), g.index)} onkeydown={(e) => { if (e.key === "Escape") { editGem = null; hideTip(); } if (e.key === "Enter" && editGem?.hits[0]) void pickGem(g, editGem.hits[0]); }} onblur={() => setTimeout(() => { editGem = null; hideTip(); }, 150)} />
+                      {#if editGem.hits.length}
+                        <div class="drop">
+                          {#each editGem.hits as h}
+                            <button class="hit" onmousedown={(e) => { e.preventDefault(); void pickGem(g, h); }} onmouseenter={(e) => showCandidateTip(e, g.index, h)} onmouseleave={hideTip}>
+                              <span style:color={gemColor(h)}>{h.nameZh || h.name}</span>
+                              {#if h.support}<span class="dim small">{t("skills.support")}</span>{/if}
+                              {#if h.delta != null}
+                                <span class="small num delta" style:color={dpsDeltaColor(h.delta)}>{dpsDeltaText(h)}</span>
+                              {/if}
+                            </button>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  {:else}
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <span
+                      class="gemname"
+                      class:bad={!!g.errMsg}
+                      style:color={g.errMsg ? "var(--bad)" : gemColor(g)}
+                      role="button"
+                      tabindex="0"
+                      title={g.errMsg ?? ""}
+                      onclick={() => !g.fromItem && !g.fromNode && (editGem = { index: g.index, query: g.name ?? g.nameSpec, hits: [] })}
+                      onmouseenter={(e) => showTip(`gem${group!.index}:${g.index}:${app.dataRev}`, () => api.gemTooltip(group!.index, g.index), e)}
+                      onmouseleave={hideTip}
+                    >
+                      {g.nameZh || g.name || g.nameSpec}
+                      {#if g.support}<span class="dim small"> · {t("skills.support")}</span>{/if}
+                      {#if g.fromItem}<span class="dim small"> · {t("skills.fromItem")}</span>{/if}
+                      {#if g.fromNode}<span class="dim small"> · {t("skills.fromNode")}</span>{/if}
+                      {#if group.slot && !g.matchesSocket}<span class="warn small" title={t("skills.socketMismatch")}> ◇</span>{/if}
+                    </span>
+                  {/if}
+                </td>
+                <td class="n"><input class="input sm num" type="number" min="1" max="40" value={g.level} onchange={(e) => patchGem(g, { level: Number(e.currentTarget.value) })} /></td>
+                <td class="n"><input class="input sm num" type="number" min="0" max="23" value={g.quality} onchange={(e) => patchGem(g, { quality: Number(e.currentTarget.value) })} /></td>
+                <td class="c"><input type="checkbox" checked={g.enabled} onchange={(e) => patchGem(g, { enabled: e.currentTarget.checked })} /></td>
+                <td class="c">{#if g.hasGlobalEffect}<input type="checkbox" checked={g.enableGlobal1} onchange={(e) => patchGem(g, { enableGlobal1: e.currentTarget.checked })} />{/if}</td>
+                <td class="c">{#if g.hasGlobalEffect}<input type="checkbox" checked={g.enableGlobal2} onchange={(e) => patchGem(g, { enableGlobal2: e.currentTarget.checked })} />{/if}</td>
+                <td class="n"><input class="input sm num" type="number" min="1" value={g.count ?? 1} onchange={(e) => patchGem(g, { count: Number(e.currentTarget.value) })} /></td>
+                <td class="w2">
+                  <button class="btn ghost sm" disabled={g.index <= 1} onclick={() => moveGem(g, -1)}>↑</button>
+                  <button class="btn ghost sm" disabled={g.index >= group!.gems.length} onclick={() => moveGem(g, 1)}>↓</button>
+                  <button class="btn ghost sm" disabled={g.fromItem || g.fromNode} title={t("skills.deleteGem")} onclick={() => deleteGem(g)}>×</button>
+                </td>
+              </tr>
+            {/each}
+            <tr class="addrow">
+              <td class="w"></td>
+              <td class="name" colspan="7">
+                <div class="combo">
+                  <input
+                    class="input sm"
+                    placeholder={t("skills.searchGem")}
+                    bind:value={addQuery}
+                    onfocus={() => void openSupportable()}
+                    oninput={addInput}
+                    onkeydown={(e) => { if (e.key === "Enter") void addGemByText(); if (e.key === "Escape") closeAdd(); }}
+                    onblur={() => setTimeout(closeAdd, 150)}
+                  />
+                  {#if addOpen && (addHits.length || addBusy || (addMode === "supportable" && !addQuery.trim()))}
+                    <div class="drop">
+                      {#if addBusy}
+                        <div class="drophint">{t("skills.calcDps")}</div>
+                      {:else if addMode === "supportable" && !addQuery.trim()}
+                        <div class="drophint">{addHits.length ? supportableHint : t("skills.noSupportable")}</div>
+                      {:else if addHits.some((h) => h.dps != null)}
+                        <div class="drophint">{dpsHint}</div>
+                      {/if}
+                      {#each addHits as h (h.gemId)}
+                        <button class="hit" onmousedown={(e) => { e.preventDefault(); void addGem(h); }} onmouseenter={(e) => showCandidateTip(e, (group?.gems.length ?? 0) + 1, h)} onmouseleave={hideTip}>
+                          <span class="hname">
+                            <span style:color={gemColor(h)}>{h.nameZh || h.name}</span>
+                            <span class="dim small">{h.name}{h.support ? ` · ${t("skills.support")}` : ""}</span>
+                          </span>
+                          {#if h.delta != null}
+                            <span class="small num delta" style:color={dpsDeltaColor(h.delta)} title={dpsHint}>
+                              {dpsDeltaText(h)}{#if h.pct != null}<span class="amt">{formatSignedNumber(h.delta)}</span>{/if}
+                            </span>
+                          {:else if h.dps != null}
+                            <span class="small num" style:color={dpsColor(h)} title={dpsHint}>{dpsText(h)}</span>
+                          {/if}
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              </td>
+              <td class="w2"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    {:else}
+      <div class="center dim">{t("skills.noGroups")}</div>
+    {/if}
+  </section>
+
+  {#if tip}<TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} />{/if}
+
+  {#if pasteDialog}
+    <div class="modal">
+      <div class="dialog">
+        <div class="label">{t("skills.pasteGroup")}</div>
+        <p class="dim small">{t("skills.pasteHint")}</p>
+        <textarea class="input pastebox" bind:value={pasteDialog.text}></textarea>
+        <div class="btns"><button class="btn ghost" onclick={() => (pasteDialog = null)}>{t("tree.cancel")}</button><button class="btn primary" disabled={!pasteDialog.text.trim()} onclick={pasteOk}>OK</button></div>
+      </div>
+    </div>
+  {/if}
+
+  {#if setDialog}
+    <div class="modal">
+      <div class="dialog">
+        <div class="label">{setDialog.mode === "new" ? t("skills.skillSet") : t("skills.skillSet")}</div>
+        <input class="input" placeholder={t("items.setName")} bind:value={setDialog.title} onkeydown={(e) => e.key === "Enter" && setDialogOk()} />
+        {#if setDialog.mode === "new"}<label class="chk"><input type="checkbox" bind:checked={setDialog.copy} /> {t("items.newSetCopy")}</label>{/if}
+        <div class="btns"><button class="btn ghost" onclick={() => (setDialog = null)}>{t("tree.cancel")}</button><button class="btn primary" disabled={!setDialog.title.trim()} onclick={setDialogOk}>OK</button></div>
+      </div>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .page {
+    height: 100%;
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+    min-height: 0;
+  }
+  /* RWD on the main area's width: below 1100px the group list sits above the
+     gem table (which needs ~540px of its own), each with a usable height,
+     and the page scrolls as a whole when they do not both fit */
+  @container view (max-width: 1099px) {
+    .page {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(180px, 32%) minmax(380px, 1fr);
+      overflow-y: auto;
+    }
+    .col + .col {
+      border-left: 0;
+      border-top: 1px solid var(--edge-0);
+    }
+  }
+  /* column rules as borders, not a solid fill behind a 1px gap: the fill hid the
+     background image, and a second surface here stacked on the one .view paints */
+  .col {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .col + .col {
+    border-left: 1px solid var(--edge-0);
+  }
+  /* wraps onto a second row in a narrow column instead of clipping its right
+     end (the set drop-down, its buttons and the tree selector did) */
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--edge-0);
+    background: var(--surface-1);
+  }
+  .head .label {
+    white-space: nowrap;
+  }
+  /* one row: the skill-set controls give way (the set name shortens) so the
+     socket-group add / delete at the right end always show whole */
+  .head .setctl {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .head .setctl :global(.select) {
+    flex: 0 1 auto;
+    min-width: 44px;
+  }
+  .head .grpctl {
+    flex: none;
+    display: flex;
+    gap: 4px;
+  }
+  .head :global(.select) {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 8px;
+  }
+  .pad {
+    padding: 8px;
+    font-size: var(--fs-xs);
+  }
+  .grow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--radius-s);
+    font-size: var(--fs-sm);
+    cursor: default;
+  }
+  .grow:hover {
+    background: var(--surface-hover);
+  }
+  .grow.sel {
+    background: var(--gold-soft);
+    box-shadow: inset 2px 0 0 var(--gold);
+  }
+  .grow.off .gname {
+    color: var(--ink-3);
+  }
+  .gname {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .badge {
+    font-size: var(--fs-2xs);
+    padding: 1px 6px;
+    border: 1px solid var(--edge-1);
+    border-radius: 9px;
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .badge.gold {
+    color: var(--gold);
+    border-color: var(--gold-dim);
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--edge-0);
+    background: var(--surface-1);
+  }
+  /* 插槽組列的右鍵 / Ctrl 操作原本只寫在 hover 提示裡 */
+  .mousehint {
+    margin: 0;
+    padding: 0 10px 6px;
+    background: var(--surface-1);
+  }
+  /* 數字右對齊,等級與品質上下對齊 */
+  td.n input {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  /* 移動 / 刪除鈕常駐淡色,滑過該列才變亮 */
+  td.w2 .btn:not(:disabled) {
+    opacity: 0.4;
+  }
+  tr:hover td.w2 .btn:not(:disabled),
+  td.w2 .btn:focus-visible {
+    opacity: 1;
+  }
+  .btn.danger:hover:not(:disabled) {
+    color: var(--bad);
+    border-color: var(--bad);
+  }
+  .detail {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .frow {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .f {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .k {
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.1em;
+    color: var(--ink-3);
+  }
+  .chk {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--fs-xs);
+    height: 24px;
+  }
+  .page :global(.select.sm),
+  .input.sm {
+    height: 24px;
+    font-size: var(--fs-xs);
+  }
+  .input.num {
+    width: 56px;
+    text-align: right;
+  }
+  .gems {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--fs-sm);
+  }
+  .gems th {
+    text-align: left;
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    color: var(--ink-3);
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--edge-1);
+  }
+  .gems td {
+    padding: 3px 6px;
+    border-bottom: 1px solid var(--edge-0);
+    vertical-align: middle;
+  }
+  .gems tr.off td {
+    opacity: 0.55;
+  }
+  .gems .w {
+    width: 14px;
+  }
+  .gems .w2 {
+    width: 90px;
+    white-space: nowrap;
+    text-align: right;
+  }
+  .gems .n {
+    width: 64px;
+    text-align: right;
+  }
+  .gems .c {
+    width: 52px;
+    text-align: center;
+  }
+  .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+  .gemname {
+    cursor: text;
+  }
+  .combo {
+    position: relative;
+  }
+  .combo .input {
+    width: 100%;
+  }
+  .drop {
+    position: absolute;
+    left: 0;
+    top: 26px;
+    z-index: 25;
+    min-width: 280px;
+    max-height: 260px;
+    overflow-y: auto;
+    background: var(--surface-2);
+    border: 1px solid var(--edge-1);
+    border-radius: var(--radius-s);
+    box-shadow: var(--shadow-float);
+    display: flex;
+    flex-direction: column;
+  }
+  .drophint {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 4px 9px;
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--edge-0);
+  }
+  .hit {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--ink-0);
+    text-align: left;
+    padding: 5px 9px;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: var(--fs-xs);
+  }
+  .hit:hover {
+    background: var(--surface-hover);
+  }
+  .hname {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .delta {
+    flex: none;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .delta .amt {
+    margin-left: 6px;
+    opacity: 0.75;
+  }
+  .small {
+    font-size: var(--fs-2xs);
+  }
+  .warn {
+    color: var(--warn);
+  }
+  .bad {
+    color: var(--bad);
+  }
+  .center {
+    height: 100%;
+    display: grid;
+    place-items: center;
+  }
+  .modal {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: var(--backdrop);
+    z-index: 30;
+  }
+  .dialog {
+    width: 380px;
+    padding: 16px 18px;
+    background: var(--surface-1);
+    border: 1px solid var(--edge-1);
+    border-left: 3px solid var(--gold);
+    border-radius: var(--radius-m);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .btns {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .gemopts {
+    border-top: 1px solid var(--edge-0);
+    padding: 6px 10px;
+  }
+  .optgrid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 10px;
+    align-items: center;
+    padding: 6px 2px;
+  }
+  .cnt {
+    width: 70px;
+  }
+  .imb {
+    position: relative;
+    width: 220px;
+  }
+  .imbname {
+    color: var(--ink-0);
+  }
+  .pastebox {
+    width: 100%;
+    min-height: 140px;
+    font-family: var(--font-mono, monospace);
+  }
+</style>

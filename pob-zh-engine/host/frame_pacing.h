@@ -1,19 +1,12 @@
 // Why the launcher does not simply draw sixty frames a second.
 //
-// An ImGui window redraws itself from scratch every iteration, and until
-// v1.5.0 both the launcher and the tool windows ran that loop flat out:
-// glfwPollEvents, build the frame, present, repeat -- paced only by the
-// swap waiting for vsync. Two things were wrong with that:
+// An ImGui loop that runs flat out (poll, build, present) wastes CPU/GPU:
+//   * MINIMISED, THE SWAP DOES NOT WAIT, so the loop spins (measured 124% of
+//     one core behind POB).
+//   * ON SCREEN, NOTHING CHANGES MOST OF THE TIME; 60 identical presents a
+//     second cost 3-4% of a core.
 //
-//   * MINIMISED, THE SWAP DOES NOT WAIT. There is nothing to present, so the
-//     loop spun as fast as the CPU allowed: measured at 124% of one core and
-//     23% of the GPU for a launcher sitting in the taskbar behind POB.
-//   * ON SCREEN, NOTHING CHANGES MOST OF THE TIME. Sixty presents a second of
-//     an identical picture cost 3-4% of a core and a couple of percent of the
-//     GPU on a desktop, several times that on an integrated one.
-//
-// So the loop is paced here instead, on three rules that do not depend on the
-// swap chain at all:
+// So the loop is paced here, on three rules independent of the swap chain:
 //
 //   1. Wait for events, with a timeout. Fast cadence (one 60 Hz frame) for a
 //      short tail after any input, or while the caller says it is busy (a
@@ -88,18 +81,13 @@ private:
 
 // When a window created hidden (GLFW_VISIBLE false) goes on screen.
 //
-// Showing it as soon as it exists puts a white rectangle on the desktop for as
-// long as the glyph atlas and the panel take to build -- measured at 330-410 ms
-// for the Poe Regex tool window. So the window appears on the pass whose frame
-// was actually presented: the picture is in the swap chain before the window
-// is, and the first thing anyone sees is the finished UI.
+// Showing it at creation puts a white rectangle up while the glyph atlas and
+// panel build (330-410 ms), so it appears on the pass whose frame was presented.
 //
-// A window that never presents must still appear (an invisible process is one
-// nobody can close), so the caller also asks between its slow start-up steps,
-// and kFirstShowLimit after Start the answer is yes regardless. Only the main
-// thread can show the window (ShowWindow on another thread's window waits for
-// that thread), so the limit is honoured at those check points and on every
-// loop pass -- a step that never returns still leaves the window hidden.
+// A window that never presents must still appear (nobody can close an invisible
+// process): kFirstShowLimit after Start the answer is yes regardless. Only the
+// main thread can show the window, so the limit is honoured at the caller's
+// check points between slow start-up steps and on every loop pass.
 constexpr double kFirstShowLimit = 2.0;
 
 class FirstShow {

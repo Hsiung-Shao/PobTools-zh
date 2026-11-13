@@ -1,0 +1,174 @@
+/* 兩主題逐字相同的規則。與各主題 token 區塊同特異度、得排在其後的(--panel-pct、背景圖的實色覆寫)與有差異的規則,留在各主題 app.css。 */
+
+:root[data-theme="light"] .pob-dark {
+  color: var(--ink-0);
+}
+
+:root[data-bg] body {
+  background: transparent;
+}
+:root[data-bg] {
+  background: var(--surface-0-c);
+}
+:root[data-bg] .view {
+  background: var(--surface-0);
+}
+/* 天賦樹自己畫底(TreeView 依「天賦樹底圖」透明度),不再疊一層頁面底色 */
+:root[data-bg] .view:has(.stage) {
+  background: transparent;
+}
+
+/* POB 字串裡的字面色碼(^xRRGGBB,不在 pobtext 的對照表裡)是為深底挑的,
+   淺色主題下把過亮的壓暗;深色島裡照原樣。 */
+.pob-lit {
+  color: var(--pc);
+}
+:root[data-theme="light"] .pob-lit {
+  color: oklch(from var(--pc) min(l, 0.5) c h);
+}
+:root[data-theme="light"] .pob-dark .pob-lit {
+  color: var(--pc);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--surface-0);
+  color: var(--ink-0);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: 1.45;
+  overflow: hidden;
+  user-select: none;
+}
+
+#app {
+  height: 100%;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-2) transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--edge-2);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-3);
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+button,
+select,
+[role="button"],
+[role="tab"] {
+  cursor: pointer;
+}
+button:disabled,
+select:disabled,
+input:disabled {
+  cursor: default;
+}
+:focus-visible {
+  outline: 1px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--edge-2);
+  color: var(--ink-0);
+}
+.btn:active:not(:disabled) {
+  background: var(--surface-active);
+}
+.btn:disabled {
+  opacity: var(--dim-opacity);
+}
+.btn.primary {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--on-gold);
+  font-weight: 600;
+}
+
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.input::placeholder {
+  color: var(--ink-3);
+}
+/* 原生下拉的選項清單:底色一定用實色。面板透明度讓 --surface-2 帶 alpha 時,
+   Chromium 會丟掉半透明底色改畫預設淺色清單,淺色字就整片看不見。 */
+option {
+  background-color: var(--surface-2-c);
+  color: var(--ink-0);
+}
+
+/* 文字工具類 */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.label {
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
+}
+.dim {
+  color: var(--ink-3);
+}
+.selectable {
+  user-select: text;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  padding: 1px 5px;
+  border: 1px solid var(--edge-2);
+  border-radius: 3px;
+  color: var(--ink-2);
+  background: var(--surface-2);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}

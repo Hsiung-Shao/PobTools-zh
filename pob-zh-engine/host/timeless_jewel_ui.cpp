@@ -2,7 +2,7 @@
 #include "tool_panel.h"
 #include "tool_window.h"
 
-#include "launcher_config.h" // ResolveConfiguredFontPath
+#include "launcher_config.h"
 #include "http_client.h"
 #include "passive_tree_data.h"
 #include "passive_tree_update.h"
@@ -11,15 +11,16 @@
 #include "error_log.h"
 #include "timeless_jewel_abyss.h"
 #include "ui_theme.h"
-#include "ui_widgets.h"   // design-system widgets (Select, Segmented, Banner, EmptyState...)
+#include "ui_widgets.h"
 #include "ui_icons.h"
 #include "clipboard_util.h"
 
-#include <json.hpp> // nlohmann::json (deps/nlohmann) — TjUiState
+#include <json.hpp>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#include "win_util.h"
 
 #include <GLES2/gl2.h>
 #include <GLFW/glfw3.h>
@@ -62,7 +63,6 @@ std::vector<unsigned char> read_file(const std::wstring& path)
 	return data;
 }
 
-// percent-encode for a URL query component (RFC 3986 unreserved kept as-is).
 std::string url_encode(const std::string& s)
 {
 	static const char* hex = "0123456789ABCDEF";
@@ -74,22 +74,9 @@ std::string url_encode(const std::string& s)
 	return out;
 }
 
-std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return L"";
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), &w[0], n);
-	return w;
-}
-
 } // namespace
 
-// ---- trade realms -----------------------------------------------------------
-
-// Verified against both /api/trade/data/stats: every conqueror the calculator
-// can offer (jewel types 1-6, 23 conquerors) exists on both regions with the
-// same id. --tj-realm-check re-proves this on demand.
+// trade realms: every conqueror the calculator offers exists on both regions with the same id (--tj-realm-check re-proves it).
 const TradeRealm kTradeRealms[] = {
 	// NOTE: the .tw site answers on the bare host; www.pathofexile.tw 301s to it,
 	// so use the canonical one and save a redirect.
@@ -132,8 +119,7 @@ std::string TradeQueryJsonMulti(const std::string& tradeStatId, const std::vecto
 	       "},\"sort\":{\"price\":\"asc\"}}";
 }
 
-// Pure URL assembly, kept separate from ShellExecute so --tj-selftest can
-// assert on it. Returns "" when there is nothing sensible to open.
+// Pure URL assembly (kept apart from ShellExecute so --tj-selftest can assert on it).
 // platform: 0 pc, 1 xbox, 2 sony — ignored by realms without consoles.
 std::string TradeSearchUrl(int realmIdx, const std::string& league, int platform,
                            const std::string& queryJson)
@@ -143,13 +129,11 @@ std::string TradeSearchUrl(int realmIdx, const std::string& league, int platform
 	const TradeRealm& r = kTradeRealms[realmIdx];
 	const char* console = "";
 	if (r.consoles) console = platform == 1 ? "xbox/" : platform == 2 ? "sony/" : "";
-	// url_encode is byte-wise, so a Chinese league name comes out as the same
-	// percent-escapes the trade site itself uses (亡焰咒海 -> %E4%BA%A1...).
 	return "https://" + std::string(r.host) + "/trade/search/" + console +
 	       url_encode(league) + "?q=" + url_encode(queryJson);
 }
 
-// ---- TjUiState --------------------------------------------------------------
+// TjUiState
 
 static std::wstring tj_ui_path(const std::wstring& exeDir)
 {
@@ -206,8 +190,7 @@ struct LeagueFetch {
 	std::thread th;
 	const wchar_t* host = kTradeRealms[0].hostW;
 	~LeagueFetch() { if (th.joinable()) th.join(); }
-	// Switching region throws the list away and refetches from the new host.
-	// Joining first keeps `all` from being written by the outgoing thread.
+	// Switching region refetches; join first so `all` isn't written by the outgoing thread.
 	void SetHost(const wchar_t* h) {
 		if (h == host) return;
 		if (th.joinable()) th.join();
@@ -225,7 +208,6 @@ struct LeagueFetch {
 			std::string body, err;
 			std::vector<std::pair<std::string, std::string>> got;
 			if (c.valid() && c.GetString(L"/api/trade/data/leagues", body, &err)) {
-				// crude JSON scan: each entry is {"id":"..","realm":"..","text":".."}
 				size_t p = 0;
 				while ((p = body.find("\"id\":\"", p)) != std::string::npos) {
 					p += 6;
@@ -298,15 +280,14 @@ std::string JewelEn(int t)
 	return s.substr(p + 2, s.size() - p - 3);
 }
 
-// A filled five-point star (the "this node matched" mark): a pentagon plus five
-// tips, all convex, so ImDrawList can fill them.
+// Filled five-point star ("node matched" mark): pentagon plus five convex tips.
 void DrawStar(ImDrawList* dl, ImVec2 c, float r, ImU32 col)
 {
 	ImVec2 outer[5], inner[5];
 	const float ri = r * 0.40f;
 	for (int i = 0; i < 5; i++) {
-		const float a = -1.5707963f + i * 1.2566371f;           // 72 degrees
-		const float b = a + 0.6283185f;                          // +36
+		const float a = -1.5707963f + i * 1.2566371f;
+		const float b = a + 0.6283185f;
 		outer[i] = ImVec2(c.x + std::cos(a) * r, c.y + std::sin(a) * r);
 		inner[i] = ImVec2(c.x + std::cos(b) * ri, c.y + std::sin(b) * ri);
 	}
@@ -332,12 +313,8 @@ std::string Ellipsize(const std::string& s, float maxW)
 	return ell;
 }
 
-// kMaxJewelType lives in timeless_jewel_ui.h so both selftests can assert
-// against it. Both of the reasons the Abyss jewels used to be held back are
-// gone: PoB 2.67 carries the Abyssal Lords in ModParser's conquerorList and a
-// unique definition for each jewel, and timeless_jewel_abyss.cpp now reads the
-// ABYS/ABYN containers. Only Zorath stays hidden, for a reason that is about
-// PobTools and not about PoB — see the header.
+// kMaxJewelType lives in timeless_jewel_ui.h so both selftests can assert against it.
+// Only Zorath stays hidden, for a PobTools-side reason — see the header.
 
 // Legion jewels affect a Large radius (1800 world units). The Abyss ones have no
 // radius at all: their file names the conquered passives directly, and the item
@@ -385,7 +362,7 @@ ImVec4 stat_color(const std::string& s)
 	};
 	for (const KW& k : kws)
 		if (s.find(k.a) != std::string::npos || s.find(k.b) != std::string::npos) return k.c;
-	return PobUi::TokV4(PobUi::Tok::Text);   // no keyword: plain text (the hues above are data)
+	return PobUi::TokV4(PobUi::Tok::Text);
 }
 
 bool contains_ci(const std::string& hay, const std::string& needle)
@@ -471,7 +448,7 @@ static bool write_bmp(const std::wstring& path, const unsigned char* rgba, int w
 	DWORD wr = 0;
 	WriteFile(f, hdr, 54, &wr, nullptr);
 	std::vector<unsigned char> row(stride, 0);
-	for (int y = 0; y < h; y++) {           // glReadPixels rows are already bottom-up
+	for (int y = 0; y < h; y++) {
 		const unsigned char* src = rgba + (size_t)y * w * 4;
 		for (int x = 0; x < w; x++) {
 			row[x * 3 + 0] = src[x * 4 + 2];
@@ -495,7 +472,6 @@ int RunPassiveTreeRender(const std::wstring& exeDir, float zoom, float cx, float
 	std::string err;
 	if (!ptData.Load(exeDir, &err)) { printf("load: %s\n", err.c_str()); return 1; }
 
-	// diagnostic: parsed extents must match the JSON (bounds + node min/max)
 	{
 		float nx0 = 1e9f, ny0 = 1e9f, nx1 = -1e9f, ny1 = -1e9f;
 		for (const PtNode& n : ptData.nodes) {
@@ -535,14 +511,13 @@ int RunPassiveTreeRender(const std::wstring& exeDir, float zoom, float cx, float
 
 	std::vector<unsigned char> ptHi(ptData.nodes.size(), kPtHiNone);
 	std::vector<char> ptSel(ptData.nodes.size(), 0);
-	// exercise both paths: some nodes matched (gold ring), some selected (lit)
 	PassiveTreeInput tin;
 	if (!ptData.sockets.empty()) {
 		tin.selectedSocket = ptData.sockets[ptData.sockets.size() / 2];
 		std::vector<int> inr = ptData.NodesInRadius(tin.selectedSocket, 1800.0f);
 		for (size_t k = 0; k < inr.size(); k++) {
-			if (k % 3 == 0) ptHi[inr[k]] = kPtHiAffected;  // matched -> gold ring
-			if (k % 4 == 0) ptSel[inr[k]] = 1;             // selected -> lit + green
+			if (k % 3 == 0) ptHi[inr[k]] = kPtHiAffected;
+			if (k % 4 == 0) ptSel[inr[k]] = 1;
 		}
 		if (!inr.empty()) tin.emphasize = inr[inr.size() / 2];
 	}
@@ -585,21 +560,13 @@ int RunPassiveTreeRender(const std::wstring& exeDir, float zoom, float cx, float
 	return 0;
 }
 
-// ---- timeless jewel calculator, as a panel ----------------------------------
+// timeless jewel calculator, as a panel
 //
 // The window / GL context / font atlas / main loop belong to whichever host is
-// drawing this: RunToolWindow for a window of its own, the launcher's tab body
-// when embedded. See tool_panel.h.
-//
-// Same mechanical move as the other tools -- every local of ShowTimelessJewel is
-// a member and every captured closure a member function -- so the UI body below
-// moved across unchanged.
+// drawing this (RunToolWindow or the launcher's tab body). See tool_panel.h.
 
 namespace {
 
-// Was declared inside ShowTimelessJewel; a member cannot have a type local to
-// another function.
-//
 // stat-centric list (Vilsol style): a rolled stat -> the nodes that gained it
 struct StatGroup { std::string name; std::vector<int> notables, smalls; double maxVal = 0; };
 
@@ -833,8 +800,7 @@ public:
 		}
 	}
 
-	// ---- header ------------------------------------------------------------
-	// One row (ToolHeader): icon + name | paste | jewel | conqueror | mode ...
+	// header: one row (ToolHeader): icon + name | paste | jewel | conqueror | mode ...
 	// ... tree version + Chinese coverage (or the tree update) | more menu.
 	void drawHeader(const PassiveTreeUpdater::Status& ust, const std::vector<TJConqueror>* conqs, int conqN)
 	{
@@ -1007,8 +973,7 @@ public:
 		PobUi::EndMenuPopup();
 	}
 
-	// ---- trade settings ----------------------------------------------------
-	// A standing row over the results ("交易站：國際服 · <league> · PC"): every
+	// trade settings: a standing row over the results ("交易站：國際服 · <league> · PC"): every
 	// trade button depends on it, so it is in sight rather than in a menu. A
 	// click opens the editor below it; with no league it is a warning.
 	static const char* platformLabel(int p) { return p == 1 ? "Xbox" : p == 2 ? "PlayStation" : "PC"; }
@@ -1245,7 +1210,7 @@ public:
 		errWarn_ = warn;
 	}
 
-	// ---- side panels -------------------------------------------------------
+	// side panels
 	void beginSidePanel(const char* id, float width)
 	{
 		ImGui::PushStyleColor(ImGuiCol_ChildBg, PobUi::TokV4(Tok::Surface1));
@@ -1374,7 +1339,7 @@ public:
 		if (!note.empty()) PobUi::Hint(note.c_str(), w, Tok::Warning);
 	}
 
-	// ---- left: find seeds --------------------------------------------------
+	// left: find seeds
 	void drawSearchForm()
 	{
 		const bool busy = job.running.load();
@@ -1570,7 +1535,7 @@ public:
 			job.start(ds.get(), blob, q);
 	}
 
-	// ---- left: look up a known seed ----------------------------------------
+	// left: look up a known seed
 	void drawSeedForm()
 	{
 		drawAbyssBanner();
@@ -1690,7 +1655,7 @@ public:
 		return tradeStatId_.empty() ? u8"這個征服者沒有交易站詞綴" : u8"先在結果欄上方的「交易站」設定聯盟";
 	}
 
-	// ---- middle: the tree --------------------------------------------------
+	// middle: the tree
 	void drawTree()
 	{
 		if (!ptTexOk) {
@@ -1981,11 +1946,7 @@ public:
 		if (selSocket < 0 || !(treeRadius || abyssDetail)) return;
 		const bool haveBin = detailSeed >= 0 && ensureBin(jewelType);
 
-		// Where the two engines part company. A Legion jewel is given a socket and
-		// works out which passives are in reach; an Abyss one is TOLD which
-		// passives it took, and they are scattered across the tree rather than
-		// sitting inside a circle. So one side computes its candidates and the
-		// other reads them.
+		// Legion computes its candidates from the socket; Abyss is TOLD which passives it took (scattered over the tree).
 		std::vector<int> cand;
 		std::map<int, TJAbyssMod> abyssMods; // node index -> modification
 		const bool zorathDetail = TJIsZorath(jewelType);
@@ -2000,11 +1961,8 @@ public:
 				}
 			}
 		} else {
-			// Zorath and the Legion jewels both start from the socket's
-			// neighbourhood -- but they mean different things by it. For a Legion
-			// jewel that IS the affected set; for Zorath it is where we are
-			// looking, because the real set follows a path through the character's
-			// own allocation.
+			// Legion: the socket's neighbourhood IS the affected set; Zorath: only where we look
+			// (the real set follows the character's own allocation).
 			cand = ptData.NodesInRadius(selSocket, 1800.0f);
 			if (zorathDetail && haveBin) {
 				std::vector<int> ids;
@@ -2087,8 +2045,7 @@ public:
 		}
 	}
 
-	// ---- tables (design system: muted header on surface-1, rows split by
-	// border-subtle, selected row accent-soft) --------------------------------
+	// tables
 	void pushTableStyle()
 	{
 		ImGui::PushStyleColor(ImGuiCol_TableHeaderBg, PobUi::TokV4(Tok::Surface1));
@@ -2100,7 +2057,6 @@ public:
 	}
 	void popTableStyle() { ImGui::PopStyleColor(6); }
 
-	// Header labels in the small face, muted; numeric columns right-aligned.
 	void headerRow(int cols, const bool* rightAlign)
 	{
 		ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
@@ -2130,9 +2086,8 @@ public:
 		ImGui::TextColored(PobUi::TokV4(col), "%s", s);
 	}
 
-	// ---- the right-most column's bottom: the POB cross-check reminder ----------
-	// Only after the user actually opened a trade search, so it does not add
-	// noise to the normal search flow. Returns the height to keep free for it.
+	// POB cross-check reminder at the right-most column's bottom; shown only after a trade search was opened.
+	// Returns the height to keep free for it.
 	float pobTipReserve() const
 	{
 		return (tradeHintShown && !tradeHintClosed_) ? infoBannerH_ + PobUi::D(8.0f) : 0.0f;
@@ -2151,7 +2106,7 @@ public:
 		infoBannerH_ = ImGui::GetItemRectSize().y;
 	}
 
-	// ---- right: the trade row, then the results at full height ----------------
+	// right: the trade row, then the results at full height
 	void drawResultsColumn()
 	{
 		const float bottom = ImGui::GetWindowPos().y + ImGui::GetWindowHeight() - ImGui::GetStyle().WindowPadding.y;
@@ -2231,18 +2186,14 @@ public:
 		}
 	}
 
-	// ---- result list: one block per seed, its matched stats right under it ----
-	//
-	// Nobody remembers seeds: each block says what the seed DOES for the stats
-	// the user picked (only those). Same stat on several nodes is merged: an
-	// identical line shows "x N"; a single-number line with different rolls shows
-	// the sum (what the game adds up) and how many nodes made it. A line with
-	// several numbers is not summed -- there is no honest single total.
+	// result list: one block per seed, showing what it does for the picked stats only.
+	// Same stat on several nodes is merged: identical line "x N"; single-number line with different
+	// rolls shows the sum + node count; a multi-number line is never summed (no honest total).
 
 	struct SeedLine {
 		std::string pre, num, post;   // num = the summed value (empty = none)
 		std::string note;             // muted tail: "x6" / "3 個節點合計"
-		std::string colorKey;         // for stat_color
+		std::string colorKey;
 		bool big = false;             // a notable / keystone contributed
 	};
 	struct SeedSummary { std::vector<SeedLine> lines; };
@@ -2291,7 +2242,6 @@ public:
 		return inRad;
 	}
 
-	// Everything a cached summary depends on. Cheap enough to build per frame.
 	std::string summarySig() const
 	{
 		std::string s = std::to_string(jewelType) + "|" + conquerorId_ + "|" + std::to_string(selSocket) + "|" +
@@ -2368,7 +2318,6 @@ public:
 				L.pre = a.zh.front();
 				if (n > 1) L.note = u8"×" + std::to_string(n);
 			} else if (a.single) {
-				// the one number in the zh line is the rolled value: swap in the sum
 				const std::string& z = a.zh.front();
 				size_t p = 0;
 				while (p < z.size() && !isdigit((unsigned char)z[p])) p++;
@@ -2430,17 +2379,14 @@ public:
 		ImFont* small = wf.small ? wf.small : ImGui::GetFont();
 		ImFont* body = wf.body ? wf.body : ImGui::GetFont();
 
-		// the whole block selects the seed
 		ImGui::SetNextItemAllowOverlap();
 		ImGui::PushStyleColor(ImGuiCol_Header, PobUi::TokV4(Tok::AccentSoft));
 		ImGui::PushStyleColor(ImGuiCol_HeaderHovered, PobUi::TokV4(Tok::Surface2));
 		ImGui::PushStyleColor(ImGuiCol_HeaderActive, PobUi::TokV4(Tok::AccentSoft));
-		// clicking the chosen seed again folds its column away
 		if (ImGui::Selectable("##blk", sel, 0, ImVec2(w, total - PobUi::D(2.0f)))) detailSeed = sel ? -1 : h.seed;
 		ImGui::PopStyleColor(3);
 		if (sel) dl->AddRectFilled(p, ImVec2(p.x + std::floor(PobUi::D(3.0f)), p.y + total - PobUi::D(2.0f)), Tok::Accent);
 
-		// head: 種子 N, weight and coverage (numeric), actions on the right
 		const float padX = std::floor(PobUi::D(10.0f));
 		char head[48];
 		snprintf(head, sizeof(head), u8"種子 %d", h.seed);
@@ -2464,7 +2410,6 @@ public:
 		const float actW = baseW + (showView ? viewW : 0.0f);
 		const float actLeft = p.x + w - actW - gapA;
 
-		// 種子 N, then weight and coverage (numeric face), clipped short of the actions
 		const float sy = p.y + std::floor((headH - small->FontSize) * 0.5f);
 		dl->PushClipRect(ImVec2(p.x, p.y), ImVec2(actLeft - PobUi::D(6.0f), p.y + headH), true);
 		float x = titleEnd + PobUi::D(10.0f);
@@ -2506,7 +2451,7 @@ public:
 				tx += f->CalcTextSizeA(f->FontSize, FLT_MAX, 0.0f, s.c_str()).x;
 			};
 			put(body, L.pre, col);
-			put(body, L.num, Tok::TreeHit);   // the summed value stands out
+			put(body, L.num, Tok::TreeHit);
 			put(body, L.post, col);
 			if (!L.note.empty()) {
 				tx += PobUi::D(8.0f);
@@ -2520,8 +2465,7 @@ public:
 		ImGui::PopID();
 	}
 
-	// A virtualised run of seed blocks inside the current scrolling child: only
-	// blocks that intersect the visible area are built (summaries are cached).
+	// Virtualised run of seed blocks: only blocks intersecting the visible area are built.
 	void drawSeedList(const std::vector<const TJSeedHit*>& list)
 	{
 		const ImVec2 clipMin = ImGui::GetWindowDrawList()->GetClipRectMin();
@@ -2532,8 +2476,6 @@ public:
 		};
 		const float gap = ImGui::GetStyle().ItemSpacing.y;
 		for (const TJSeedHit* h : list) {
-			// a block's height is known before its summary is: one line per wanted
-			// stat it satisfies (the summary replaces the estimate once built)
 			auto it = sumCache_.find(h->seed);
 			const int lines = it != sumCache_.end() ? (int)it->second.lines.size() : h->distinctWants;
 			const float bh = blockH(lines) + gap;
@@ -2914,8 +2856,7 @@ public:
 		}
 	}
 
-	// ---- POBTOOLS_TJ_STATE (test aid, with POBTOOLS_TOOL_SHOT) ---------------
-	// Opens the window in a known state for a hidden-window screenshot: Lethal
+	// POBTOOLS_TJ_STATE (test aid, with POBTOOLS_TOOL_SHOT): opens the window in a known state for a hidden-window screenshot: Lethal
 	// Pride, the socket with the most notables in reach, three wanted stats.
 	//   search  = the form filled in        results = after a search (no seed picked)
 	//   resultsseed = after a search, first seed picked (its column open)
@@ -2968,9 +2909,9 @@ public:
 		if (testState_ == "results" || testState_ == "resultsflat" || testState_ == "resultsseed" ||
 		    testState_ == "tradepanel" || testState_ == "noleague" || testState_ == "tradedump") {
 			mode = 0;
-			groupResults = testState_ != "resultsflat";   // resultsflat = the ungrouped list
-			autoPick_ = testState_ == "resultsseed";      // the seed column open
-			tradeHintShown = testState_ == "resultsseed"; // as if a trade search had been opened
+			groupResults = testState_ != "resultsflat";
+			autoPick_ = testState_ == "resultsseed";
+			tradeHintShown = testState_ == "resultsseed";
 			if (testState_ == "tradepanel") openTrade_ = true;
 			if (testState_ == "noleague") tradeLeague.clear();
 			runSearch();
@@ -2982,8 +2923,6 @@ public:
 			openMore_ = true;
 		} else if (testState_ == "paste" || testState_ == "pastenosock") {
 			mode = 0;   // the paste must be what switches to the seed page
-			// POBTOOLS_TJ_PASTE_FILE = a real copied item text (UTF-8) to paste
-			// instead of our own round-trip text
 			std::string txt = TJItemText(*ds, jewelType, conquerorSel, mid);
 			wchar_t path[MAX_PATH] = L"";
 			const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_TJ_PASTE_FILE", path, MAX_PATH);
@@ -3055,8 +2994,6 @@ public:
 
 	ToolCloseState RequestClose() override
 	{
-		// Nothing here is unsaved: the calculator writes only its own small ui state,
-		// and it does that as the user changes it.
 		if (close_ != ToolCloseState::Asking) close_ = ToolCloseState::Closed;
 		return close_;
 	}
@@ -3083,11 +3020,8 @@ public:
 	const char* InitError() const override { return initErr_.c_str(); }
 
 private:
-	// The search criterion, rebuilt from the current rows wherever the UI needs to
-	// know "does this line count as a hit". Everything that shows or highlights a
-	// match goes through TJWantMatcher so the display can never disagree with the
-	// ranking -- it used to compare templates only and ignore 最小值, so a roll the
-	// search had rejected still appeared as a hit.
+	// The search criterion. Everything that shows or highlights a match goes through
+	// TJWantMatcher so the display can never disagree with the ranking (最小值 included).
 	TJWantMatcher makeMatcher() const
 	{
 		std::vector<TJWantStat> v;
@@ -3296,7 +3230,7 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 }
 
 
-// ---- cross-region stat id check (--tj-realm-check) --------------------------
+// cross-region stat id check (--tj-realm-check)
 
 // Every conqueror the calculator can OFFER must exist on every region, or its
 // trade button would produce a search the site cannot run. This is how the one
@@ -3366,7 +3300,7 @@ int RunTradeRealmCheck(const std::wstring& exeDir)
 			     std::to_string(kMaxJewelType) + ":" + hiddenList);
 	}
 
-	line(failures == 0 ? "\nALL PASS" : "\nFAILURES: " + std::to_string(failures));
+	line(failures == 0 ? "\nRESULT PASS" : "\nRESULT FAIL");
 	HANDLE h = CreateFileW((exeDir + L"tj_realm_check.txt").c_str(), GENERIC_WRITE, 0,
 	                       nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (h != INVALID_HANDLE_VALUE) {

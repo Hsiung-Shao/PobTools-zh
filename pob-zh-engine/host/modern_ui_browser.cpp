@@ -5,8 +5,9 @@
 #include "error_log.h"
 #include "headless_proc.h"
 #include "launcher_config.h"
+#include "modern_ui_shared.h"
 #include "pob_launch.h"
-#include "pob_protocol.h" // host.import_link: a link for an already running session
+#include "pob_protocol.h"
 #include "clipboard_util.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -14,6 +15,7 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <shellapi.h>
+#include "win_util.h"
 
 #include <json.hpp>
 
@@ -41,24 +43,6 @@ namespace {
 constexpr int kGoneSeconds = 20;
 constexpr int kFirstConnectSeconds = 180;
 
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
-
-std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return {};
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), n);
-	return w;
-}
-
 // "Windows", or what Wine is pretending for and what it is really running on.
 // ntdll exports both under Wine/CrossOver and neither on real Windows, so this
 // is also how we tell a Mac bottle (Darwin) from a Linux one.
@@ -83,12 +67,6 @@ std::string HostDescription()
 	return out;
 }
 
-bool file_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
-}
-
 bool read_file(const std::wstring& path, std::string& out)
 {
 	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -104,7 +82,6 @@ bool read_file(const std::wstring& path, std::string& out)
 std::string random_token()
 {
 	static const char hex[] = "0123456789abcdef";
-	// std::random_device is the OS generator on MSVC (and on Wine's CRT)
 	std::random_device rd;
 	std::string t;
 	for (int i = 0; i < 32; i++) t += hex[rd() & 15];
@@ -185,7 +162,7 @@ struct Server {
 	size_t base = 0;
 	int streams = 0;
 	bool everConnected = false;
-	bool loggedAgent = false;   // the connecting browser is written down once
+	bool loggedAgent = false;
 	std::chrono::steady_clock::time_point lastStreamSeen = std::chrono::steady_clock::now();
 	std::atomic<bool> quit{ false };
 	// The child told us it handed POB to Update.exe (PobLaunch::IsUpdaterHandoffLine);
@@ -211,32 +188,7 @@ struct Server {
 
 	void event(const char* name, const json& data) { push(json{ {"event", name}, {"data", data} }.dump()); }
 
-	json prefs() const
-	{
-		json fonts = json::array();
-		for (const std::wstring& f : ListAvailableFonts(exeDir)) fonts.push_back(narrow(f));
-		// The launcher's own choice, re-read: "follow the launcher" must show what
-		// the launcher uses NOW, not what it used when this window opened.
-		const LauncherConfig fromIni = LoadLauncherConfig(exeDir + L"pob-zh.ini");
-		const std::wstring launcherFont = fromIni.fontFile;
-		// Background: this window's game only. "launcherLook" is the launcher's
-		// Appearance set, re-read for the same reason as the font.
-		const int g = GameIndex(game);
-		// The launcher's set never carries a video (it cannot play one) nor a scope.
-		auto lookJson = [](const AppearanceConfig& a, bool follow, int scope, bool video) {
-			return json{ {"follow", follow}, {"background", narrow(NormalizeBackgroundFile(a.background, video))},
-			             {"bgBright", ClampPercent(a.bgBright, kBgBrightDefault)}, {"panelOpacity", ClampWindowOpacity(a.windowOpacity)},
-			             {"glassBlur", ClampPercent(a.glassBlur, 0)}, {"treeBg", ClampPercent(a.treeBg, 100)},
-			             {"bgScope", scope == 1 ? 1 : 0} };
-		};
-		json backgrounds = json::array();
-		for (const std::wstring& f : ListAvailableBackgrounds(exeDir, true)) backgrounds.push_back(narrow(f));
-		return json{ {"zoom", ClampModernZoom(cfg.modernZoom)}, {"fontSize", ClampModernFontSize(cfg.modernFontSize)},
-		             {"theme", narrow(NormalizeModernTheme(cfg.modernTheme))}, {"accent", narrow(NormalizeModernAccent(cfg.modernAccent))},
-		             {"font", narrow(NormalizeModernFont(cfg.modernFont))}, {"launcherFont", narrow(launcherFont)}, {"fonts", fonts},
-		             {"look", lookJson(cfg.modernLook[g].look, cfg.modernLook[g].follow, cfg.modernLook[g].bgScope, true)},
-		             {"launcherLook", lookJson(fromIni.look[g], true, 0, false)}, {"backgrounds", backgrounds} };
-	}
+	json prefs() const { return ModernUiPrefs(exeDir, game, cfg); }
 
 	json info() const
 	{
@@ -255,21 +207,8 @@ struct Server {
 	// The same compatibility gate the WebView2 window applies (OnGateLine there).
 	bool on_gate_line(const std::string& line)
 	{
-		if (line.find("\"gate_result\"") == std::string::npos) return false;
-		json msg;
-		try { msg = json::parse(line); } catch (...) { return false; }
-		if (!msg.is_object() || msg.value("event", "") != "gate_result") return false;
-		const json& d = msg.contains("data") ? msg["data"] : json::object();
 		BridgeGate::Verdict v;
-		v.ok = d.value("ok", false);
-		if (d.contains("failed") && d["failed"].is_array())
-			for (auto& f : d["failed"]) if (f.is_string()) v.failed.push_back(f.get<std::string>());
-		v.pobVersion = d.value("pobVersion", "");
-		v.pobBranch = d.value("pobBranch", "");
-		v.pobDir = pobDir;
-		v.bridgeHash = BridgeGate::BridgeFingerprint(exeDir);
-		BridgeGate::Write(exeDir, v);
-		if (v.ok || gateFellBack) return false;
+		if (!ModernUiRecordGate(exeDir, pobDir, line, v) || v.ok || gateFellBack) return false;
 		gateFellBack = true;
 		PobLog::Error("modernui", "browser mode: bridge gate failed for POB " + v.pobVersion + " -- opening the classic window instead");
 		event("host.gate_fallback", json{ {"failed", v.failed}, {"pobVersion", v.pobVersion} });
@@ -320,15 +259,7 @@ struct Server {
 		return true;
 	}
 
-	void stop_child()
-	{
-		if (child) {
-			child->SetLineSink(nullptr);
-			child->SetExitSink(nullptr);
-			child->Stop(3000);
-			child.reset();
-		}
-	}
+	void stop_child() { StopHeadlessChild(child); }
 
 	void host_request(const json& req)
 	{
@@ -343,15 +274,13 @@ struct Server {
 			reply(info());
 		} else if (method == "host.close") {
 			reply(json{ {"ok", true} });
-			push(json{ {"event", "host.closed"} }.dump()); // every open page, not only the asker
+			push(json{ {"event", "host.closed"} }.dump());
 			quit = true;
 			cv.notify_all();
 		} else if (method == "host.import_link") {
-			// A second pob-zh.exe got an "Open in PoB" link for this game while
-			// this session runs (ShowModernUiInBrowser, below): every page is told,
-			// and asks about an unsaved build before importing. `nonce` lets a page
-			// opened later (which is replayed the whole queue) skip links that were
-			// already handled.
+			// A second pob-zh.exe got an "Open in PoB" link for this game (ShowModernUiInBrowser): every
+			// page is told and asks about an unsaved build. `nonce` lets a later page (replayed the whole
+			// queue) skip links already handled.
 			std::wstring uri;
 			const std::string raw = params.value("uri", "");
 			if (raw.size() > 1024 || !PobProtocol::ParsePobUri(widen(raw), nullptr, &uri)) {
@@ -363,22 +292,13 @@ struct Server {
 			event("host.import_link", json{ {"uri", narrow(uri)}, {"nonce", nonce} });
 			reply(json{ {"ok", true} });
 		} else if (method == "host.set_title") {
-			reply(json{ {"ok", true} }); // the page sets document.title itself
+			reply(json{ {"ok", true} });
 		} else if (method == "host.read_clipboard") {
 			// Same as the window: the system browser may not allow
 			// navigator.clipboard on an http:// loopback page.
 			reply(json{ {"text", ReadClipboardUtf8(nullptr)} });
-		} else if (method == "host.open_folder" && params.value("which", "") == "backgrounds") {
-			// The one folder outside the POB install the page may open: where the
-			// launcher and the page both look for background images.
-			ShellExecuteW(nullptr, L"explore", BackgroundsDir(exeDir).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-			reply(json{ {"ok", true} });
 		} else if (method == "host.open_folder") {
-			std::wstring p = widen(params.value("path", ""));
-			for (auto& c : p) if (c == L'/') c = L'\\';
-			bool under = !pobDir.empty() && _wcsnicmp(p.c_str(), pobDir.c_str(), pobDir.size()) == 0;
-			if (!under) { fail("denied", "path is outside the POB install"); return; }
-			ShellExecuteW(nullptr, L"explore", p.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+			if (!ModernUiOpenFolder(exeDir, pobDir, params)) { fail("denied", "path is outside the POB install"); return; }
 			reply(json{ {"ok", true} });
 		} else if (method == "host.restart_engine") {
 			stop_child();
@@ -386,46 +306,7 @@ struct Server {
 		} else if (method == "host.get_prefs") {
 			reply(prefs());
 		} else if (method == "host.set_prefs") {
-			LauncherConfig fresh = LoadLauncherConfig(exeDir + L"pob-zh.ini");
-			if (params.contains("zoom")) fresh.modernZoom = ClampModernZoom(params.value("zoom", kModernZoomDefault));
-			if (params.contains("fontSize")) fresh.modernFontSize = ClampModernFontSize(params.value("fontSize", kModernFontSizeDefault));
-			cfg.modernZoom = fresh.modernZoom;
-			cfg.modernFontSize = fresh.modernFontSize;
-			if (params.contains("theme") && params["theme"].is_string()) fresh.modernTheme = NormalizeModernTheme(widen(params["theme"].get<std::string>()));
-			if (params.contains("accent") && params["accent"].is_string()) fresh.modernAccent = NormalizeModernAccent(widen(params["accent"].get<std::string>()));
-			if (params.contains("font") && params["font"].is_string()) {
-				// Only a file that is actually under Fonts\ -- anything else means "follow the launcher".
-				std::wstring f = NormalizeModernFont(widen(params["font"].get<std::string>()));
-				bool listed = false;
-				for (const std::wstring& a : ListAvailableFonts(exeDir)) if (_wcsicmp(a.c_str(), f.c_str()) == 0) listed = true;
-				fresh.modernFont = listed ? f : L"";
-			}
-			cfg.modernTheme = fresh.modernTheme;
-			cfg.modernAccent = fresh.modernAccent;
-			cfg.modernFont = fresh.modernFont;
-			if (params.contains("look") && params["look"].is_object()) {
-				// {follow:true} = back to the launcher's set; anything else is the
-				// page's own set (the page sends all five values with it).
-				const json& l = params["look"];
-				ModernLookConfig& m = fresh.modernLook[GameIndex(game)];
-				m.follow = l.value("follow", false);
-				if (!m.follow) {
-					if (l.contains("background") && l["background"].is_string()) {
-						std::wstring f = NormalizeBackgroundFile(widen(l["background"].get<std::string>()), true);
-						bool listed = f.empty();
-						for (const std::wstring& a : ListAvailableBackgrounds(exeDir, true)) if (_wcsicmp(a.c_str(), f.c_str()) == 0) listed = true;
-						m.look.background = listed ? f : L"";
-					}
-					auto num = [&](const char* k, int def) { return l.contains(k) && l[k].is_number() ? l[k].get<int>() : def; };
-					m.look.bgBright = ClampPercent(num("bgBright", m.look.bgBright), kBgBrightDefault);
-					m.look.windowOpacity = ClampWindowOpacity(num("panelOpacity", m.look.windowOpacity));
-					m.look.glassBlur = ClampPercent(num("glassBlur", m.look.glassBlur), 0);
-					m.look.treeBg = ClampPercent(num("treeBg", m.look.treeBg), 100);
-					m.bgScope = num("bgScope", m.bgScope) == 1 ? 1 : 0;
-				}
-				cfg.modernLook[GameIndex(game)] = m;
-			}
-			SaveLauncherConfig(exeDir + L"pob-zh.ini", fresh);
+			ModernUiSetPrefs(exeDir, game, params, cfg);
 			reply(prefs());
 		} else {
 			fail("unknown_host_method", method);
@@ -448,9 +329,7 @@ struct Server {
 		}
 	}
 
-	// window.pobtools for a page served over HTTP: lines go out as POSTs, come
-	// back on one EventSource. The info block is baked in, as the WebView2
-	// window does with its document-created script.
+	// window.pobtools for a page served over HTTP: lines go out as POSTs, come back on one EventSource.
 	std::string boot_script() const
 	{
 		const std::string b = prefix();
@@ -482,7 +361,12 @@ struct Server {
 			size_t n = strlen(r.name);
 			if (sub.compare(0, n, r.name) == 0) { root = r.dir; sub = sub.substr(n); isApp = false; break; }
 		}
-		if (isApp && (sub.empty() || sub.back() == '/')) sub += "index.html";
+		// the session's address is the folder. Re-read the theme per request: Launch reuses a live session, and the
+		// user may have picked the other theme since it started. Classic (0) names no page: keep the launch theme
+		if (isApp && (sub.empty() || sub.back() == '/')) {
+			int mode = LoadLauncherConfig(exeDir + L"pob-zh.ini").uiMode;
+			sub += narrow(ModernUiPage(mode ? mode : cfg.uiMode));
+		}
 		// no climbing, no drive letters, no backslashes smuggled in
 		if (sub.find("..") != std::string::npos || sub.find(':') != std::string::npos || sub.find('\\') != std::string::npos) return false;
 		std::wstring w = widen(sub);
@@ -491,10 +375,8 @@ struct Server {
 		return true;
 	}
 
-	// A video background, streamed in pieces with Range support: Safari will not
-	// play an mp4 at all without 206 answers, and reading a whole clip into memory
-	// on every loop is not what an idle background should cost. `lowerHead` is the
-	// request's header block, lower-cased.
+	// A video background, streamed with Range support (Safari will not play an mp4 without 206
+	// answers). `lowerHead` is the request's header block, lower-cased.
 	void serve_media(SOCKET s, const std::wstring& path, const std::string& lowerHead)
 	{
 		HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
@@ -648,9 +530,7 @@ struct Server {
 			for (auto& c : lower) c = (char)tolower((unsigned char)c);
 			size_t at = lower.find("\r\nlast-event-id:");
 			if (at != std::string::npos) resume = (size_t)strtoull(lower.c_str() + at + 16, nullptr, 10);
-			// Which browser actually arrived. On a Mac this is the answer we
-			// cannot get any other way: whether the desktop opened Safari, some
-			// other browser, or nothing at all. Logged once per session.
+			// Which browser actually arrived (the only way to know on a Mac). Logged once per session.
 			{
 				std::lock_guard<std::mutex> lk(mu);
 				if (!loggedAgent) {
@@ -808,7 +688,7 @@ bool ModernUiBrowserStop(const std::wstring& exeDir, const std::wstring& game)
 
 bool ModernUiBrowserAvailable(const std::wstring& exeDir)
 {
-	return file_exists(exeDir + L"ui\\index.html");
+	return file_exists(exeDir + L"ui\\index.html") && file_exists(exeDir + L"ui\\theme2.html");
 }
 
 int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
@@ -833,7 +713,7 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 		S.launchLua = pobDirOverride + L"\\Launch.lua";
 	}
 	if (!ModernUiBrowserAvailable(exeDir)) {
-		PobLog::Error("modernui", "browser mode: ui\\index.html is missing");
+		PobLog::Error("modernui", "browser mode: ui\\index.html or ui\\theme2.html is missing");
 		return 1;
 	}
 	if (S.pobDir.empty() || !file_exists(S.launchLua)) {
@@ -885,20 +765,14 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 	// happens next.
 	printf("%s\n", url.c_str());
 	fflush(stdout);
-	// What this machine is, written down before anything can go wrong with it.
-	// Browser mode is the only new-interface path on Wine and on CrossOver, and
-	// CrossOver we cannot run here at all (no Apple hardware, and a licence we
-	// do not have) -- so the machine that CAN run it has to be able to tell us
-	// what happened, in one file, without a round trip.
+	// What this machine is, written down first. Browser mode is the only new-interface path on Wine
+	// and CrossOver, which we cannot run here, so the machine that can must report in one file.
 	PobLog::Diag("modernui", "browser mode started for " + narrow(game) + ": host=" + HostDescription() +
 	                             ", address=" + url + ", open a browser=" + (openBrowser ? "yes" : "no (POB_ZH_NO_BROWSER)"));
 	if (openBrowser) {
-		// Wine hands an http URL to winebrowser, which opens the host system's
-		// browser (xdg-open on Linux, open on macOS). Under CrossOver that can
-		// fail; say where the page is instead of leaving the user with nothing
-		// to click. Measured under Wine: with no xdg-open on PATH at all this
-		// still reports success, so the failure code is not something to rely
-		// on -- the "never connected" branch below is what really catches it.
+		// Wine hands an http URL to winebrowser (xdg-open / open). Under CrossOver that can fail; say
+		// where the page is. Measured: with no xdg-open on PATH this still reports success, so the
+		// "never connected" branch below is what really catches it.
 		HINSTANCE rc = ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 		PobLog::Diag("modernui", "asked the desktop to open the address; ShellExecute said " +
 		                             std::to_string((INT_PTR)rc) +
@@ -928,7 +802,7 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 	}
 	if (S.quit) why = "it was ended (the page's End button, or the launcher)";
 	{
-		std::lock_guard<std::mutex> lk(S.mu);   // the acceptor threads still run
+		std::lock_guard<std::mutex> lk(S.mu);
 		PobLog::Diag("modernui", std::string("browser mode ended: ") + why + ", after " +
 		                             std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
 		                                                std::chrono::steady_clock::now() - started).count()) +

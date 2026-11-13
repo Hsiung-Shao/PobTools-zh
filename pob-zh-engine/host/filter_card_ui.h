@@ -53,7 +53,7 @@ int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& te
 // what was meant, nor a usable name. "" = add nothing.
 std::string CardEnterPick(const std::vector<LibItem>& live, const std::string& typed);
 
-// ---- editors shared with the batch dialog ----------------------------------
+// editors shared with the batch dialog
 // Colour picker body: SV square + hue, RGBA field, recently used colours.
 // rgba is edited in place; true when it changed.
 bool CardColorEditor(EditorShell& s, const char* id, int rgba[4]);

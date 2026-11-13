@@ -4,33 +4,25 @@
 #include <string>
 #include <vector>
 
-// What the launcher does once POB starts. One enum rather than two booleans:
-// "return afterwards" and "stay open" are mutually exclusive, and two bools have
-// an illegal both-set state that a hand-edited ini can produce and that every
-// read/toggle/write site would have to defend against separately. Clamped once
-// in LoadLauncherConfig, and the UI falls out as a single radio group.
+// What the launcher does once POB starts. An enum, not two bools (no illegal both-set state
+// from a hand-edited ini); clamped once in LoadLauncherConfig.
 enum class LaunchExitMode {
 	CloseLauncher   = 0,  // launcher exits with POB (the historical default)
 	ReturnAfterExit = 1,  // launcher reappears when POB closes
 	KeepOpen        = 2,  // launcher stays up; POB can be started more than once
 };
 
-// Which tab the launcher opens on. Settings is deliberately not offered: landing
-// on a settings page is never what someone wants on startup.
+// Which tab the launcher opens on (Settings deliberately not offered).
 enum class StartupTab { Home = 0, Versions = 1 };
 
 // Whether POB opens as its own desktop window or as a tab inside the launcher.
 //
-// Tabbed keeps POB's window top-level and merely strips its frame and glues it
-// to the launcher's client area -- POB itself runs completely normally and
-// nothing is written to its folder. Separate is the historical behaviour and the
-// default; the tabbed path is new and its every failure mode is a Win32 one, so
-// it has to be chosen deliberately.
+// Tabbed keeps POB's window top-level, strips its frame and glues it to the launcher's client
+// area; nothing is written to POB's folder. Separate is the default (tabbed failure modes are Win32 ones).
 enum class WindowMode { Separate = 0, Tabbed = 1 };
 
-// The three independently redirectable dictionary sets. Separate rather than one
-// shared root: someone translating only PoE1 should not be dragged into keeping an
-// external PoE2 copy in step, and the launcher's own labels are not a game at all.
+// The three independently redirectable dictionary sets (separate roots: translating PoE1 alone
+// must not require an external PoE2 copy).
 enum class DictSlot { Poe1 = 0, Poe2 = 1, Launcher = 2 };
 inline constexpr int kDictSlotCount = 3;
 
@@ -50,31 +42,24 @@ inline constexpr OptionalDict kOptionalDicts[] = {
 };
 inline constexpr int kOptionalDictCount = (int)(sizeof(kOptionalDicts) / sizeof(kOptionalDicts[0]));
 
-// ---- launcher-only zoom and window size ------------------------------------
+// launcher-only zoom and window size
 //
-// "Font size" is the ONE user-facing knob for the launcher's own scale. Every
-// launcher dimension is already written as <logical> * scale, so the body font
-// size is turned into a zoom factor and folded into that scale: text, paddings,
-// card heights and button heights grow together and the layout never has to be
-// taught about it. Applies to the launcher and the standalone tool windows only,
-// never to POB (the engine gets its font through env variables, not this).
+// "Font size" is the ONE user-facing knob for the launcher's scale: the body font size becomes a
+// zoom factor folded into the <logical> * scale every dimension already uses. Applies to the
+// launcher and standalone tool windows only, never to POB.
 inline constexpr int kLauncherFontSizeDefault = 19;   // launcher_ui.cpp kFontSize
 inline constexpr int kLauncherFontSizeMin     = 14;
 inline constexpr int kLauncherFontSizeMax     = 26;
 
-// Out of range (hand-edited, non-numeric -> 0, a future build's value) means the
-// default, never "as small as it goes": 0 is what GetPrivateProfileIntW returns
-// for text, and 0 px would be a launcher with no readable text at all.
-// The new interface's zoom (percent) and base font size (px). Out-of-range
-// values fall back to the default rather than clamping, like the launcher's
-// own font size: a garbage ini key must never leave the page unreadable.
+// Out of range (hand-edited, non-numeric -> 0, a future build's value) means the default, never
+// "as small as it goes": 0 is what GetPrivateProfileIntW returns for text.
+// The new interface's zoom (percent) and base font size (px) follow the same rule.
 inline constexpr int kModernZoomDefault = 100, kModernZoomMin = 70, kModernZoomMax = 200;
 inline constexpr int kModernFontSizeDefault = 13, kModernFontSizeMin = 11, kModernFontSizeMax = 18;
 inline int ClampModernZoom(int v) { return (v < kModernZoomMin || v > kModernZoomMax) ? kModernZoomDefault : v; }
 inline int ClampModernFontSize(int v) { return (v < kModernFontSizeMin || v > kModernFontSizeMax) ? kModernFontSizeDefault : v; }
 
-// The new interface's look (settings page, "Appearance"). Same rule as the
-// numbers above: a value this build does not know reads as the default.
+// The new interface's look (settings page, "Appearance"); unknown values read as the default.
 //   theme  -- one of the page's built-in themes; anything else is "slate"
 //   accent -- "#rrggbb" (lower-cased) or empty = the theme's own accent
 //   font   -- a file name under Fonts\ or empty = follow the launcher's Font=.
@@ -93,11 +78,9 @@ inline float LauncherZoom(int fontSize)
 	return (float)ClampLauncherFontSize(fontSize) / (float)kLauncherFontSizeDefault;
 }
 
-// POB panel opacity in percent (Windows only; see PobLaunch::SetEngineEnv and
-// ApplyPobWindowOpacity). 100 = opaque = feature off, which is also what a
-// garbage ini value means; 0 = the side bar / tool bar panels vanish entirely
-// and only text and controls remain over the passive tree. Safe all the way
-// down: the window itself never becomes see-through.
+// POB panel opacity in percent (Windows only; see PobLaunch::SetEngineEnv and ApplyPobWindowOpacity).
+// 100 = opaque = feature off (also what a garbage ini value means); 0 = only text and controls
+// remain over the passive tree. The window itself never becomes see-through.
 inline constexpr int kWindowOpacityMin     = 0;
 inline constexpr int kWindowOpacityDefault = 100;
 inline int ClampWindowOpacity(int v)
@@ -114,8 +97,7 @@ inline int ClampPercent(int v, int fallback)
 
 // Everything the "Appearance" tab controls, kept per game.
 struct AppearanceConfig {
-	// Opacity of the chrome panels (side bar, top bar, tree toolbar) in
-	// percent; 100 = plain (feature off), 0 = only text and controls remain.
+	// Opacity of the chrome panels (side bar, top bar, tree toolbar) in percent.
 	int            windowOpacity = kWindowOpacityDefault;
 	// Background image: file name under PobTools\Backgrounds\ (empty = POB's
 	// own striped backdrop) and its brightness in percent.
@@ -128,9 +110,8 @@ struct AppearanceConfig {
 	// through the tree area too.
 	int            treeBg = 100;
 };
-// The new interface's own copy of the same five knobs, per game. `follow`
-// (the default) means "use the launcher's set for that game"; the page
-// clears it the moment the user changes anything there.
+// The new interface's own copy of the same five knobs, per game. `follow` (default) = use the
+// launcher's set; the page clears it on the first change.
 struct ModernLookConfig {
 	bool            follow = true;
 	AppearanceConfig look;
@@ -151,11 +132,8 @@ bool IsVideoBackground(const std::wstring& v);
 inline int GameIndex(const std::wstring& game) { return game == L"poe2" ? 1 : 0; }
 inline const wchar_t* GameKeySuffix(int idx) { return idx == 1 ? L"Poe2" : L"Poe1"; }
 
-// Window dimensions are stored in PHYSICAL pixels, exactly as GLFW reports them,
-// because that is what the size fields on the settings page show and what a drag
-// produced. 0 = "use the mode's default"; anything implausible is treated as 0
-// rather than clamped to the nearest edge, so a broken value cannot pin the
-// window to 400x400 or to a 16384-wide strip.
+// Window dimensions are stored in PHYSICAL pixels, as GLFW reports them. 0 = the mode's default;
+// anything implausible is treated as 0 rather than clamped to the nearest edge.
 inline constexpr int kWindowDimMin = 400;
 inline constexpr int kWindowDimMax = 16384;
 inline int ClampWindowDim(int v)
@@ -168,28 +146,22 @@ struct LauncherConfig {
 	std::wstring   locale   = L"zh-rTW";    // "zh-rTW" | "en"
 	LaunchExitMode exitMode = LaunchExitMode::CloseLauncher;
 	StartupTab     startupTab = StartupTab::Home;
-	// Separate by default. In Tabbed mode exitMode is ignored: the launcher IS
-	// the window POB lives in, so "close the launcher when POB starts" has no
-	// meaning.
+	// In Tabbed mode exitMode is ignored: the launcher IS the window POB lives in.
 	WindowMode     windowMode = WindowMode::Separate;
-	// Remembered launcher window size, physical pixels, 0 = the mode's default
-	// (1000x700 / 1500x950 at the current scale). One pair per window mode: the
-	// tabbed container holds POB and wants to be big, the separate launcher does
-	// not, and switching modes should not drag the other mode's size along.
+	// Remembered launcher window size, physical pixels, 0 = the mode's default.
+	// One pair per window mode so switching modes doesn't drag the other's size along.
 	int            winW = 0, winH = 0;          // WindowMode::Separate
 	int            tabWinW = 0, tabWinH = 0;    // WindowMode::Tabbed
-	// The new (WebView2) interface window, --modern-ui. Its own pair for the
-	// same reason as above; 0 = default (1500x950 at the current scale).
+	// The new (WebView2) interface window, --modern-ui; its own pair, 0 = default.
 	int            modernWinW = 0, modernWinH = 0;
-	// The new interface's own scale knobs (its gear popover): WebView2 zoom
-	// in percent and the page's base font size in px. Independent of the
-	// launcher's fontSize, which never applies to POB or this window.
+	// The new interface's own scale knobs: WebView2 zoom (percent) and base font size (px).
 	int            modernZoom = kModernZoomDefault;
 	int            modernFontSize = kModernFontSizeDefault;
 	std::wstring   modernTheme = L"slate";
 	std::wstring   modernAccent;            // "#rrggbb"; empty = the theme's own
 	std::wstring   modernFont;              // Fonts\ file name; empty = the launcher's
-	// 0 = classic POB window, 1 = the new interface: what the launcher's
+	// 0 = classic POB window, 1 = new interface theme 1 (ui\index.html),
+	// 2 = new interface theme 2 (ui\theme2.html): what the launcher's
 	// "Launch" button opens, for either game (settings page, "Default
 	// interface"). A machine without WebView2 and a POB the bridge gate refused
 	// open the classic window regardless (ModernUiUsableFor).
@@ -210,40 +182,25 @@ struct LauncherConfig {
 	AppearanceConfig look[2];
 	// The new interface's background set, per game (settings page "Background").
 	ModernLookConfig modernLook[2];
-	// Per-slot dictionary folder to read instead of <exeDir>Data\<slot>\.
-	// Empty = built-in. Each one points at the folder that directly CONTAINS the
-	// <locale> sub-folders, i.e. exactly what you get by copying Data\poe1
-	// somewhere. Lets a translator keep a working copy OUTSIDE the install and
-	// still see it rendered by the real POB -- and, because updates only ever
-	// write to the install directory, that copy cannot be overwritten.
+	// Per-slot dictionary folder to read instead of <exeDir>Data\<slot>\ (empty = built-in).
+	// Points at the folder that directly CONTAINS the <locale> sub-folders (a copy of Data\poe1);
+	// updates only write to the install directory, so that copy cannot be overwritten.
 	std::wstring   dataDir[kDictSlotCount];
 	// Whether an update may replace the translation dictionaries. Off is for
 	// people editing translations themselves; see IsTranslationDataRel.
 	bool           updateTranslations = true;
-	// Install a new PobTools release by itself at startup, instead of waiting for
-	// the orange button. OFF by default and it has to stay that way: applying an
-	// app update closes the program and reopens it, and a program that does that
-	// uninvited is a program the user cannot predict. See ShouldAutoApplyApp for
-	// the (deliberately narrow) moment it is allowed to act.
+	// Install a new PobTools release by itself at startup. OFF by default and must stay so (applying
+	// closes and reopens the program). See ShouldAutoApplyApp for the narrow moment it may act.
 	bool           autoApplyAppUpdate = false;
-	// Take the beta line: app updates come from the newest release of any kind
-	// instead of releases/latest, so GitHub prereleases are offered too. OFF by
-	// default -- a prerelease is a test build. Turning it back off never
-	// downgrades (PlanUpdates only ever offers a HIGHER version), so a beta
-	// tester keeps what they have until the stable line catches up.
+	// Take the beta line: app updates come from the newest release of any kind (prereleases included).
+	// Turning it off never downgrades (PlanUpdates only offers a HIGHER version).
 	// ⚠ The translation-data line is NOT forked: both channels share data-<n>.
 	bool           betaChannel = false;
-	// HTTP proxy for the launcher's own downloads (update checks, translation
-	// data, atlas data, filter icons), as "host:port". Empty = follow the system
-	// proxy automatically — GitHub is unreachable without one for many
-	// mainland-China users. Applied via HttpSetManualProxy (http_client.h).
+	// HTTP proxy for the launcher's own downloads, "host:port". Empty = follow the system proxy.
+	// Applied via HttpSetManualProxy (http_client.h).
 	std::wstring   proxy;
-	// The hang/crash watchdog (hang_watch.h), passed down to POB as
-	// POB_ZH_HANGWATCH. On by default and deliberately not in the UI: it costs
-	// one thread and one atomic store per frame, and a switch invites people to
-	// turn off the thing that would have explained their freeze. The ini key is
-	// here so a machine where suspending threads is a problem can still opt out
-	// without a new build.
+	// The hang/crash watchdog (hang_watch.h), passed to POB as POB_ZH_HANGWATCH. On by default and
+	// deliberately not in the UI; the ini key lets a machine where suspending threads is a problem opt out.
 	bool           hangWatch = true;
 	// POB window frame-rate caps (host/pob_frame_cap.h), fps, 0 = no cap. Global,
 	// not per game. Passed as POB_ZH_FPS_FG / POB_ZH_FPS_BG and pushed live.
@@ -258,7 +215,10 @@ struct LauncherConfig {
 	bool           pobProtocol = false;
 };
 
-// ---- external dictionary folders -------------------------------------------
+// uiMode -> the page file under ui\ that the new interface opens.
+const wchar_t* ModernUiPage(int uiMode);
+
+// external dictionary folders
 
 enum class DataDirStatus {
 	Builtin,         // nothing configured
@@ -292,7 +252,7 @@ DictDirInfo ResolveDictDir(const std::wstring& exeDir, DictSlot slot, const std:
 // <exeDir>Data\<slot>\ -- the shipped folder for a slot, with trailing backslash.
 std::wstring BuiltinDictDir(const std::wstring& exeDir, DictSlot slot);
 
-// ---- installed interface languages ------------------------------------------
+// installed interface languages
 
 // One language offered in the launcher's language picker.
 struct LocaleInfo {
@@ -301,32 +261,20 @@ struct LocaleInfo {
 	bool         slot[kDictSlotCount] = { false, false, false }; // which sets have it
 };
 
-// Languages actually present on disk, taken from the folders under each slot's
-// resolved root -- so adding Data\poe1\ja-JP\ is all it takes to offer Japanese.
-//
-// Two rules that are not obvious:
-//  - "en" is ALWAYS first and needs no folder. English is not a translation; it
-//    is what the engine shows when it finds no dictionary, so it cannot be
-//    discovered by scanning.
-//  - The result is the UNION across the three sets, not the intersection. A
-//    language present only for PoE1 is still selectable; PoE2 then behaves
-//    exactly as it does for "en" (passes the original text through), which is a
-//    rule the user already understands rather than a second special case.
+// Languages actually present on disk (folders under each slot's resolved root).
+//  - "en" is ALWAYS first and needs no folder (it is the no-dictionary fallback, not discoverable by scanning).
+//  - The result is the UNION across the three sets; a language present only for PoE1 makes
+//    PoE2 pass the original text through, as for "en".
 std::vector<LocaleInfo> ListInstalledLocales(const std::wstring& exeDir, const LauncherConfig& cfg);
 
-// Index into `locales` for `want`, falling back to zh-rTW and then to en (index
-// 0). Never returns out of range: a configured language whose folder was deleted
-// must land somewhere sensible instead of leaving the picker blank.
+// Index into `locales` for `want`, falling back to zh-rTW then en (index 0). Never out of range.
 int PickLocaleIndex(const std::vector<LocaleInfo>& locales, const std::wstring& want);
 
-// Is `path` the same folder as `parentDir` or inside it? Case-insensitive, and
-// "D:\app\Data2" is NOT inside "D:\app\Data". Exposed for the selftest -- the
-// prefix traps here are exactly the kind that pass a casual eyeball.
+// Is `path` the same folder as `parentDir` or inside it? Case-insensitive; "D:\app\Data2" is NOT
+// inside "D:\app\Data". Exposed for the selftest.
 bool PathIsInside(const std::wstring& parentDir, const std::wstring& path);
 
-// Copy one slot's built-in dictionaries into `dest`, producing the exact layout
-// ResolveDictDir expects. This is what makes the feature usable by someone who is
-// not going to be told which folder level to point at.
+// Copy one slot's built-in dictionaries into `dest`, producing the layout ResolveDictDir expects.
 // Returns the number of files copied, or -1 on failure (*err gets a UTF-8 reason).
 int CopyBuiltinDictionary(const std::wstring& exeDir, DictSlot slot,
                           const std::wstring& dest, std::string* err);
@@ -351,11 +299,8 @@ struct InstallInfo {
 
 LauncherConfig LoadLauncherConfig(const std::wstring& iniPath);
 void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg);
-// The launcher's save. It holds the ini it read at startup, but the new
-// interface (another process) owns the Modern* keys and writes them while the
-// launcher is open; saving the launcher's stale copy put them back to what they
-// were when the launcher started ("the new interface forgets it stopped
-// following the launcher", 2026-09-25). This takes those keys from disk first.
+// The launcher's save. The new interface (another process) owns the Modern* keys and writes them
+// while the launcher is open, so this takes those keys from disk first instead of writing back stale copies.
 void SaveLauncherConfigKeepModern(const std::wstring& iniPath, LauncherConfig& cfg);
 // POB_ZH_DICT_SWITCHES for the engine: "file=1;file=0", one item per
 // kOptionalDicts row ("=0" = skip that file). SetEngineEnv always writes it.
@@ -394,11 +339,8 @@ std::wstring ResolveBackgroundPath(const std::wstring& exeDir, const std::wstrin
 // falls back to the Noto default, then FZ_ZY, then any Fonts\*.ttf.
 std::wstring ResolveFontPath(const std::wstring& exeDir, const std::wstring& fontFile);
 
-// Full paths of every other shipped font, i.e. every Fonts\*.ttf except the one
-// `fontFile` resolves to. These are merged into the ImGui atlas as glyph
-// fallbacks: Noto Sans TC carries no simplified-only characters, so a zh-rCN
-// launcher on the default font drew 73 of its glyphs as '?' until FZ_ZY (which
-// has them all, and ships since v0.28.0) filled the gaps.
+// Full paths of every other shipped font (every Fonts\*.ttf except the one `fontFile` resolves to),
+// merged into the ImGui atlas as glyph fallbacks (Noto Sans TC lacks simplified-only characters).
 std::vector<std::wstring> FallbackFontPaths(const std::wstring& exeDir, const std::wstring& fontFile);
 
 // Convenience for the editor/atlas entry points: read the configured font from

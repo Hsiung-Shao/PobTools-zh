@@ -12,7 +12,7 @@
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
-#include <imgui_internal.h>   // RenderTextEllipsis
+#include <imgui_internal.h>
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <algorithm>
@@ -22,16 +22,14 @@
 #include <string>
 #include <vector>
 
-// 規則 — the three-pane block editor (design: FilterEditor.dc.html):
+// 規則 — the three-pane block editor:
 //   left   search + the block list grouped by NeverSink $type (clipper-rendered)
-//   middle the selected block: title row, a game-style label preview, the
-//          condition card and the look & sound card
+//   middle the selected block: title row, label preview, condition card, look & sound card
 //   right  the add-column (search, grouped, ticked when already in the block)
 //
-// Index discipline: model-derived caches (rows/visRows/selection) are rebuilt
-// whenever FilterDocumentEditor::structureVersion changes; the selected block
-// survives rebuilds through BlockAnchor. Translation and summaries run only in
-// RebuildRows — never inside the clipper loop.
+// Index discipline: model-derived caches (rows/visRows/selection) are rebuilt whenever
+// FilterDocumentEditor::structureVersion changes; the selection survives via BlockAnchor.
+// Translation and summaries run only in RebuildRows — never inside the clipper loop.
 
 namespace Tok = PobUi::Tok;
 
@@ -115,8 +113,8 @@ void RebuildRows(EditorShell& s)
 	s.rows.clear();
 	s.rows.resize(f.blocks.size());
 	s.groupNames.clear();
-	s.groupNames.push_back(u8"自訂規則");   // 0
-	s.groupNames.push_back(u8"其他規則");   // 1
+	s.groupNames.push_back(u8"自訂規則");
+	s.groupNames.push_back(u8"其他規則");
 	const CustomZone z = FindCustomZone(f);
 	for (int i = 0; i < (int)f.blocks.size(); i++) {
 		const FilterBlock& b = f.blocks[i];
@@ -160,7 +158,7 @@ void RebuildRows(EditorShell& s)
 	EdRebuildVisRows(s);
 }
 
-// ---- small drawing helpers ------------------------------------------------------
+// small drawing helpers
 
 ImU32 Col(const unsigned char c[4]) { return IM_COL32(c[0], c[1], c[2], c[3]); }
 
@@ -204,7 +202,7 @@ void PillAt(ImDrawList* dl, ImVec2 p, float rowH, const char* t, ImU32 bg, ImU32
 
 } // namespace
 
-// ---- shared helpers (editor_shell.h) ----------------------------------------------
+// shared helpers (editor_shell.h)
 
 std::uint32_t EdEffectColor(const std::string& tok)
 {
@@ -453,7 +451,7 @@ std::string EdRuleLabel(const FilterFile& f, const FilterBlock& b, const FilterI
 	std::string label = StripStyleMarkers(NeverSinkHeaderZh(rest));
 	bool whole = false;
 	const std::string tierZh = NeverSinkTierZhKnown(tierCode, &whole);
-	label += tierZh;   // 「【…】T2」: the tier sits right after the category
+	label += tierZh;
 	if (!whole && !tierCode.empty() && tierCodeOut) *tierCodeOut = tierCode;
 
 	// up to two key conditions, only when the tier did not say it all
@@ -693,7 +691,7 @@ bool DrawBlockList(EditorShell& s, float height)
 	ImGuiListClipper clip;
 	clip.Begin((int)s.visList.size(), rowH);
 	int toggleHide = -1;
-	int ctxOpen = -1;   // right-clicked row: the menu opens outside PushID
+	int ctxOpen = -1;   // the menu opens outside PushID
 	while (clip.Step()) {
 		for (int vi = clip.DisplayStart; vi < clip.DisplayEnd; vi++) {
 			const BlockListEntry& e = s.visList[vi];
@@ -1033,7 +1031,7 @@ void DrawFilterEditSection(EditorShell& s)
 	}
 	ImGui::SetCursorScreenPos(origin + ImVec2(0, H));
 
-	// ---- everything below is submitted at the page's top level: popups never
+	// everything below is submitted at the page's top level: popups never
 	// open from inside a child or a PushID loop (agent-data error_imgui_popup_selftest).
 	if (!mutated && s.rowsVersion == s.doc.structureVersion()) DrawCardPopovers(s);
 

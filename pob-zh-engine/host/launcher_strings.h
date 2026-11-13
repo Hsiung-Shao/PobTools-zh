@@ -5,27 +5,18 @@
 #include <string>
 
 // ONE list, five expansions: the struct fields, both translation tables, the
-// field-name array and the member-pointer array used to walk a LauncherStrings
-// by index all come from here.
-//
-// Why: these used to be four hand-maintained parallel copies (struct, STR_ZHTW,
-// STR_EN, and the glyph-atlas list in launcher_ui.cpp). A positional aggregate
-// initialiser silently shifts every later string when one is inserted in the
-// middle, and the static_assert added in v0.15.0 could only catch a MISSING
-// entry, never a misordered one. With a single list there is nothing left to
-// misorder.
+// field-name array and the member-pointer array all come from here, so there is
+// nothing left to misorder.
 //
 //   X(field, zh-rTW, en)
 //
-// Appending is still the safe habit, but for a different reason now: the shipped
-// Data\launcher\zh-rTW\launcher.json keys off the ENGLISH string, so reordering
-// is harmless while EDITING an English string orphans that file's entry --
-// re-export with --launcher-strings-export after any English change.
+// The shipped Data\launcher\zh-rTW\launcher.json keys off the ENGLISH string:
+// reordering is harmless, but EDITING an English string orphans that file's
+// entry -- re-export with --launcher-strings-export after any English change.
 #define LAUNCHER_STRINGS(X)                                                                          \
 	X(title,             u8"Path of Building 啟動器",                                                 \
 	                     u8"Path of Building Launcher")                                              \
 	X(language,          u8"介面語言",                     u8"Interface language")                    \
-	X(gameVersion,       u8"遊戲版本",                     u8"Game version")                          \
 	X(poe1,              u8"Path of Exile 1",              u8"Path of Exile 1")                       \
 	X(poe2,              u8"Path of Exile 2",              u8"Path of Exile 2")                       \
 	/* card status: install found / missing */                                                       \
@@ -38,22 +29,21 @@
 	X(filterEditor,      u8"過濾器編輯器",                 u8"Filter editor")                         \
 	X(atlasPlanner,      u8"輿圖策略",                     u8"Atlas strategy")                        \
 	X(timelessJewel,     u8"軍團珠寶",                     u8"Timeless jewel")                        \
-	X(regexTool,         u8"Poe Regex",                    u8"Poe Regex")                              \
 	X(warehouseTool,     u8"倉庫收益",                     u8"Stash tracker")                         \
 	X(modernUiTool,      u8"新介面(Beta)",                 u8"Modern UI (Beta)")                      \
-	X(modernUiTip,       u8"以新版介面開啟建置(測試中)",   u8"Open a build in the new interface (preview)") \
 	X(uiModeLabel,       u8"預設介面",                     u8"Default interface")                     \
 	X(uiModeClassic,     u8"經典",                         u8"Classic")                               \
-	X(uiModeModern,      u8"新介面(Beta)",                 u8"New interface (Beta)")                  \
-	X(uiModeUnavailable, u8"找不到新介面的頁面檔(ui\\index.html),「啟動」一律開經典視窗。", \
-	                     u8"The new interface's page (ui\\index.html) is missing; Launch always opens the classic window.") \
+	X(uiModeTheme1,      u8"主題 1 (Beta)",                u8"Theme 1 (Beta)")                        \
+	X(uiModeTheme2,      u8"主題 2 (Beta)",                u8"Theme 2 (Beta)")                        \
+	X(uiModeUnavailable, u8"找不到新介面的頁面檔(ui\\index.html 或 ui\\theme2.html),「啟動」一律開經典視窗。", \
+	                     u8"The new interface's page (ui\\index.html or ui\\theme2.html) is missing; Launch always opens the classic window.") \
 	X(uiModeBrowser,     u8"按「啟動」時開哪一種視窗(PoE1 與 PoE2 都適用)。這台電腦沒有 WebView2(例如 macOS / Linux 的 CrossOver、Wine),新介面會在系統瀏覽器開啟;按頁面右上角「結束」或在這裡結束,只關分頁的話約 20 秒後結束。", \
 	                     u8"Which window the Launch button opens, for PoE1 and PoE2 alike. This computer has no WebView2 (CrossOver / Wine on macOS or Linux), so the new interface opens in the system browser; end it with the page's End button or here. Closing only the tab ends it about 20 seconds later.") \
 	X(modernBrowserRunning, u8"新介面(瀏覽器)執行中：", u8"New interface (browser) running: ") \
 	X(modernBrowserOpen, u8"開啟頁面",                     u8"Open page")                             \
 	X(modernBrowserCopyUrl, u8"複製網址",                  u8"Copy address")                          \
 	X(modernBrowserStop, u8"結束",                         u8"End")                                   \
-	/* Phase 3: the new interface's compatibility gate failed against this POB
+	/* The new interface's compatibility gate failed against this POB
 	   version; the classic window opened instead and the button waits for the
 	   next POB update. %s = POB version, %d = failed probe count. */                              \
 	X(modernGateBanner,  u8"新介面與這版 POB(%s)不相容,已改開經典視窗;POB 更新後會再試", u8"The new interface is not compatible with this POB (%s); the classic window opened instead. It will try again after POB updates") \
@@ -83,7 +73,7 @@
 	                     u8"Automatic checks run at most once a day, and only at startup. Click to check right now.") \
 	X(updateChecking,    u8"檢查更新中…",                  u8"Checking for updates...")               \
 	X(updateUpToDate,    u8"已是最新版本",                 u8"Up to date")                            \
-	/* tabbed layout (v0.15.0) */                                                                    \
+	/* tabbed layout */                                                                    \
 	X(tabHome,           u8"主畫面",                       u8"Home")                                  \
 	X(tabSettings,       u8"設定",                         u8"Settings")                              \
 	X(sectionLaunch,     u8"啟動 POB 後",                  u8"After launching POB")                   \
@@ -95,14 +85,12 @@
 	                     u8"Several windows of the same POB are open; they share its settings and build files, and the last one closed overwrites the others") \
 	X(updateBlockedTip,  u8"POB 執行中無法更新：更新會替換 engine 資料夾裡的檔案，請先關閉所有 POB 視窗", \
 	                     u8"Cannot update while POB is running: the update replaces files in the engine folder. Close every POB window first.") \
-	/* translation-data settings (v0.16.0) */                                                        \
+	/* translation-data settings */                                                        \
 	X(sectionTransData,  u8"翻譯資料",                     u8"Translation data")                     \
-	X(dataDirLabel,      u8"翻譯資料夾",                   u8"Data folder")                          \
 	X(slotLauncher,      u8"啟動器介面",                   u8"Launcher UI")                          \
 	X(browse,            u8"瀏覽…",                        u8"Browse...")                            \
-	/* v0.28.0: the failure log. Named "問題紀錄" rather than "log" because the
-	   only time anyone goes looking is when something is wrong, and that is what
-	   we need them to send us. */                                                                \
+	/* the failure log, named "問題紀錄" rather than "log": it is looked at only
+	   when something is wrong, and that is what we need users to send. */                                                                \
 	X(openLogFolderHint, u8"程式遇到問題時會把原因寫進這裡（每天一個檔）。回報問題時附上當天那一個檔最有幫助；一切正常時它會是空的。", \
 	                     u8"Whenever something fails, the reason is written here (one file per day). Attaching today's file to a bug report is the most useful thing you can do; when nothing is wrong it stays empty.") \
 	X(useSuggestion,     u8"改用這個",                     u8"Use this")                             \
@@ -128,16 +116,16 @@
 	                     u8"That folder already holds dictionaries. Continuing overwrites the edits in them.") \
 	X(overwriteConfirm,  u8"覆蓋",                         u8"Overwrite")                            \
 	X(cancel,            u8"取消",                         u8"Cancel")                               \
-	/* v0.19.0:翻譯資料自成一條發佈線,不再跟著程式更新走,「一併」已不成立 */                        \
+	/* 翻譯資料自成一條發佈線,不跟著程式更新走 */                        \
 	X(transUpdateLabel,  u8"自動更新翻譯資料",             u8"Automatically update translation data") \
 	X(transApplyNow,     u8"立即套用一次",                 u8"Apply once now")                       \
-	/* 兩個版號了:程式一個、翻譯資料一個,設定頁要說得出目前是哪一份 */                              \
+	/* 兩個版號:程式一個、翻譯資料一個 */                              \
 	X(transDataUnstamped, u8"未標示（v0.18.0 以前的安裝）",                                           \
 	                     u8"not stamped (installed before v0.19.0)")                                  \
-	/* v1.1.0:大陸使用者連 GitHub 常需代理;空值＝自動跟隨系統代理 */                                \
+	/* 大陸使用者連 GitHub 常需代理;空值＝自動跟隨系統代理 */                                \
 	X(proxyLabel,        u8"HTTP 代理",                    u8"HTTP proxy")                            \
 	X(proxyEmptyHint,    u8"留空＝自動跟隨系統代理",       u8"empty = follow the system proxy")       \
-	/* v1.8.4:選填 GitHub Token(PR #15),繞開未登入 API 每小時 60 次的限制 */                         \
+	/* 選填 GitHub Token,繞開未登入 API 每小時 60 次的限制 */                         \
 	X(githubTokenLabel,  u8"GitHub Token",                u8"GitHub Token")                          \
 	X(githubTokenHint,   u8"選填，減少更新檢查被限流；貼上後按「儲存」",                             \
 	                     u8"Optional; fewer update-check rate limits. Paste, then Save")             \
@@ -159,7 +147,7 @@
 	                     u8"Encrypted for this Windows user; sent only to the GitHub API")           \
 	X(githubTokenCleared, u8"已清除 GitHub Token",         u8"GitHub Token cleared")                 \
 	X(useBuiltin,        u8"切回內建",                     u8"Use built-in")                          \
-	/* font installation + coverage (v0.16.0) */                                                     \
+	/* font installation + coverage */                                                     \
 	X(installFont,       u8"安裝字型…",                    u8"Install a font...")                     \
 	X(fontInstalled,     u8"已安裝並選用 ",                u8"Installed and selected ")               \
 	X(fontAlreadyThere,  u8"Fonts 資料夾已經有同名字型，改用現有的那個",                              \
@@ -169,24 +157,20 @@
 	X(fontNotAFont,      u8"這不是可以用的字型檔",         u8"That is not a usable font file")        \
 	X(fontCopyFailed,    u8"複製字型失敗",                 u8"Could not copy the font")               \
 	X(fontMissingHere,   u8"目前的字型畫不出這些字：",     u8"The current font is missing: ")          \
-	/* 圖集裝不下完整中文字集 (v0.21.0)。分頁標題會顯示 POB 的專案名稱,那是任意文字,           \
-	   所以整個中文字集都要進圖集;但圖集大小受顯示卡材質上限與顯示縮放兩者夾擊,               \
-	   放不下時只能砍掉再說 —— 而 ImGui 對缺字是靜默畫問號,不講就沒人知道為什麼 */            \
+	/* 圖集裝不下完整中文字集時會砍字;ImGui 對缺字是靜默畫問號,所以要明說 */                  \
 	X(fontAtlasTrimmed,  u8"顯示卡的材質上限放不下完整中文字集，部分罕用字（例如專案名稱裡的字）會顯示為問號。降低顯示縮放比例可以避免。", \
 	                     u8"The full Chinese character set does not fit this GPU's texture limit, so rare characters (in build names, for example) show as '?'. A lower display scaling avoids it.") \
-	/* window mode (v0.17.0) */                                                                      \
+	/* window mode */                                                                      \
 	X(sectionWindow,     u8"視窗方式",                     u8"Windows")                               \
 	X(winModeRestart,    u8"改完要重開啟動器才會生效",     u8"Restart the launcher for this to take effect") \
-	/* 只解壓了主檔包的防呆 (v0.19.0)。這個情境沒有任何錯誤訊息:程式正常啟動、                       \
-	   啟動器介面照樣是中文(編譯進 exe 的字串表兜底),只有 POB 全英文 —— 所以                       \
-	   偵測不到字典時要主動說出來,不能等使用者自己想通 */                                            \
+	/* 只解壓了主檔包的防呆:此情境無任何錯誤訊息(啟動器仍是中文,只有 POB 全英文),要主動說出來 */ \
 	X(noDictDownload,    u8"立即下載翻譯資料",             u8"Download translation data now")           \
-	/* font: apply the selected TTF to ASCII in the POB window too (v0.22.0) */                      \
+	/* font: apply the selected TTF to ASCII in the POB window too */                      \
 	X(fontApplyAllChk,   u8"POB 視窗的英文與數字也用此字型",                                          \
 	                     u8"Use this font for letters & digits in POB too")                          \
 	X(fontApplyAllTip,   u8"開啟後 POB 視窗內中英數共用同一個字型。等寬欄位（主控台、物品原文編輯）一律維持原生等寬字型。切換後需重新啟動 POB 視窗才會生效。", \
 	                     u8"When on, Chinese, letters and digits in the POB window share the selected font. Monospaced fields (console, raw item editing) keep the native fixed-width font. Takes effect the next time the POB window starts.") \
-	/* launcher-only zoom + remembered window size (v1.3.0). ASCII 'x' between the  \
+	/* launcher-only zoom + remembered window size. ASCII 'x' between the  \
 	   width and height fields on purpose: U+00D7 is not in every shipped font. */    \
 	X(fontSizeLabel,     u8"字體大小",                       u8"Font size")                              \
 	X(fontSizeHint,      u8"整個啟動器與工具視窗一起縮放，POB 不受影響",                                    \
@@ -206,16 +190,14 @@
 	X(treeBgLabel,       u8"天賦樹底圖",                     u8"Tree backdrop")                          \
 	X(bgHint,            u8"把 PNG／JPG／WebP 放進 PobTools\\Backgrounds 資料夾就能選。圖片鋪滿整個 POB 視窗當最底層，天賦樹與各分頁畫在它上面；亮度是圖片壓暗的程度。霧面強度把側欄、工具列變成毛玻璃：面板底下的畫面先模糊再蓋上面板的淡色（面板不透明度）；0% 為不模糊。天賦樹底圖是節點底下那層深色底紋的不透明度，調低就能在天賦頁也看到背景圖片。全部即時生效", \
 	                     u8"Drop PNG/JPG/WebP files into the PobTools\\Backgrounds folder to pick them here. The image fills the whole POB window as the bottom layer, with the tree and the tabs drawn over it; brightness dims the image. Frost strength turns the side bar and tool bars into frosted glass: what is under a panel is blurred, then the panel's tint (panel opacity) goes on top; 0% = no blur. Tree backdrop is the opacity of the dark tiled layer under the nodes; lower it to see the background image on the tree tab too. Everything applies live") \
-	/* v1.4.0: the program-update line gets its own section. Off by default --
-	   installing a new version closes the launcher and reopens it, and that is
-	   not something to do to somebody who did not ask for it. */                                   \
+	/* the program-update line gets its own section. Off by default: installing
+	   closes and reopens the launcher. */                                   \
 	X(autoAppUpdate,     u8"啟動後自動安裝新版本",         u8"Install new versions at startup")       \
 	X(autoAppUpdateHint, u8"PobTools 一開啟就檢查，有新版本就直接裝好並重新開啟，不必按右上角那個按鈕。只在剛啟動、還沒開過 POB 或任何工具時才會動手；有 POB 在跑時一律不動。翻譯資料的自動更新是下面那個獨立的設定。", \
 	                     u8"PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.") \
-	/* v1.6.0: the beta line. The hint has to carry all four facts -- what an
-	   early build is, that it can be broken, that turning it back off does not
-	   walk the install backwards, and that the dictionaries are the same ones
-	   the stable line gets -- because nobody reads a hint twice. */            \
+	/* the beta line. The hint must carry all four facts: what an early build is,
+	   that it can be broken, that turning it off does not walk the install
+	   backwards, and that the dictionaries match the stable line. */            \
 	X(betaChannel,       u8"參加 beta 測試（搶先版）", u8"Join the beta (early builds)") \
 	X(betaChannelHint,   u8"打開之後，程式更新會抓還沒轉正式的搶先版。搶先版是測試用的，可能有還沒修好的問題；關掉之後會問你要不要回到正式版，不會自動退回。翻譯資料與正式版共用同一份。", \
 	                     u8"With this on, program updates come from builds that have not been made official yet. Early builds are for testing and may have problems that are not fixed yet. Turning it back off offers to go back to the stable release; nothing is downgraded without a click. The translation data is the same either way.") \
@@ -253,8 +235,7 @@
 	X(mcpRow,            u8"AI 串接(MCP)",                u8"AI assistants (MCP)") \
 	X(mcpHint,           u8"複製設定貼到 AI 工具,讓它用 POB 的計算讀取與試算建置。", u8"Copy the setup into an AI tool so it can read and try out builds with POB's own numbers.") \
 	X(mcpHintLong,       u8"Claude Desktop:貼進 claude_desktop_config.json。Claude Code／CLI:在終端機執行複製的指令。Codex:貼進 ~/.codex/config.toml。AI 只在暫存複本上操作,不會改動你的 POB 建置,成品以分享碼交給你。", u8"Claude Desktop: paste into claude_desktop_config.json. Claude Code / CLI: run the copied command in a terminal. Codex: paste into ~/.codex/config.toml. The AI works on a private copy and never changes your POB builds; it hands results over as share codes.") \
-	/* Launcher redesign (design system v1, 2026-10): header, banners, cards,
-	   settings side navigation, appearance thumbnails, about card. */          \
+	/* header, banners, cards, settings side navigation, appearance thumbnails, about card. */          \
 	X(appSubtitle,       u8"Path of Building 繁體中文化", u8"Path of Building in Traditional Chinese") \
 	X(updateTo,          u8"更新到 v%s",                   u8"Update to v%s")                         \
 	X(updateBackTo,      u8"回到正式版 v%s",               u8"Back to stable v%s")                    \
@@ -274,7 +255,8 @@
 	X(noDictDesc,        u8"主程式更新包不含字典，需要另外下載一次。", u8"The program update pack carries no dictionaries; they are downloaded separately.") \
 	X(moreBanners,       u8"還有 %d 則",                   u8"%d more")                               \
 	X(uiModeShortClassic, u8"經典介面",                    u8"Classic interface")                     \
-	X(uiModeShortModern, u8"新介面",                       u8"New interface")                         \
+	X(uiModeShortTheme1, u8"主題 1",                       u8"Theme 1")                               \
+	X(uiModeShortTheme2, u8"主題 2",                       u8"Theme 2")                               \
 	X(pobRunningPill,    u8"執行中 ×%d",                   u8"Running ×%d")                           \
 	X(notFoundPoe1Card,  u8"把裡面有 Launch.lua 的 POB 資料夾放在 pob-zh.exe 旁，回到這裡就會偵測到。", \
 	                     u8"Put a POB folder with Launch.lua in it next to pob-zh.exe; it is detected when you come back here.") \
@@ -287,7 +269,6 @@
 	X(tipFilter,         u8"編輯 .filter、預覽掉落外觀",   u8"Edit .filter files, preview how drops look") \
 	X(tipAtlas,          u8"配點、地圖格、星盤與每張圖成本", u8"Passives, map device, astrolabes and the cost of each map") \
 	X(tipTimeless,       u8"查種子對天賦的影響、找想要的種子", u8"See what a seed changes, find the seed you want") \
-	X(tipRegex,          u8"勾選詞綴，產生遊戲內搜尋字串", u8"Pick mods, get an in-game search string") \
 	X(tipWarehouse,      u8"快照倉庫，算刷圖收益",         u8"Snapshot your stash, see what a map earned") \
 	X(tipEditor,         u8"修改或補上 POB 的翻譯",        u8"Fix or fill in POB's translations")     \
 	X(toolOpenTab,       u8"已開啟，點擊切換過去",         u8"Open; click to switch to it")           \
@@ -388,14 +369,11 @@ inline constexpr LauncherStrings STR_EN = {
 };
 
 // Field count, used by launcher_ui.cpp to prove every string is fed to the glyph
-// atlas. ImGui draws a missing glyph as '?' with no warning of any kind, so a
-// string that never reaches the atlas is only discovered from a screenshot.
+// atlas (ImGui draws a missing glyph as '?' silently).
 inline constexpr size_t kLauncherStringsFields = sizeof(LauncherStrings) / sizeof(const char*);
 
-// Member pointers, index-aligned with the struct. Walking the fields by index is
-// what lets the JSON overlay and the selftests treat LauncherStrings as a list
-// instead of writing a 49-way switch. Member pointers rather than a
-// reinterpret_cast over the struct: same convenience, no aliasing question.
+// Member pointers, index-aligned with the struct: the JSON overlay and selftests
+// walk LauncherStrings by index (no reinterpret_cast, so no aliasing question).
 inline constexpr const char* LauncherStrings::* const kLauncherStringMembers[] = {
 #define PT_LS_MEMBER(name, zh, en) &LauncherStrings::name,
 	LAUNCHER_STRINGS(PT_LS_MEMBER)
@@ -420,7 +398,7 @@ static_assert(sizeof(kLauncherStringNames) / sizeof(kLauncherStringNames[0]) ==
 // Only Traditional Chinese (zh-rTW) and English are offered. "en" (and any
 // other/unknown locale) uses the English UI; the engine then finds no matching
 // dictionary and passes POB text through untranslated.
-inline const LauncherStrings& StringsFor(const std::wstring& locale, bool /*koreanOk*/ = true)
+inline const LauncherStrings& StringsFor(const std::wstring& locale)
 {
 	if (locale == L"zh-rTW") return STR_ZHTW;
 	return STR_EN;

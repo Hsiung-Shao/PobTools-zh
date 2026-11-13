@@ -197,10 +197,13 @@ public:
 			PobLog::Error("data", "astrolabes_poe1.json: " + astroErr);
 		if (!mapDb.Load(exeDir, &mapErr))
 			PobLog::Error("data", "atlas_maps_poe1.json: " + mapErr);
+		int mapsDropped = 0; // main map no longer on the atlas (e.g. 3.30 removed it)
 		for (AtlasBuildEntry& b : buildFile.builds) {
 			b.scarabs = scarabDb.Sanitize(b.scarabs, nullptr);
 			b.astrolabes = astroDb.Sanitize(b.astrolabes, nullptr);
+			const std::string was = b.mapId;
 			b.mapId = mapDb.SanitizeOne(b.mapId);
+			if (!was.empty() && b.mapId.empty()) mapsDropped++;
 		}
 		icons.Init(exeDir);
 		uiState.Load(exeDir);
@@ -216,6 +219,9 @@ public:
 		if (startupDropped > 0)
 			noticeMsg_ = u8"這個配置存於舊版輿圖樹，" + std::to_string(startupDropped) +
 			             u8" 個已不存在的節點已自動移除。";
+		if (mapsDropped > 0)
+			noticeMsg_ += (noticeMsg_.empty() ? std::string() : std::string(" ")) + std::to_string(mapsDropped) +
+			              u8" 個專案的主力地圖已不在本季輿圖上，已清除，請重新選擇。";
 		// Test aid (POBTOOLS_ATLAS_PAGE, with POBTOOLS_TOOL_SHOT): open on a page.
 		{
 			wchar_t pg[32] = L"";
@@ -231,6 +237,11 @@ public:
 			// the menu and the dialogs, for a screenshot of each (nothing is written:
 			// a dialog only acts on a click, and the sandbox never saves)
 			else if (page == L"menu") openMoreMenu_ = true;
+			// mutates the project in memory, so only under the screenshot aid
+			else if (page == L"provmap" && GetEnvironmentVariableW(L"POBTOOLS_TOOL_SHOT", nullptr, 0) > 0) {
+				for (const AtlasMapDef& d : mapDb.All())
+					if (d.provisional) { buildFile.Active().mapId = d.id; break; }
+			}
 			else if (page == L"delete") askDelete_ = true;
 			else if (page == L"reset") askReset_ = true;
 			else if (page == L"new") { nameBuf = u8"新專案"; askNew_ = true; }
@@ -2611,6 +2622,7 @@ private:
 	}
 	std::string mapRegionLabel(const std::string& regionId)
 	{
+		if (regionId.empty()) return std::string(showZh ? u8"半區待 3.30 資料" : "quadrant pending 3.30 data");
 		const AtlasQuadrant* q = astroDb.RegionById(regionId);
 		return q ? quadrantLabel(*q) : regionId;
 	}

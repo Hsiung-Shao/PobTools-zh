@@ -1,18 +1,20 @@
 #include "atlas_tree_data.h"
-#include "atlas_i18n.h"    // selftest T6: zh-mapping health check
-#include "atlas_persist.h" // multi-build schema + share codes (T7)
-#include "atlas_scarabs.h" // selftest T8: placement rules + notes/scarabs persistence
-#include "atlas_threads.h" // selftest: 3.30 thread slots
-#include "atlas_astrolabes.h" // selftest T9: quadrant rule + astrolabe persistence
-#include "atlas_maps.h"    // selftest T10: main-map catalogue
-#include "atlas_optimize.h" // selftest T11: contrast against the minimum-point model
-#include "atlas_version_index.h" // season resolution (versioned data layout)
-#include "atlas_import.h"  // selftest 多選: AtlasImportVariants
+#include "atlas_i18n.h"
+#include "atlas_persist.h"
+#include "atlas_scarabs.h"
+#include "atlas_threads.h"
+#include "atlas_astrolabes.h"
+#include "atlas_maps.h"
+#include "atlas_optimize.h"
+#include "atlas_version_index.h"
+#include "atlas_import.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "win_util.h"
+#include "selftest_report.h"
 
-#include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
+#include <json.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -23,36 +25,7 @@
 
 using nlohmann::ordered_json;
 
-// ---- file helpers (same conventions as economy_service.cpp) ----------------
-
-static bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 30)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
-
-static bool write_file_utf8(const std::wstring& path, const std::string& content)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	DWORD written = 0;
-	bool ok = content.empty() ||
-		(WriteFile(h, content.data(), (DWORD)content.size(), &written, nullptr) && written == content.size());
-	CloseHandle(h);
-	return ok;
-}
-
-// ---- json parsing -----------------------------------------------------------
+// json parsing
 
 static bool parse_sprite(const ordered_json& j, AtlasSpriteRef& out)
 {
@@ -96,7 +69,6 @@ bool AtlasTreeData::loadFromDir(const std::wstring& dataDir, const std::string& 
 	root = -1;
 	tag_ = tag;
 	dataDir_ = dataDir;
-	spriteDir_ = dataDir + L"atlas\\";
 
 	std::string content;
 	if (!read_file_utf8(dataDir + L"atlas_tree_poe1.json", content)) {
@@ -193,7 +165,7 @@ bool AtlasTreeData::loadFromDir(const std::wstring& dataDir, const std::string& 
 	return true;
 }
 
-// ---- allocation logic --------------------------------------------------------
+// allocation logic
 
 int AtlasTreeData::UsedPoints() const
 {
@@ -236,7 +208,6 @@ std::vector<int> AtlasTreeData::FindRemoveSet(int idx) const
 	if (idx < 0 || idx >= (int)nodes.size()) return {};
 	if (!nodes[idx].alloc || nodes[idx].kind == kAtlasStart) return {};
 
-	// Reachability from the start node across the allocated set minus idx.
 	std::vector<char> reach(nodes.size(), 0);
 	std::deque<int> q;
 	reach[root] = 1;
@@ -254,7 +225,7 @@ std::vector<int> AtlasTreeData::FindRemoveSet(int idx) const
 	for (int i = 0; i < (int)nodes.size(); i++)
 		if (nodes[i].alloc && !reach[i] && nodes[i].kind != kAtlasStart)
 			removeSet.push_back(i);
-	return removeSet; // idx itself is unreachable by construction, so included
+	return removeSet;
 }
 
 void AtlasTreeData::Alloc(const std::vector<int>& path)
@@ -295,14 +266,13 @@ void AtlasTreeData::repairConnectivity()
 			nodes[i].alloc = false;
 }
 
-// ---- build persistence --------------------------------------------------------
+// build persistence
 
 int AtlasTreeData::ApplyAllocIds(const std::vector<int>& ids)
 {
-	// GGG skill ids are the stable key; ids that no longer exist (data
-	// regenerated for a new league) are silently dropped, then the
-	// connectivity repair prunes anything that came loose.
-	std::vector<std::pair<int, int>> id2idx; // sorted (id, index)
+	// GGG skill ids are the stable key; ids gone after a data regeneration are silently dropped,
+	// then the connectivity repair prunes anything that came loose.
+	std::vector<std::pair<int, int>> id2idx;
 	id2idx.reserve(nodes.size());
 	for (int i = 0; i < (int)nodes.size(); i++) id2idx.push_back({ nodes[i].id, i });
 	std::sort(id2idx.begin(), id2idx.end());
@@ -374,8 +344,7 @@ int AtlasTreeData::ApplyBlockedIds(const std::vector<int>& ids)
 	int mapped = 0;
 	for (int id : ids) {
 		auto it = std::lower_bound(id2idx.begin(), id2idx.end(), std::make_pair(id, 0));
-		// The start node is never blockable: walling it off would make every
-		// target unreachable and there is nothing useful that could mean.
+		// The start node is never blockable (every target would become unreachable).
 		if (it != id2idx.end() && it->first == id && nodes[it->second].kind != kAtlasStart) {
 			nodes[it->second].blocked = true;
 			mapped++;
@@ -460,7 +429,7 @@ int AtlasTreeData::ApplyVariantIds(const std::map<int, int>& nodeToEffect)
 	int mapped = 0;
 	for (AtlasNode& n : nodes) {
 		n.variant = -1;
-		if (!n.alloc) continue;   // a pick belongs to an allocated node
+		if (!n.alloc) continue;
 		auto it = nodeToEffect.find(n.id);
 		if (it == nodeToEffect.end()) continue;
 		for (int i = 0; i < (int)n.variants.size(); i++)
@@ -482,7 +451,7 @@ bool AtlasTreeData::SaveBuild(const std::wstring& exeDir) const
 {
 	// read-modify-write: only the active project changes, siblings stay intact
 	AtlasBuildFile f;
-	f.Load(exeDir); // missing/invalid file falls back to one empty project
+	f.Load(exeDir);
 	f.version = version_;
 	f.Active().alloc = AllocIds();
 	f.Active().targets = TargetIds();
@@ -502,24 +471,9 @@ bool AtlasTreeData::LoadBuild(const std::wstring& exeDir)
 	return true;
 }
 
-// ---- headless self-test (--atlas-selftest) -------------------------------------
+// headless self-test (--atlas-selftest)
 
 namespace {
-
-struct TestReport {
-	std::string text;
-	int failures = 0;
-
-	void check(bool ok, const char* what, const std::string& detail = std::string())
-	{
-		text += ok ? "PASS  " : "FAIL  ";
-		text += what;
-		if (!detail.empty()) { text += "  ("; text += detail; text += ")"; }
-		text += "\n";
-		if (!ok) failures++;
-	}
-	void note(const std::string& s) { text += "      " + s + "\n"; }
-};
 
 // Independent reachability via explicit-stack DFS (the model uses deque BFS),
 // optionally treating one node as removed.
@@ -561,14 +515,12 @@ static std::vector<int> relax_dist(const AtlasTreeData& d)
 
 int RunAtlasSelfTest(const std::wstring& exeDir)
 {
-	// WIN32-subsystem app: surface printf when started from a console.
 	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
 		FILE* f = nullptr;
 		freopen_s(&f, "CONOUT$", "w", stdout);
 	}
 
-	// T5's save/load round-trip writes through the production path; keep the
-	// user's real build file safe and restore it before returning.
+	// T5's save/load round-trip writes through the production path; the user's real build file is restored before returning.
 	std::string savedBuild;
 	bool hadBuild = read_file_utf8(AtlasBuildFile::PathOf(exeDir), savedBuild);
 	struct BuildGuard {
@@ -588,11 +540,7 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 	// T1: load + shape sanity
 	bool loaded = d.Load(exeDir, &err);
 	rep.check(loaded, "load atlas_tree_poe1.json", loaded ? "" : err);
-	if (!loaded) {
-		printf("%s", rep.text.c_str());
-		write_file_utf8(exeDir + L"atlas_selftest.txt", rep.text);
-		return 1;
-	}
+	if (!loaded) return rep.finish(exeDir + L"atlas_selftest.txt");
 	rep.note("nodes=" + std::to_string(d.nodes.size()) + " edges=" + std::to_string(d.edges.size()) +
 	         " totalPoints=" + std::to_string(d.TotalPoints()));
 	rep.check(d.root >= 0 && d.nodes[d.root].kind == kAtlasStart && d.nodes[d.root].alloc, "start node allocated");
@@ -642,11 +590,8 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 	}
 	rep.note("web: " + std::to_string(added) + " extra targets, used=" + std::to_string(d.UsedPoints()));
 
-	// Shortest-path webs are nearly tree-shaped, so close a loop on purpose:
-	// allocate one node that touches two already-allocated neighbors. Some tree
-	// topologies (e.g. 3.29) leave the sparse every-10th web acyclic, so widen it
-	// to every notable/keystone until such a node exists — the full graph has far
-	// more edges than a spanning tree, so a loop-closing node is guaranteed.
+	// Shortest-path webs are nearly tree-shaped, so close a loop on purpose: allocate a node
+	// touching two allocated neighbours, widening the web to every notable/keystone until one exists.
 	auto findRing = [&]() -> int {
 		for (int i = 0; i < (int)d.nodes.size(); i++) {
 			if (d.nodes[i].alloc || d.nodes[i].kind == kAtlasStart) continue;
@@ -729,8 +674,7 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 	rep.check(beforeIds == afterIds, "round-trip preserves allocation",
 	          std::to_string(beforeIds.size()) + " nodes");
 
-	// T5b: the same for targets. They ride along on the very same file, and a
-	// target that failed to survive would silently un-pin a node the user chose.
+	// T5b: the same for targets (a lost target would silently un-pin a user's node).
 	{
 		std::vector<int> someIdx;
 		for (int i = 0; i < (int)d.nodes.size() && someIdx.size() < 4; i++)
@@ -746,8 +690,7 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 		std::sort(gotIds.begin(), gotIds.end());
 		rep.check(gotIds == wantIds, "round-trip preserves targets",
 		          std::to_string(gotIds.size()) + " of " + std::to_string(wantIds.size()));
-		// ApplyAllocIds resets targets, so the load order in LoadBuild matters;
-		// this pins that contract down.
+		// ApplyAllocIds resets targets, so the load order in LoadBuild matters.
 		d.ApplyAllocIds(d.AllocIds());
 		rep.check(d.TargetIdx().empty(), "ApplyAllocIds clears targets (load order contract)");
 		d.ApplyTargetIds(wantIds);
@@ -796,8 +739,7 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 			}
 			const std::string cov = std::to_string(covered) + "/" + std::to_string(translatable) +
 			                        " (" + zh.VersionNote() + ")";
-			// 譯文早於本季(repoe 版本 < 賽季)時覆蓋率低是預期狀態:不確定的譯文
-			// 一律顯示英文(使用者 2026-11-12 裁定),開季後補上才恢復門檻。
+			// 譯文早於本季(repoe 版本 < 賽季)時覆蓋率低是預期狀態:不確定的譯文一律顯示英文,開季後補上才恢復門檻。
 			if (zh.LagsSeason(d.Tag()))
 				rep.note(u8"提示:譯文早於本季,繁中覆蓋率 " + cov + u8",新內容先顯示英文(門檻檢查暫不適用)");
 			else
@@ -808,12 +750,9 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// T7b: the REAL project file on this machine, not a synthetic one. Parsing it
-	// and writing it straight back out must reproduce it byte for byte —
-	// otherwise merely opening the planner would rewrite an existing user's
-	// projects. Synthetic round-trips cannot prove this: they only ever exercise
-	// documents this build itself produced. Uses the copy BuildGuard took before
-	// any test wrote to that path, so the later Save/Load tests cannot taint it.
+	// T7b: the REAL project file on this machine: parse + write back must reproduce it byte for
+	// byte (else merely opening the planner would rewrite a user's projects). Uses the copy
+	// BuildGuard took before any test wrote to that path.
 	if (hadBuild && !savedBuild.empty()) {
 		AtlasBuildFile probe;
 		if (probe.ParseDoc(savedBuild)) {
@@ -827,11 +766,8 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 				rep.note("before: " + savedBuild.substr(0, 300));
 				rep.note("after : " + again.substr(0, 300));
 			}
-			// T7c: and the question that actually matters to someone with work
-			// already saved — does USING the new fields destroy any of it?
-			// Adds an astrolabe, a main map and a planned tier to every project
-			// in the real file, then reads it back and compares each pre-existing
-			// field. Purely in memory; the file on disk is never written.
+			// T7c: does USING the new fields destroy saved work? Adds an astrolabe, a main map and a
+			// planned tier to every project, reads back and compares pre-existing fields (in memory only).
 			AtlasBuildFile mutated;
 			mutated.ParseDoc(savedBuild);
 			for (AtlasBuildEntry& b : mutated.builds) {
@@ -870,14 +806,8 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 		rep.note("no existing project file on disk - byte-identity check skipped");
 	}
 
-	// T11: the click model itself — allocating towards a new node must never move
-	// a node that is already allocated.
-	//
-	// This is the defect 0.12.0 shipped: clicks re-derived the whole tree from the
-	// target set, so the route to the first node visibly re-arranged itself when
-	// the second was picked, and it compounded from there. The property below is
-	// what "點一下就接最短路徑、不動已配好的點" means, stated so it cannot regress
-	// quietly again. Minimality is now only reachable through the toolbar button.
+	// T11: the click model itself — allocating towards a new node must never move an already
+	// allocated node ("點一下就接最短路徑、不動已配好的點"). Minimality is only reachable through the toolbar button.
 	{
 		d.Reset();
 		std::vector<int> picks;
@@ -900,7 +830,7 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 			std::set<int> now;
 			for (const AtlasNode& n : d.nodes)
 				if (n.alloc && n.kind != kAtlasStart) now.insert(n.id);
-			for (int id : prev) if (!now.count(id)) moved++;   // <- the regression
+			for (int id : prev) if (!now.count(id)) moved++;
 			prev = now;
 			steps++;
 		}
@@ -908,10 +838,8 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 		          std::to_string(steps) + " clicks");
 		rep.check(moved == 0, "allocating towards a new node never drops an allocated one",
 		          std::to_string(moved) + " lost");
-		// "never drops one" is only a meaningful claim if the rejected model
-		// actually did. Replay the same clicks through the minimum-point solver
-		// and count what it would have moved -- a note, not a check, because it
-		// describes the OLD behaviour and must never be able to fail the build.
+		// Replay the same clicks through the minimum-point solver and count what it would have
+		// moved: a note, not a check (it describes the rejected model).
 		{
 			AtlasTreeData m;
 			std::string e3;
@@ -984,10 +912,8 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 	// 3.30 thread slots: placement rules and persistence (atlas_threads.cpp).
 	rep.failures += RunThreadSelfTest(exeDir, rep.text);
 
-	// T11: the manual map price behind the 收益 tab's cost card. It round-trips
-	// through the build file, an unset price serializes byte-identically to
-	// before the field existed, and it never leaks into the export json (it is
-	// a market price, not part of the build).
+	// T11: the manual map price behind the 收益 tab's cost card: round-trips through the build file,
+	// an unset price serializes byte-identically to before, never leaks into the export json.
 	{
 		AtlasBuildFile f;
 		f.version = "3.29.0";
@@ -1342,7 +1268,7 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 			          u8"[多選T7] 只丟壞的那一筆,合法的保留");
 		}
 
-		// 審查後補:未配置節點的選擇不套用;明示直線的連線不畫弧。
+		// 未配置節點的選擇不套用;明示直線的連線不畫弧。
 		for (AtlasNode& n : d.nodes) {
 			if (n.variants.empty() || n.alloc) continue;
 			rep.check(d.ApplyVariantIds({ { n.id, n.variants[0].effect } }) == 0 && n.variant == -1,
@@ -1356,7 +1282,7 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 				if ((e.a == ia && e.b == ib) || (e.a == ib && e.b == ia)) { found = true; straight = !e.hasArc; }
 			rep.check(found && straight, u8"[多選T3] 43387 與 10399 的連線(orbit 0)是直線");
 		}
-		// 審查後補:統計用的行把所選選項併進每一條基本行。
+		// 統計用的行把所選選項併進每一條基本行。
 		{
 			AtlasNode n;
 			n.stats = { "A of type", "B from\nC from" };
@@ -1369,7 +1295,7 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 			rep.check(n.AggStats() == std::vector<std::string>({ "Y", "Z" }), u8"[多選T5] 沒有基本行時統計行就是選項的行");
 		}
 
-		// 審查後補:「譯文落後」只看賽季(主.次版號),同賽季重發不算。
+		// 「譯文落後」只看賽季(主.次版號),同賽季重發不算。
 		{
 			AtlasI18n z;
 			rep.check(!z.LagsSeason("3.30.0"), u8"[譯文] 沒有版本資訊時不判定落後");
@@ -1383,8 +1309,5 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 		d.Reset();
 	}
 
-	rep.text += rep.failures == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(rep.failures) + "\n";
-	printf("%s", rep.text.c_str());
-	write_file_utf8(exeDir + L"atlas_selftest.txt", rep.text);
-	return rep.failures == 0 ? 0 : 1;
+	return rep.finish(exeDir + L"atlas_selftest.txt");
 }

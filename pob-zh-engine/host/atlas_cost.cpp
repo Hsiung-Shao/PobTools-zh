@@ -31,8 +31,7 @@ MapCostSummary ComputeMapCost(const std::vector<MapCostInput>& slots, double man
 	}
 
 	for (MapCostLine& l : s.lines) {
-		// The market price is looked up either way: it is the reference shown
-		// beside a recorded price, and the fallback without one.
+		// The market price is looked up either way (reference beside a recorded price, else the fallback).
 		NinjaPrice p;
 		if (l.tradable && lookup && !l.en.empty() && lookup(NinjaExchangeKey(l.en), &p) &&
 		    !p.lowConfidence && p.chaos > 0)

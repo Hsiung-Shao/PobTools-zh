@@ -5,6 +5,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "win_util.h"
 
 #include <json.hpp>   // nlohmann (deps/nlohmann)
 
@@ -326,15 +327,6 @@ void Rewrite(FilterDocumentEditor& doc, const std::string& key, const Settings& 
 	doc.RebuildBlocks();
 }
 
-std::string Narrow(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	const int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-	return s;
-}
-
 } // namespace
 
 bool CustomZoneHasRule(const FilterFile& f, const std::string& key)
@@ -387,12 +379,11 @@ void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile&
                    const std::set<std::string>* carried)
 {
 	// An entry recorded on an older NeverSink version is re-expressed on this one
-	// the first time it is seen here: its edit merged onto this version's rule as
-	// NeverSink shipped it. The baseline's rule IS that the first time -- the old
-	// edit has not been put on this file yet, so the rule is still NeverSink's,
-	// and a hand edit made since is only in `current`. From then on the entry is
-	// "pending" until an apply carries it over: a hand edit meanwhile is merged
-	// into it (the newer edit wins), never written over it.
+	// the first time it is seen: its edit merged onto this version's rule as
+	// NeverSink shipped it (the baseline's rule IS that, the old edit not being on
+	// this file yet; a hand edit since is only in `current`). From then on it is
+	// "pending" until an apply carries it over; a hand edit meanwhile is merged
+	// into it (the newer wins), never written over it.
 	const std::string baseVersion = FilterBannerValue(baseline, "VERSION");
 	const std::map<std::string, int> base = RuleIndex(baseline);
 	const std::map<std::string, int> cur = RuleIndex(current);
@@ -505,7 +496,7 @@ bool JournalSave(const std::wstring& path, const EditJournal& j, std::string* er
 	const std::wstring tmp = path + L".tmp";
 	{
 		std::ofstream o(tmp, std::ios::binary | std::ios::trunc);
-		if (!o) { if (err) *err = "cannot write " + Narrow(tmp); return false; }
+		if (!o) { if (err) *err = "cannot write " + narrow(tmp); return false; }
 		o.write(text.data(), (std::streamsize)text.size());
 		if (!o) {
 			o.close();
@@ -516,7 +507,7 @@ bool JournalSave(const std::wstring& path, const EditJournal& j, std::string* er
 	}
 	if (!MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
 		DeleteFileW(tmp.c_str());
-		if (err) *err = "cannot replace " + Narrow(path);
+		if (err) *err = "cannot replace " + narrow(path);
 		return false;
 	}
 	return true;

@@ -11,7 +11,7 @@
 
 namespace {
 
-// ---- text utilities --------------------------------------------------------
+// text utilities
 
 std::string rtrim(std::string s)
 {
@@ -81,7 +81,7 @@ bool splitKV(const std::string& l, std::string* key, std::string* val)
 	return true;
 }
 
-// ---- canonical en tables (values match item_metadata.json's en side) -------
+// canonical en tables (values match item_metadata.json's en side)
 
 int rarityOf(const std::string& en)
 {
@@ -121,7 +121,7 @@ const InfluenceFx kInfluence[] = {
 	{ "Eater of Worlds Item", 0 },
 };
 
-// ---- base-name resolution ---------------------------------------------------
+// base-name resolution
 
 struct LibIndex {
 	std::unordered_map<std::string, const LibItem*> exact;   // en AND zh -> item
@@ -190,14 +190,14 @@ ImportedItem ParseGameItemText(const std::string& utf8Text,
 		return it != zh.itemClass.end() ? it->second : c;
 	};
 
-	// ---- sections ---------------------------------------------------------
+	// sections
 	std::vector<std::vector<std::string>> sections(1);
 	for (const std::string& l : lines) {
 		if (isSeparator(l)) sections.emplace_back();
 		else sections.back().push_back(l);
 	}
 
-	// ---- header section: Item Class / Rarity / name / base ---------------
+	// header section: Item Class / Rarity / name / base
 	std::string rarityRaw;
 	std::vector<std::string> plain;
 	for (const std::string& l : sections[0]) {
@@ -232,7 +232,7 @@ ImportedItem ParseGameItemText(const std::string& utf8Text,
 	             classLineEn == "Skill Gems" || classLineEn == "Support Gems" ||
 	             r.classRaw == u8"技能寶石" || r.classRaw == u8"輔助寶石";
 
-	// ---- body sections ----------------------------------------------------
+	// body sections
 	bool sawItemLevel = false;
 	bool sawUnidentified = false;
 	for (size_t si = 1; si < sections.size(); si++) {
@@ -303,7 +303,7 @@ ImportedItem ParseGameItemText(const std::string& utf8Text,
 		}
 	}
 
-	// ---- sockets ----------------------------------------------------------
+	// sockets
 	if (!r.socketsRaw.empty()) {
 		std::string group;
 		bool bad = false;
@@ -323,7 +323,7 @@ ImportedItem ParseGameItemText(const std::string& utf8Text,
 			r.item.linkedSockets = std::max(r.item.linkedSockets, (int)g.size());
 	}
 
-	// ---- base resolution --------------------------------------------------
+	// base resolution
 	LibIndex ix = buildIndex(lib);
 	std::string base = r.baseRaw;
 	bool blight = false, uberBlight = false;
@@ -367,7 +367,7 @@ ImportedItem ParseGameItemText(const std::string& utf8Text,
 	r.baseEn = hit->en;
 	r.item.baseType = hit->en;
 
-	// ---- class ------------------------------------------------------------
+	// class
 	std::string cls = i18n.ItemClass(r.baseEn);
 	if (!cls.empty()) {
 		r.item.classId = cls;
@@ -382,7 +382,7 @@ ImportedItem ParseGameItemText(const std::string& utf8Text,
 		r.warnings.push_back({ r.classRaw, u8"無法判定物品類別,Class 條件將不會命中" });
 	}
 
-	// ---- fields the text does not carry -----------------------------------
+	// fields the text does not carry
 	int dl = i18n.DropLevelOf(r.baseEn);
 	if (dl >= 0) r.item.dropLevel = dl;
 	else r.warnings.push_back({ "", u8"無此基底的掉落等級資料,DropLevel 以預設值 1 判定" });
@@ -393,7 +393,7 @@ ImportedItem ParseGameItemText(const std::string& utf8Text,
 	if (!sawItemLevel)
 		r.warnings.push_back({ "", u8"文字裡沒有物品等級(寶石/通貨屬正常),以預設值判定" });
 
-	// ---- statuses that key off the name/base ------------------------------
+	// statuses that key off the name/base
 	if (blight || uberBlight) {
 		r.item.blightedMap = true;
 		if (uberBlight)
