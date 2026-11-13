@@ -42,7 +42,7 @@
               <!-- the enable checkbox, drawn as the status dot -->
               <input type="checkbox" class="en" title={t("skills.enabled")} aria-label={t("skills.enabled")} checked={g.enabled} onclick={(e) => e.stopPropagation()} onchange={(e) => app.run(() => api.setGroup(g.index, { enabled: e.currentTarget.checked })).then(changed)} />
               <span class="gtext">
-                <span class="gname">{g.displayLabelZh || g.displayLabel || g.label || "—"}</span>
+                <span class="gname"><PobText text={g.displayLabelZh || g.displayLabel || g.label || "—"} /></span>
                 {#if slotLabel || g.source}
                   <span class="gsub">{slotLabel}{#if slotLabel && g.source} · {/if}{#if g.source}{g.sourceName ?? t("skills.fromItem")}{/if}</span>
                 {/if}

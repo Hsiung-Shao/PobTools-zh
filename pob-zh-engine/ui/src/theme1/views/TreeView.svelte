@@ -401,7 +401,8 @@
     // nodes
     const showIcons = zoom > 0.035;
     // Node Power heat, the Compare rings and search hits: one pass shared by both
-    // games' drawing (PoE2's branch must not `continue` before reaching them).
+    // games' drawing (no branch may `continue` before reaching them: a mastery or a
+    // socket is a search hit too).
     const overlays = (n: TreeNode, sx: number, sy: number, half: number, alloc: boolean) => {
       // Show Node Power: POB tints unallocated nodes by their power
       if (power && !alloc) {
@@ -515,6 +516,8 @@
           const r = S.rect(icon);
           if (r) S.draw(ctx, icon, sx, sy, r.w * ART_SCALE * zoom, r.h * ART_SCALE * zoom, !alloc && hover?.id !== n.id);
         }
+        ctx.globalAlpha = 1;
+        overlays(n, sx, sy, half, alloc);
         continue;
       }
       const tint = radiusTint.get(n.id);
@@ -532,6 +535,8 @@
         if (fr) S.drawArt(ctx, fr, sx, sy, zoom);
         const sk = socketMap.get(n.id);
         if (alloc && sk?.overlay) S.drawArt(ctx, sk.overlay, sx, sy, zoom);
+        ctx.globalAlpha = 1;
+        overlays(n, sx, sy, half, alloc);
         continue;
       }
       if (showIcons) {

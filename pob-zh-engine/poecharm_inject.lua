@@ -799,6 +799,14 @@ local function translateSplitTitle(lead, item)
 	return lead .. zp .. preGap .. zb .. sufGap .. zs
 end
 
+-- The same split for the item lists (the new UI asks through the bridge): a
+-- magic or normal item has no title, and its name is the line above.
+function PobToolsItemNameZh(item)
+	if type(item) ~= "table" or item.title ~= nil or type(item.baseName) ~= "string" then return nil end
+	local ok, zh = pcall(translateSplitTitle, "", item)
+	return ok and zh or nil
+end
+
 -- ===== drop-down rows by language-independent id =====
 -- 使用者裁定 2026-10-28「更改」: a row whose English is shared by things with
 -- different GGPK wording is translated by what it IS, not by its text --

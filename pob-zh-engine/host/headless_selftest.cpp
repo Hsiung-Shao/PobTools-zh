@@ -1264,6 +1264,20 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				      okZhTip && zhTip.value("reversed", false) && zhTip["lines"].size() >= 2, zhTip.dump().substr(0, 200));
 			}
 
+			// A magic item's name is "Prefix Base" glued together by POB: no dictionary key, so the list has to split it like the tooltip header does.
+			{
+				json mAdd, mLi, del;
+				bool okM = child.Call("add_item", json{{"raw", "Rarity: MAGIC\nHeavy Woodsplitter\n"}, {"equip", false}}, mAdd, 60000);
+				long long mId = okM ? mAdd["item"].value("id", 0LL) : 0;
+				std::string mZh;
+				if (mId > 0 && child.Call("list_items", json::object(), mLi, 60000))
+					for (auto& it : mLi["items"]) if (it.value("id", 0LL) == mId) mZh = it.value("nameZh", "");
+				bool hasZh = false;
+				for (unsigned char c : mZh) if (c >= 0x80) { hasZh = true; break; }
+				check(u8"list_items:魔法物品名稱(前綴+基底)在清單有中文", okM && hasZh, "nameZh=" + mZh + " " + (okM ? "" : mAdd.dump().substr(0, 200)));
+				if (mId > 0) child.Call("delete_item", json{{"id", mId}}, del, 60000);
+			}
+
 			json dbU, dbZh, dbR;
 			bool okDbU = okLoad && child.Call("item_db", json{{"kind", "unique"}, {"query", "shavronne"}, {"page", 1}, {"size", 10}}, dbU, 180000);
 			bool okDbZh = okDbU && child.Call("item_db", json{{"kind", "unique"}, {"query", u8"\u859b\u6717"}, {"page", 1}, {"size", 10}}, dbZh, 60000);

@@ -55,6 +55,13 @@ local function asc_tr(id, name)
 	local zh = id ~= nil and type(PobToolsAscendancyNameZh) == "function" and PobToolsAscendancyNameZh(id, name) or nil
 	return zh or tr(name)
 end
+-- A magic or normal item is named "Prefix Base of Suffix" by concatenation, so the whole
+-- name is no dictionary key: the inject splits it the way it does for the tooltip header
+-- (PobToolsItemNameZh). An older inject has none, and the name then stays as tr() leaves it.
+local function item_tr(it)
+	local zh = type(PobToolsItemNameZh) == "function" and PobToolsItemNameZh(it) or nil
+	return zh or tr(it.name)
+end
 -- tr() of a label POB composed from gem names ("A, B"): the engine translates
 -- it piece by piece, each piece meeting these id names (PobToolsSetDrawOverride
 -- for the span of the call).
@@ -1143,7 +1150,7 @@ function M.get_tree_state()
 					e.name = jewel.name
 					e.title = jewel.title
 					e.baseName = jewel.baseName
-					e.nameZh = jewel.title and (tr(jewel.title) .. ", " .. tr(jewel.baseName or "")) or tr(jewel.name or "")
+					e.nameZh = jewel.title and (tr(jewel.title) .. ", " .. tr(jewel.baseName or "")) or item_tr(jewel)
 					e.rarity = jewel.rarity
 					if viewer and viewer.GetJewelSocketOverlay then
 						local ok2, ov = pcall(viewer.GetJewelSocketOverlay, viewer, jewel, node.expansionJewel)
@@ -2743,7 +2750,7 @@ local function item_summary(it)
 	if it.title and it.baseName then
 		nameZh = tr(it.title) .. ", " .. tr(it.baseName)
 	else
-		nameZh = tr(it.name)
+		nameZh = item_tr(it)
 	end
 	return {
 		id = it.id,
@@ -3394,13 +3401,13 @@ function M.shared_items()
 	local m = shared_lists()
 	local items = {}
 	for i, it in ipairs(m.sharedItemList) do
-		items[i] = { index = i, name = it.name, nameZh = tr(it.name), rarity = it.rarity, raw = it.raw or it:BuildRaw() }
+		items[i] = { index = i, name = it.name, nameZh = item_tr(it), rarity = it.rarity, raw = it.raw or it:BuildRaw() }
 	end
 	local sets = {}
 	for i, set in ipairs(m.sharedItemSetList) do
 		local slots = {}
 		for slotName, it in pairs(set.slots or {}) do
-			slots[slotName] = { name = it.name, nameZh = tr(it.name), rarity = it.rarity }
+			slots[slotName] = { name = it.name, nameZh = item_tr(it), rarity = it.rarity }
 		end
 		sets[i] = { index = i, title = set.title, slots = as_object(slots) }
 	end
@@ -4056,7 +4063,7 @@ function M.compare_items()
 			local slot = set and set[slotName]
 			local id = slot and slot.selItemId
 			local it = id and id ~= 0 and tab.items[id]
-			return it and { name = it.name, nameZh = tr(it.name), rarity = it.rarity, raw = it:BuildRaw() } or nil
+			return it and { name = it.name, nameZh = item_tr(it), rarity = it.rarity, raw = it:BuildRaw() } or nil
 		end
 		local mine = itemIn(b.itemsTab, b.itemsTab.activeItemSet)
 		local theirs = e.itemsTab and itemIn(e.itemsTab, e.itemsTab.activeItemSet) or nil
