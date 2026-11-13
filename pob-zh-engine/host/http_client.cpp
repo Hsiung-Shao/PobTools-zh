@@ -126,6 +126,9 @@ static std::string response_header(HINTERNET request, const wchar_t* name)
 	return narrow(std::wstring(value, size / sizeof(wchar_t)));
 }
 
+static HttpTestSource g_testSource;
+void HttpSetTestSource(HttpTestSource src) { g_testSource = std::move(src); }
+
 bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
                       std::string* err, const std::atomic<bool>* cancel,
                       const ProgressFn& onProgress)
@@ -133,6 +136,7 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
 	// true always means "no error": a retry that succeeds must not leave the
 	// first attempt's message behind.
 	if (err) err->clear();
+	if (g_testSource) return g_testSource(host_, path, out, err, cancel);
 	unsigned tokenGen = 0;
 	int status = 0;
 	if (getOnce(path, out, err, cancel, onProgress, true, &tokenGen, &status)) return true;

@@ -50,6 +50,7 @@
 #include "atlas_stat_agg.h"
 #include "atlas_optimize.h"
 #include "atlas_update.h"
+#include "data_update_selftest.h" // --atlas-update-selftest / --pt-update-selftest
 #include "atlas_diff.h"
 #include "atlas_mechanics.h"
 #include "atlas_version_index.h"
@@ -468,6 +469,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// Headless version-registry logic check (semver / prune / rolling retention).
 	if (arg1 == L"--atlas-index-selftest") {
 		return RunAtlasVersionIndexSelfTest(dir);
+	}
+
+	// Offline checks of the two data updaters (sandbox exeDir + fake network; never the real Data\).
+	if (arg1 == L"--atlas-update-selftest") {
+		return RunAtlasUpdateSelfTest(dir);
+	}
+	if (arg1 == L"--pt-update-selftest") {
+		return RunPassiveUpdateSelfTest(dir);
 	}
 
 	// Headless cross-season diff report: --atlas-diff <oldVer> <newVer>.

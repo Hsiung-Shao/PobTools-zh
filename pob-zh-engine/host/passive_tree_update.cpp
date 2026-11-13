@@ -255,10 +255,13 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 	// b. GitHub skilltree-export tags (best-effort; local result stands alone)
 	std::pair<int, int> remoteBest{ 0, 0 };
 	std::string remoteFullTag;
+	std::string tagsErr;
+	bool remoteOk = false;
 	{
-		std::string tagsBody, tagsErr;
+		std::string tagsBody;
 		HttpsClient api(kApiHost);
 		if (api.GetString(kTagsPath, tagsBody, &tagsErr, &stop_)) {
+			remoteOk = true;
 			try {
 				ordered_json tags = ordered_json::parse(tagsBody);
 				std::tuple<int, int, int> best{ -1, -1, -1 };
@@ -277,6 +280,12 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 
 	std::pair<int, int> newest = std::max(localBest, remoteBest);
 	if (newest <= current || newest == std::make_pair(0, 0)) {
+		// GitHub unreachable and nothing newer locally: not a completed check, so it
+		// must not start the daily throttle (same rule as AtlasUpdater).
+		if (!remoteOk) {
+			if (err) *err = tagsErr;
+			return false;
+		}
 		setPhase(PassiveUpdatePhase::UpToDate,
 			currentVer_.empty() ? u8"天賦樹資料未知版本" : u8"天賦樹資料已是最新（" + currentVer_ + u8"）");
 		lastCheckUtc_ = now_filetime();

@@ -39,6 +39,14 @@ struct HttpResult {
 	std::string body;                                     // filled for any status
 };
 
+// Selftest seam: while set, HttpsClient::Get/GetString answer from this instead of the network.
+// Return true with the body in out, or false with *err set. cancel is the caller's flag (may be null).
+// Set before any worker thread starts; pass nullptr to restore the network.
+using HttpTestSource = std::function<bool(const std::wstring& host, const std::wstring& path,
+                                          std::vector<unsigned char>& out, std::string* err,
+                                          const std::atomic<bool>* cancel)>;
+void HttpSetTestSource(HttpTestSource src);
+
 class HttpsClient {
 public:
 	explicit HttpsClient(const std::wstring& host);
