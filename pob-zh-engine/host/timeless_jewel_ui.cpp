@@ -1327,9 +1327,8 @@ public:
 	// one can change which seeds qualify.
 	bool canProtect() const { return jewelType == 4; }
 
-	// Ids of the protected notables inside the selected socket's radius. Marks
-	// left behind on another socket are ignored rather than cleared, the same way
-	// picks are.
+	// Ids of the protected notables inside the selected socket's radius. Picking
+	// another socket clears the marks, so the radius test is only a backstop.
 	std::vector<int> protectedIds() const
 	{
 		std::vector<int> ids;
@@ -1817,13 +1816,40 @@ public:
 		tin.emphasize = emphNode;
 		const bool pickable = treeRadius || zorath;
 		tin.overlay = [this, pickable](ImDrawList* dl, ImVec2 mn, ImVec2 mx) { drawLegend(dl, mn, mx, pickable); };
+		// Test aid (POBTOOLS_TJ_STATE=protectclick): pin a notable under the canvas
+		// centre, right-click it through ImGui's own input queue (no OS input), then
+		// write what the click changed to POBTOOLS_TJ_CLICK_DUMP.
+		if (testClickNode_ >= 0) ptView.SetCamera(0.3f, ptData.nodes[testClickNode_].x, ptData.nodes[testClickNode_].y);
 		PassiveTreeOutput tout = ptView.Draw(ptData, scale, tin);
+		if (testClickNode_ >= 0 && testClickFrame_ >= 0) {
+			if (testClickFrame_ == 2) {
+				ImGuiIO& io = ImGui::GetIO();
+				io.AddMousePosEvent((tout.canvasMin.x + tout.canvasMax.x) * 0.5f, (tout.canvasMin.y + tout.canvasMax.y) * 0.5f);
+				io.AddMouseButtonEvent(ImGuiMouseButton_Right, true);
+				io.AddMouseButtonEvent(ImGuiMouseButton_Right, false);
+			}
+			if (++testClickFrame_ > 12) {
+				testClickFrame_ = -1;
+				wchar_t path[MAX_PATH] = L"";
+				const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_TJ_CLICK_DUMP", path, MAX_PATH);
+				HANDLE f = (n > 0 && n < MAX_PATH) ? CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+				                                                 FILE_ATTRIBUTE_NORMAL, nullptr) : INVALID_HANDLE_VALUE;
+				if (f != INVALID_HANDLE_VALUE) {
+					const std::string out = "selected=" + std::to_string(std::count(ptSelected.begin(), ptSelected.end(), 1)) +
+					                        " protected=" + std::to_string(std::count(ptProtected.begin(), ptProtected.end(), 1)) + "\n";
+					DWORD wr = 0;
+					WriteFile(f, out.data(), (DWORD)out.size(), &wr, nullptr);
+					CloseHandle(f);
+				}
+			}
+		}
 
 		if (centerPending_ && selSocket >= 0) { ptView.CenterOn(ptData, selSocket); centerPending_ = false; }
 		if (panToNode >= 0) { ptView.CenterOn(ptData, panToNode); panToNode = -1; }
 
 		if (tout.clickedSocket >= 0 && tout.clickedSocket != selSocket) {
 			selSocket = tout.clickedSocket;
+			ptProtected.clear(); // a mark the new socket cannot reach would still claim to filter
 			hiSig = -1; // force recompute next frame
 			ptView.CenterOn(ptData, selSocket);
 		}
@@ -2903,6 +2929,9 @@ public:
 //   pastenosock = paste with no socket picked; POBTOOLS_TJ_PASTE_FILE = text to paste
 //   keystone = Glorious Vanity, no seed, Bitter Frost's tooltip forced open
 //              (POBTOOLS_TJ_CONQ = conqueror index)
+//   protect = Militant Faith, two notables protected, a search run
+//   protectclick = Militant Faith, one synthetic right click on a notable;
+//                  POBTOOLS_TJ_CLICK_DUMP = file that gets "selected=N protected=N"
 	// Nothing is written: under a test aid the league fetch, the tree-update
 	// check and tj_ui.json are all off.
 	void applyTestState()
@@ -3004,6 +3033,17 @@ public:
 			mode = 0;
 			autoPick_ = true;
 			runSearch();
+		} else if (testState_ == "protectclick") {
+			// Militant Faith, nothing marked: the canvas code right-clicks the
+			// first notable in reach.
+			jewelType = 4;
+			templates = TJStatTemplates(*ds, jewelType);
+			templatesFor = jewelType;
+			wants.clear();
+			for (int idx : ptData.NodesInRadius(selSocket, 1800.0f))
+				if (ptData.nodes[idx].kind == kPtNotable && testClickNode_ < 0) testClickNode_ = idx;
+			centerPending_ = false;
+			mode = 0;
 		} else if (testState_ == "jewelmenu") {
 			PobUi::TestOpenSelect("##jewel");
 		} else if (testState_ == "seederr") {
@@ -3169,6 +3209,8 @@ private:
 	bool testMode_ = false;
 	int testHoverNode_ = -1;      // POBTOOLS_TJ_STATE=keystone: tooltip shown without a mouse
 	int testConqSwitch_ = -1;     // POBTOOLS_TJ_CONQ_SWITCH: conqueror picked after the first recompute
+	int testClickNode_ = -1;      // POBTOOLS_TJ_STATE=protectclick: the notable right-clicked
+	int testClickFrame_ = 0;      // frames drawn since; -1 once the dump is written
 	// Set once the user opens any trade search. The calculator's numbers come from
 	// our own transform of the game data; PoB is the independent second opinion, so
 	// nudge people to cross-check there before they spend currency.

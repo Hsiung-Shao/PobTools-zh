@@ -186,7 +186,9 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 
 	// left click: a socket selects the jewel location; any other node is a
 	// toggle target (caller decides). Only on a genuine click, not a drag.
-	if (ImGui::IsItemDeactivated() &&
+	// The button also activates on the right mouse button, so "deactivated" alone
+	// would make a right click count as a left one.
+	if (ImGui::IsItemDeactivated() && ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
 	    ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Left)) < 16.0f * uiScale * uiScale) {
 		int s = hitTest(d, screenToWorld(io.MousePos), true);
 		if (s != -1) out.clickedSocket = s;
@@ -195,9 +197,10 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 			if (n != -1 && d.nodes[n].kind != kPtSocket) out.clickedNode = n;
 		}
 	}
-	// right click: same "click, not drag" rule -- a right DRAG pans the canvas.
+	// right click: a right DRAG pans the canvas, so judge by the farthest the
+	// press travelled -- a pan that ends back where it began is still a pan.
 	if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
-	    ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Right)) < 16.0f * uiScale * uiScale) {
+	    io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] < 16.0f * uiScale * uiScale) {
 		int n = hitTest(d, screenToWorld(io.MousePos), false);
 		if (n != -1 && d.nodes[n].kind != kPtSocket) out.rightClickedNode = n;
 	}
