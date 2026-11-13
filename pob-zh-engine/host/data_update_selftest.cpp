@@ -812,7 +812,7 @@ void test_cache_write(Rep& R)
 	         u8"快取留有上次中斷的 .part 時，該圖集仍重新下載、更新完成", vdesc(done));
 }
 
-// the installed tree is replaced whole or not at all: a write that fails must leave the old tree readable
+// the installed tree json is replaced whole or not at all (the sheets are copied before it and are not covered)
 void test_pt_tree_write(Rep& R)
 {
 	Opt o;
@@ -825,11 +825,12 @@ void test_pt_tree_write(Rep& R)
 	if (!ok || v.phase != Ph::UpdateAvailable) { R.chk_id("C4", false, u8"檢查到新版", vdesc(v)); return; }
 	c.u->update();
 	View done = c.wait_update(&ok);
-	R.chk_id("C4", done.phase == Ph::Error && !before.empty() && slurp(tree) == before,
+	R.chk_id("C4", done.phase == Ph::Error && contains(done.message, "passive_tree_poe1.json") && !before.empty() &&
+	               slurp(tree) == before,
 	         u8"樹檔寫入失敗時回報錯誤、舊樹檔原封不動", vdesc(done));
 }
 
-// ---- T10 補：本機 POB TreeData 較新------------------------------------------------------------------------
+// ---- T10 補：本機 POB TreeData 較新 ------------------------------------------------------------------------
 
 void test_pob_local(Rep& R)
 {
