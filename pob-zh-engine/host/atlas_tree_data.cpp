@@ -1304,6 +1304,13 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 				rep.check(!z329.LagsSeason("3.29.1"), u8"[譯文] 同賽季重發(3.29.1)不算落後", z329.RepoeVersion());
 				rep.check(z329.LagsSeason("3.30.0"), u8"[譯文] 3.29 的譯文對 3.30 算落後", z329.RepoeVersion());
 			}
+			AtlasI18n z330;
+			bool has330 = z330.LoadVersion(exeDir, "3.30.0");
+			rep.check(has330 && !z330.LagsSeason("3.30.0"), u8"[譯文] 由 3.30 遊戲檔整檔重產的譯文不算落後(repoe 仍是 3.29)", z330.RepoeVersion());
+			rep.check(has330 && AtlasVersionIndex::CompareSemver(z330.SourceVersion(), "3.30.0") >= 0,
+			          u8"[譯文] 3.30 官方譯文不早於 3.30.0:改名節點的名稱不會被當舊譯丟掉", z330.SourceVersion());
+			rep.check(AtlasI18n::SeasonLags("3.29.3.6", "3.30.0") && !AtlasI18n::SeasonLags("3.30.0.1", "3.30.0"),
+			          u8"[譯文] 上季 repoe 對本季算落後(更新器不拿它覆蓋官方譯文)");
 		}
 
 		d.Reset();

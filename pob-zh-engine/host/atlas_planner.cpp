@@ -2100,9 +2100,9 @@ private:
 		for (int i = 0; i < (int)tree.masteries.size(); i++) {
 			const AtlasMechanicDef* d = AtlasMechanicByEn(tree.masteries[i].name);
 			if (!d) continue;
-			// A renamed mastery (3.30 "Sacred Flora" = Harvest) has no official
-			// Chinese for the new name yet: show the game's English, not the old name.
-			labels[i] = (tree.masteries[i].name == d->en && (!zhLag_ || lagZh_)) ? d->zh : tree.masteries[i].name;
+			// A renamed mastery (3.30 "Sacred Flora" = Harvest) shows its own name, not the old one.
+			const std::string& mn = tree.masteries[i].name;
+			labels[i] = (zhLag_ && !lagZh_) ? mn : mn == d->en ? d->zh : AtlasMechanicRenamedZh(mn);
 			bool found = false;
 			for (auto& kv : mechMastIdx)
 				if (kv.first == d->id) { kv.second.push_back(i); found = true; break; }
@@ -2180,8 +2180,8 @@ private:
 				// whatever got paired to a NEW/CHANGED line is a translation of
 				// the old wording -> drop those (fall back to English) and the
 				// stale names of renamed nodes. Unchanged lines keep zh.
-				bool zhLags = !i18n.RepoeVersion().empty() &&
-				              AtlasVersionIndex::CompareSemver(i18n.RepoeVersion(), tag) < 0;
+				bool zhLags = !i18n.SourceVersion().empty() &&
+				              AtlasVersionIndex::CompareSemver(i18n.SourceVersion(), tag) < 0;
 				if (zhLags) {
 					PruneStaleTranslations(i18n, tree, ot);
 					DropRenamedNames(i18n, tree, ot);
@@ -3102,8 +3102,8 @@ private:
 		if (hb && bz.LagsSeason(base)) KeepFreshOnly(bz, bt);
 		if (ht && tz.LagsSeason(targ)) KeepFreshOnly(tz, tt);
 		else if (hb && ht) {
-			bool zhLags = !tz.RepoeVersion().empty() &&
-			              AtlasVersionIndex::CompareSemver(tz.RepoeVersion(), targ) < 0;
+			bool zhLags = !tz.SourceVersion().empty() &&
+			              AtlasVersionIndex::CompareSemver(tz.SourceVersion(), targ) < 0;
 			if (zhLags) {
 				PruneStaleTranslations(tz, tt, bt);
 				DropRenamedNames(tz, tt, bt);

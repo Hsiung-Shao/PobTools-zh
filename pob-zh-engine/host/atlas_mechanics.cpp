@@ -24,18 +24,18 @@ using nlohmann::ordered_json;
 // With several mastery rows the shortest zh wins; the longer ones are league-variant labels that
 // all start with the short form.
 //
-// ⚠ Nine mechanics are `provisional` (from the 3.30.0 tree export, before 3.30 game files existed):
-// id = mastery icon token, zh = English name. Redo them from GGPK AND regenerate every season's
-// atlas_mechanics.json in the same change: those files store these ids, and a group whose id is no
-// longer in the catalogue vanishes.
+// A mechanic added from a tree export before the season's game files exist is `provisional`
+// (id = mastery icon token, zh = English name). When redoing it from GGPK, rewrite the ids in every
+// season's atlas_mechanics.json in the same change: those files store these ids, and a group whose
+// id is no longer in the catalogue vanishes. (The 3.30 ones were redone from GGPK 3.30.0.1.)
 //
-// ⚠ "Labyrinth" really is 帝王迷宮機率 in the game files (GGG named that mastery row after the
-// stat). Left verbatim; don't invent 帝王迷宮.
+// Names are verbatim from the newest game files, odd or not: "Labyrinth" was 帝王迷宮機率 until 3.30
+// renamed it 帝王迷宮; "Threads" share the old Scarab group id.
 static const std::vector<AtlasMechanicDef>& catalogue()
 {
 	static const std::vector<AtlasMechanicDef> kDefs = {
 		{ "Abyss", "Abyss", u8"Abyss", u8"深淵" },
-		{ "Anomalies", "Anomalies", u8"Atlas Anomalies", u8"Atlas Anomalies", true },
+		{ "Kirac", "Anomalies", u8"Atlas Anomalies", u8"輿圖異常" },
 		{ "Memory", "Memories", u8"Atlas Memories", u8"輿圖記憶" },
 		{ "Bestiary", "Bestiary", u8"Bestiary", u8"獸獵" },
 		{ "Betrayal", "Jun", u8"Betrayal", u8"反叛" },
@@ -48,20 +48,20 @@ static const std::vector<AtlasMechanicDef>& catalogue()
 		{ "Divination", "Divination", u8"Divination Cards", u8"命運卡" },
 		{ "Essence", "Essence", u8"Essence", u8"精髓" },
 		{ "Expedition", "Expedition", u8"Expedition", u8"探險" },
-		{ "Gold", "Gold", u8"Gold", u8"Gold", true },
+		{ "Gold", "Gold", u8"Gold", u8"金幣" },
 		{ "Harvest", "Harvest", u8"Harvest", u8"豐收" },
 		{ "Heist", "Heist", u8"Heist", u8"劫盜" },
 		{ "Incursion", "Alva", u8"Incursion", u8"穿越" },
-		{ "Labyrinth", "Labyrinth", u8"Labyrinth", u8"帝王迷宮機率" },
+		{ "Labyrinth", "Labyrinth", u8"Labyrinth", u8"帝王迷宮" },
 		{ "Legion", "Legion", u8"Legion", u8"戰亂" },
-		{ "MagicMonsters", "MagicMonsters", u8"Magic Monsters", u8"Magic Monsters", true },
+		{ "Magics", "MagicMonsters", u8"Magic Monsters", u8"魔法怪物" },
 		{ "Map Tier", "Map", u8"Maps", u8"地圖" },
 		{ "Mercenary", "Mercenaries", u8"Mercenaries", u8"傭兵" },
-		{ "Mirage", "Mirage", u8"Mirage", u8"Mirage", true },
-		{ "RareMonsters", "RareMonsters", u8"Rare Monsters", u8"Rare Monsters", true },
+		{ "Mirage", "Mirage", u8"Mirage", u8"蜃景" },
+		{ "Rares", "RareMonsters", u8"Rare Monsters", u8"稀有怪物" },
 		{ "Ritual", "Ritual", u8"Ritual", u8"祭祀" },
 		{ "Anarchy", "Anarchy", u8"Rogue Exiles", u8"盜賊流亡者" },
-		{ "Sentinek", "Sentinek", u8"Sentinels", u8"Sentinels", true },
+		{ "Sentinel", "Sentinek", u8"Sentinels", u8"守望" },
 		{ "Kalguur", "Settlers", u8"Settlers of Kalguur", u8"卡爾葛拓荒者" },
 		{ "Domination", "Domination", u8"Shrines", u8"神殿" },
 		{ "Strongbox", "Strongbox", u8"Strongboxes", u8"保險箱" },
@@ -69,12 +69,12 @@ static const std::vector<AtlasMechanicDef>& catalogue()
 		{ "Tangle", "Tangle", u8"The Eater of Worlds", u8"吞噬天地" },
 		{ "CleansingFire", "CleansingFire", u8"The Searing Exarch", u8"灼烙總督" },
 		{ "ElderShaper", "ElderShaper", u8"The Shaper and Elder", u8"塑界者和尊師" },
-		{ "Thread", "Thread", u8"Threads", u8"Threads", true },
+		{ "Scarab", "Thread", u8"Threads", u8"綢帶" },
 		{ "Torment", "Torment", u8"Torment", u8"罪魂" },
 		{ "Ultimatum", "Ultimatum", u8"Ultimatum", u8"通牒" },
-		{ "UniqueMonsters", "UniqueMonsters", u8"Unique Monsters", u8"Unique Monsters", true },
+		{ "Unique", "UniqueMonsters", u8"Unique Monsters", u8"傳奇怪物" },
 		{ "Vaal", "Vaal", u8"Vaal Side Areas", u8"瓦爾區域" },
-		{ "AzmeriForest", "AzmeriForest", u8"Viridian Wildwood", u8"Viridian Wildwood", true },
+		{ "Wildwood", "AzmeriForest", u8"Viridian Wildwood", u8"翠綠荒林" },
 	};
 	return kDefs;
 }
@@ -95,15 +95,15 @@ static const MechAlias kAliases[] = {
 	{ "Mercenary", "Mercenary" },
 	{ "DivinationCard", "Divination" },
 	// node icons that spell these differently from the mastery icon (SentinelNode vs ...Sentinek)
-	{ "Uniquemonsters", "UniqueMonsters" },
-	{ "Magicmonsters", "MagicMonsters" },
-	{ "Sentinel", "Sentinek" },
+	{ "Uniquemonsters", "Unique" },
+	{ "Magicmonsters", "Magics" },
+	{ "Sentinel", "Sentinel" },
 };
 
 // A mastery the game renamed while keeping its icon (Harvest clusters are now "Sacred Flora").
-struct MechRename { const char* en; const char* id; };
+struct MechRename { const char* en; const char* id; const char* zh; };
 static const MechRename kRenames[] = {
-	{ "Sacred Flora", "Harvest" },
+	{ "Sacred Flora", "Harvest", u8"聖潔之花" },
 };
 
 const AtlasMechanicDef* AtlasMechanicById(const std::string& id)
@@ -120,6 +120,13 @@ const AtlasMechanicDef* AtlasMechanicByEn(const std::string& en)
 	for (const MechRename& r : kRenames)
 		if (en == r.en) return AtlasMechanicById(r.id);
 	return nullptr;
+}
+
+std::string AtlasMechanicRenamedZh(const std::string& en)
+{
+	for (const MechRename& r : kRenames)
+		if (en == r.en) return r.zh;
+	return en;
 }
 
 double AtlasMechanicBacktestGate() { return 93.0; }
