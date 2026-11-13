@@ -1278,7 +1278,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				if (mId > 0) child.Call("delete_item", json{{"id", mId}}, del, 60000);
 			}
 
-			// The classic POB edit box (build / folder names, notes): upstream removes one BYTE per Backspace / Delete, and the engine
+			// The classic POB edit box (build / folder names): upstream removes one BYTE per Backspace / Delete, and the engine
 			// translated whatever the box held when it happened to be a dictionary key.
 			{
 				json bk, dl, dr, du;
@@ -1289,6 +1289,11 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				// "測試", caret at the start -> Delete
 				bool okDl = child.Call("selftest_edit_control", json{{"buf", u8"測試"}, {"caret", 1}, {"keys", json::array({"DELETE"})}}, dl, 30000);
 				check(u8"輸入框:在中文字前按 Delete 刪掉整個字", okDl && dl.value("bufHex", "") == "E8A9A6" && dl.value("caret", 0) == 1, dl.dump().substr(0, 200));
+				// "測試 ", caret at the end -> Ctrl+Backspace (upstream walks over the space, then cuts into 試)
+				json cb;
+				bool okCb = child.Call("selftest_edit_control", json{{"buf", u8"測試 "}, {"keys", json::array({"BACK"})}, {"ctrl", true}}, cb, 30000);
+				check(u8"輸入框:中文字後有空白時按 Ctrl+Backspace 不留半個字", okCb && cb.value("bufHex", "") == "E6B8AC" && cb.value("caret", 0) == 4,
+				      cb.dump().substr(0, 200));
 				auto allAscii = [](const json& r) {
 					if (!r.contains("drawn") || !r["drawn"].is_array() || r["drawn"].empty()) return false;
 					for (auto& s : r["drawn"])
@@ -1641,6 +1646,13 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			json tt;
 			bool okTt = gemsOk && child.Call("gem_tooltip", json{{"group", newIdx}, {"index", 1}}, tt, 60000);
 			check("gem_tooltip: POB's gem tooltip for the new gem", okTt && tt["lines"].size() >= 3, okTt ? "" : tt.dump().substr(0, 200));
+			// the one edit box whose text is NOT the user's: it stays translated
+			json gb;
+			bool okGb = gemsOk && child.Call("selftest_gem_box", json{{"group", newIdx}, {"index", 1}, {"name", "Fireball"}}, gb, 30000);
+			bool gbZh = false;
+			if (okGb && gb.contains("drawn"))
+				for (auto& d : gb["drawn"]) if (d.get<std::string>() == u8"火球") gbZh = true;
+			check(u8"技能頁寶石名稱框:Fireball 仍畫成中文(不受輸入框保留英文影響)", gbZh, gb.dump().substr(0, 200));
 			json sm, st1;
 			bool okSm = gemsOk && child.Call("set_build_field", json{{"field", "mainSocketGroup"}, {"value", newIdx}}, sm, 60000) &&
 			            child.Call("get_stats", json::object(), st1, 30000);

@@ -1291,6 +1291,7 @@ PATCHES["GemSelectControl"] = function(class)
 	--     _G.utf8). Fatal when no constructor slot is found: silence here is
 	--     exactly how this went unnoticed on PoE1.
 	if not wrapConstructor(class, "GemSelectControl", function(self)
+		self.pobtoolsKeepOff = true -- (0b): this box's text is meant to be drawn translated
 		if main and main.unicode then
 			self.filter = "%c"
 			self.filterPattern = "[" .. self.filter .. "]"
@@ -2220,14 +2221,19 @@ local function withKeepScope(list, fn, ...)
 	return a, b, c
 end
 
--- Every string EditControl:Draw (and the click handler) passes for this buffer
--- that the engine would translate; nil when there is none, which is the usual
--- case. Rebuilt only when the text, caret or selection changed.
+-- Every string a single-line EditControl:Draw (and the click handler) passes
+-- for this buffer that the engine would translate; nil when there is none,
+-- which is the usual case. Rebuilt only when the text, caret, selection or F2
+-- changed. Left alone: the gem name box (its buffer is a gem name, drawn in
+-- Chinese on purpose) and the multi-line boxes (notes, item text), which keep
+-- drawing as they did.
 local function editKeepList(self)
 	local buf = self.buf
-	if type(buf) ~= "string" or buf == "" or type(PobToolsTranslateDisplay) ~= "function" then return nil end
+	if type(buf) ~= "string" or buf == "" or self.lineHeight or self.pobtoolsKeepOff
+		or type(PobToolsTranslateDisplay) ~= "function" then return nil end
+	local on = translateOn()
 	local memo = self.pobtoolsKeep
-	if memo and memo.buf == buf and memo.caret == self.caret and memo.sel == self.sel then return memo.list end
+	if memo and memo.buf == buf and memo.caret == self.caret and memo.sel == self.sel and memo.on == on then return memo.list end
 	local list = {}
 	local function add(s)
 		if s ~= "" and PobToolsTranslateDisplay(s) then list[#list + 1] = s end
@@ -2237,29 +2243,17 @@ local function editKeepList(self)
 	local textCol, selCol = self.textCol or "", self.selCol or ""
 	local strip = type(StripEscapes) == "function" and StripEscapes or function(s) return s end
 	add(buf)
-	if self.lineHeight then
-		-- same walk as the multi-line branch of Draw
-		for s, line, e in (buf .. "\n"):gmatch("()([^\n]*)\n()") do
-			add(line)
-			if left > s and left < e then add(line:sub(1, left - s)) end
-			if left ~= right and left < e and right > s then
-				local sel = selCol .. strip(line:sub(math.max(1, left - s + 1), math.min(#line, right - s)))
-				add(sel)
-				add(sel .. "  ")
-			end
-			if right > s and right < e then add(line:sub(right - s + 1)) end
-		end
-	else
-		add(textCol .. buf:sub(1, left - 1))
-		add(selCol .. strip(buf:sub(left, right - 1)))
-		add(textCol .. buf:sub(right))
-		add(buf:sub(right))
-	end
-	self.pobtoolsKeep = { buf = buf, caret = self.caret, sel = self.sel, list = list[1] and list or nil }
+	add(textCol .. buf:sub(1, left - 1))
+	add(selCol .. strip(buf:sub(left, right - 1)))
+	add(textCol .. buf:sub(right))
+	add(buf:sub(right))
+	self.pobtoolsKeep = { buf = buf, caret = self.caret, sel = self.sel, on = on, list = list[1] and list or nil }
 	return self.pobtoolsKeep.list
 end
 
--- Leave one byte of the character next to the caret for upstream to remove.
+-- Leave one byte of the character upstream is about to cut into for it to
+-- remove. With Ctrl held upstream first walks over the whitespace next to the
+-- caret (same walk here), so the byte it ends on is further away.
 local function trimCharForDelete(self, key)
 	local buf, caret = self.buf, self.caret
 	if type(buf) ~= "string" or type(caret) ~= "number" then return end
@@ -2267,17 +2261,30 @@ local function trimCharForDelete(self, key)
 		local b = buf:byte(i)
 		return b and b >= 0x80 and b < 0xC0
 	end
+	local ctrl, len = IsKeyDown("CTRL"), 1
 	if key == "BACK" then
-		local i = caret - 1
-		while i > 1 and caret - 1 - i < 3 and cont(i) do i = i - 1 end
-		if i < caret - 1 and (buf:byte(i) or 0) >= 0xC0 then
-			self.buf = buf:sub(1, i - 1) .. buf:sub(caret - 1)
-			self.caret = i + 1
+		while ctrl and caret - len > 1 and buf:sub(caret - len, caret - len):match("%s")
+			and not buf:sub(caret - len - 1, caret - len - 1):match("\n") do
+			len = len + 1
 		end
-	elseif (buf:byte(caret) or 0) >= 0xC0 then
-		local j = caret + 1
-		while j - caret < 4 and cont(j) do j = j + 1 end
-		self.buf = buf:sub(1, caret) .. buf:sub(j)
+		local last = caret - len
+		local i = last
+		while i > 1 and last - i < 3 and cont(i) do i = i - 1 end
+		if i < last and (buf:byte(i) or 0) >= 0xC0 then
+			self.buf = buf:sub(1, i - 1) .. buf:sub(last)
+			self.caret = caret - (last - i)
+		end
+	else
+		while ctrl and caret + len <= #buf and buf:sub(caret + len - 1, caret + len - 1):match("%s")
+			and not buf:sub(caret + len, caret + len):match("\n") do
+			len = len + 1
+		end
+		local last = caret + len - 1
+		if (buf:byte(last) or 0) >= 0xC0 then
+			local j = last + 1
+			while j - last < 4 and cont(j) do j = j + 1 end
+			self.buf = buf:sub(1, last) .. buf:sub(j)
+		end
 	end
 end
 

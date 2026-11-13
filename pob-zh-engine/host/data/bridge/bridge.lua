@@ -7672,8 +7672,6 @@ function M.party_import(p)
 	return M.party_import_state()
 end
 
--- party_action{action = "clear"|"disable"|"rebuild"}: Clear, Disable Party
--- Effects and Rebuild All.
 -- Selftest probes (--headless-selftest only, no UI calls them): what a classic
 -- POB control hands to the renderer, after translation, when it draws.
 local function selftest_drawn(control)
@@ -7698,7 +7696,11 @@ function M.selftest_edit_control(p)
 	e.buf = p.buf or ""
 	e.caret = p.caret or (#e.buf + 1)
 	e.sel = p.sel
-	for _, key in ipairs(p.keys or {}) do e:OnKeyDown(key) end
+	local realIsKeyDown = IsKeyDown
+	if p.ctrl then IsKeyDown = function(k) return k == "CTRL" end end
+	local ok, err = pcall(function() for _, key in ipairs(p.keys or {}) do e:OnKeyDown(key) end end)
+	IsKeyDown = realIsKeyDown
+	if not ok then error(err, 0) end
 	e.hasFocus = p.focus ~= false
 	return { bufHex = (e.buf:gsub(".", function(c) return string.format("%02X", c:byte()) end)), caret = e.caret,
 		drawn = p.draw and selftest_drawn(e) or {} }
@@ -7710,11 +7712,23 @@ function M.selftest_build_list(p)
 		{ buildName = p.buildName, fileName = p.buildName .. ".xml", subPath = p.subPath or "", level = 1, className = "Witch" },
 		{ folderName = p.folderName, subPath = p.subPath or "" },
 	} }
-	local list = new("BuildListControl"):BuildListControl(nil, { 0, 0, 600, 300 }, listMode)
+	local rect = { 0, 0, 600, 300 }
+	local twoStep, list = pcall(function() return new("BuildListControl"):BuildListControl(nil, rect, listMode) end)
+	if not twoStep then list = new("BuildListControl", nil, rect, listMode) end
 	list.width = function() return 600 end -- BuildList.lua sets a function here; the path bar calls it
 	return { drawn = selftest_drawn(list) }
 end
 
+-- The skills tab's gem name box of that slot, holding p.name the way POB fills it.
+function M.selftest_gem_box(p)
+	local ctl = gem_slot_control(ensure_build(), p)
+	if not ctl then error("no gem box", 0) end
+	ctl.buf = p.name
+	return { drawn = selftest_drawn(ctl) }
+end
+
+-- party_action{action = "clear"|"disable"|"rebuild"}: Clear, Disable Party
+-- Effects and Rebuild All.
 function M.party_action(p)
 	local b = ensure_build()
 	local c = b.partyTab.controls
