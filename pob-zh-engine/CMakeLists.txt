@@ -484,6 +484,7 @@ if (WIN32)
         host/atlas_planner.cpp
         host/atlas_import.cpp
         host/atlas_update.cpp
+        host/data_updater.cpp
         host/data_update_selftest.cpp
         host/atlas_stat_agg.cpp
         host/atlas_scarabs.cpp

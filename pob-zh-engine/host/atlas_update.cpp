@@ -83,14 +83,6 @@ static void remove_dir_with_sub(const std::wstring& dir, const wchar_t* sub)
 
 static void remove_cache_dir(const std::wstring& dir) { remove_dir_with_sub(dir, L"assets"); }
 
-static long long now_filetime()
-{
-	FILETIME ft{};
-	GetSystemTimeAsFileTime(&ft);
-	ULARGE_INTEGER u{ ft.dwLowDateTime, ft.dwHighDateTime };
-	return (long long)u.QuadPart;
-}
-
 // zh mapping generation. KEEP IN SYNC with tools/gen_atlas_zh.py (both must emit the same atlas_tree_zh.json schema).
 
 // repoe-fork keeps the "Grants N Atlas Passive Skill Points" line in skill_points, not stat_text, so statsEn is one
@@ -367,10 +359,8 @@ bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& t
 
 // AtlasUpdater
 
-void AtlasUpdater::Init(const std::wstring& exeDir)
+void AtlasUpdater::loadRecord()
 {
-	exeDir_ = exeDir;
-
 	// version record (missing file = never updated -> any tag counts as new)
 	std::string content;
 	if (read_file_utf8(exeDir_ + L"Data\\atlas_version.json", content)) {
@@ -386,90 +376,6 @@ void AtlasUpdater::Init(const std::wstring& exeDir)
 			sha_.clear();
 			repoe_.clear();
 			lastCheckUtc_ = 0;
-		}
-	}
-
-	worker_ = std::thread(&AtlasUpdater::workerLoop, this);
-}
-
-void AtlasUpdater::Shutdown()
-{
-	if (worker_.joinable()) {
-		{
-			std::lock_guard<std::mutex> lk(cmdMx_);
-			stop_.store(true);
-		}
-		cmdCv_.notify_all();
-		worker_.join();
-	}
-}
-
-void AtlasUpdater::RequestCheck(bool force)
-{
-	if (!worker_.joinable()) return;
-	static const long long kDay = 24ll * 3600 * 10'000'000; // FILETIME is 100ns units
-	if (!force && lastCheckUtc_ > 0 && now_filetime() - lastCheckUtc_ < kDay)
-		return; // throttled: checked within the last day
-	{
-		std::lock_guard<std::mutex> lk(cmdMx_);
-		cmdQ_.push_back(Cmd::Check);
-	}
-	cmdCv_.notify_one();
-}
-
-void AtlasUpdater::StartUpdate()
-{
-	if (!worker_.joinable()) return;
-	{
-		std::lock_guard<std::mutex> lk(cmdMx_);
-		cmdQ_.push_back(Cmd::Update);
-	}
-	cmdCv_.notify_one();
-}
-
-AtlasUpdater::Status AtlasUpdater::Poll()
-{
-	std::lock_guard<std::mutex> lk(stMx_);
-	return st_;
-}
-
-void AtlasUpdater::AckReload()
-{
-	std::lock_guard<std::mutex> lk(stMx_);
-	st_.reloadPending = false;
-	st_.zhRefreshed = false;
-	st_.phase = AtlasUpdatePhase::Idle;
-	st_.message.clear();
-}
-
-void AtlasUpdater::setPhase(AtlasUpdatePhase p, const std::string& msg)
-{
-	std::lock_guard<std::mutex> lk(stMx_);
-	st_.phase = p;
-	st_.message = msg;
-}
-
-void AtlasUpdater::workerLoop()
-{
-	for (;;) {
-		Cmd cmd;
-		{
-			std::unique_lock<std::mutex> lk(cmdMx_);
-			cmdCv_.wait(lk, [&] { return stop_.load() || !cmdQ_.empty(); });
-			if (stop_.load()) break;
-			cmd = cmdQ_.front();
-			cmdQ_.pop_front();
-		}
-		std::string err;
-		if (cmd == Cmd::Check) {
-			if (!doCheck(&err)) {
-				// a failed background check stays quiet; retried next launch
-				// because lastCheckUtc is only persisted on success
-				setPhase(AtlasUpdatePhase::Idle, "");
-			}
-		} else {
-			if (!doUpdate(&err))
-				setPhase(AtlasUpdatePhase::Error, err);
 		}
 	}
 }
@@ -546,7 +452,7 @@ bool AtlasUpdater::doCheck(std::string* err)
 		setPhase(AtlasUpdatePhase::UpToDate, u8"輿圖資料已是最新（" + latestTag + u8"）");
 	}
 
-	lastCheckUtc_ = now_filetime();
+	lastCheckUtc_ = DataUpdaterNowFiletime();
 	saveVersionRecord();
 	return true;
 }
@@ -681,7 +587,7 @@ bool AtlasUpdater::doUpdate(std::string* err)
 		e.tag = tag; e.sha = latestSha_; e.repoe = repoeVer;
 		idx.UpsertActive(e);
 		std::vector<std::string> dropped = idx.PruneSeasons(2);
-		idx.SetLastCheckUtc(now_filetime());
+		idx.SetLastCheckUtc(DataUpdaterNowFiletime());
 		if (!idx.Save(exeDir_)) {
 			// The files landed but the index did not: the new season is on disk and invisible; say so (looks like "the update did nothing").
 			PobLog::Error("atlas", u8"新賽季資料已下載，但 atlas_index.json 存檔失敗");
@@ -693,7 +599,7 @@ bool AtlasUpdater::doUpdate(std::string* err)
 
 	tag_ = tag;
 	sha_ = latestSha_;
-	lastCheckUtc_ = now_filetime();
+	lastCheckUtc_ = DataUpdaterNowFiletime();
 	saveVersionRecord();          // legacy record: keeps the daily-throttle state
 	remove_cache_dir(cacheDir);   // best-effort
 

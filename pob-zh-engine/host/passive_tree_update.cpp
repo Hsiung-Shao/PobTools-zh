@@ -1,5 +1,4 @@
 #include "passive_tree_update.h"
-#include "error_log.h"
 #include "passive_import.h"
 #include "launcher_config.h" // FindPoe1Dir
 #include "http_client.h"
@@ -94,14 +93,6 @@ static void remove_cache_dir(const std::wstring& dir)
 	RemoveDirectoryW(dir.c_str());
 }
 
-static long long now_filetime()
-{
-	FILETIME ft{};
-	GetSystemTimeAsFileTime(&ft);
-	ULARGE_INTEGER u{ ft.dwLowDateTime, ft.dwHighDateTime };
-	return (long long)u.QuadPart;
-}
-
 // Bundled tree's "treeVersion" without a full 1MB JSON parse: both writers
 // (gen_passive_tree.py and passive_import.cpp) emit it as the second field, so
 // a bounded search over the head of the file is reliable.
@@ -141,9 +132,8 @@ static std::pair<int, int> newest_pob_tree_version(const std::wstring& exeDir)
 
 // PassiveTreeUpdater
 
-void PassiveTreeUpdater::Init(const std::wstring& exeDir)
+void PassiveTreeUpdater::loadRecord()
 {
-	exeDir_ = exeDir;
 	currentVer_ = read_bundled_tree_version(exeDir_);
 
 	std::string content;
@@ -153,91 +143,6 @@ void PassiveTreeUpdater::Init(const std::wstring& exeDir)
 			lastCheckUtc_ = v.value("lastCheckUtc", 0ll);
 		} catch (...) {
 			lastCheckUtc_ = 0;
-		}
-	}
-	worker_ = std::thread(&PassiveTreeUpdater::workerLoop, this);
-}
-
-void PassiveTreeUpdater::Shutdown()
-{
-	if (worker_.joinable()) {
-		{
-			std::lock_guard<std::mutex> lk(cmdMx_);
-			stop_.store(true);
-		}
-		cmdCv_.notify_all();
-		worker_.join();
-	}
-}
-
-void PassiveTreeUpdater::RequestCheck(bool force)
-{
-	if (!worker_.joinable()) return;
-	static const long long kDay = 24ll * 3600 * 10'000'000; // FILETIME is 100ns units
-	if (!force && lastCheckUtc_ > 0 && now_filetime() - lastCheckUtc_ < kDay)
-		return;
-	{
-		std::lock_guard<std::mutex> lk(cmdMx_);
-		cmdQ_.push_back(Cmd::Check);
-	}
-	cmdCv_.notify_one();
-}
-
-void PassiveTreeUpdater::StartUpdate()
-{
-	if (!worker_.joinable()) return;
-	{
-		std::lock_guard<std::mutex> lk(cmdMx_);
-		cmdQ_.push_back(Cmd::Update);
-	}
-	cmdCv_.notify_one();
-}
-
-PassiveTreeUpdater::Status PassiveTreeUpdater::Poll()
-{
-	std::lock_guard<std::mutex> lk(stMx_);
-	return st_;
-}
-
-void PassiveTreeUpdater::AckReload()
-{
-	std::lock_guard<std::mutex> lk(stMx_);
-	st_.reloadPending = false;
-	st_.phase = PassiveUpdatePhase::Idle;
-	st_.message.clear();
-}
-
-void PassiveTreeUpdater::setPhase(PassiveUpdatePhase p, const std::string& msg)
-{
-	std::lock_guard<std::mutex> lk(stMx_);
-	st_.phase = p;
-	st_.message = msg;
-}
-
-void PassiveTreeUpdater::workerLoop()
-{
-	for (;;) {
-		Cmd cmd;
-		{
-			std::unique_lock<std::mutex> lk(cmdMx_);
-			cmdCv_.wait(lk, [&] { return stop_.load() || !cmdQ_.empty(); });
-			if (stop_.load()) break;
-			cmd = cmdQ_.front();
-			cmdQ_.pop_front();
-		}
-		std::string err;
-		if (cmd == Cmd::Check) {
-			if (!doCheck(&err)) {
-				// Quiet on screen (nobody asked) but never in the log, or a failed
-				// check is unreportable.
-				PobLog::Error("tree", "check failed: " + err);
-				setPhase(PassiveUpdatePhase::Idle, "");
-			}
-		} else {
-			if (!doUpdate(&err)) {
-				PobLog::Error("tree", "update failed: " + err);
-				setPhase(PassiveUpdatePhase::Error, err);
-			}
 		}
 	}
 }
@@ -288,7 +193,7 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 		}
 		setPhase(PassiveUpdatePhase::UpToDate,
 			currentVer_.empty() ? u8"天賦樹資料未知版本" : u8"天賦樹資料已是最新（" + currentVer_ + u8"）");
-		lastCheckUtc_ = now_filetime();
+		lastCheckUtc_ = DataUpdaterNowFiletime();
 		saveRecord();
 		return true;
 	}
@@ -308,7 +213,7 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 		(currentVer_.empty() ? "" : u8"（目前 " + currentVer_ + u8"）") +
 		(localBest == newest ? u8"｜POB 已更新，圖集可直接取用" : ""));
 
-	lastCheckUtc_ = now_filetime();
+	lastCheckUtc_ = DataUpdaterNowFiletime();
 	saveRecord();
 	return true;
 }
@@ -379,7 +284,7 @@ bool PassiveTreeUpdater::doUpdate(std::string* err)
 	if (!ImportPassiveTreeData(cacheDir + L"data.json", ver, exeDir_, err, &sum)) return false;
 
 	currentVer_ = ver;
-	lastCheckUtc_ = now_filetime();
+	lastCheckUtc_ = DataUpdaterNowFiletime();
 	saveRecord();
 	remove_cache_dir(cacheDir); // best-effort
 
