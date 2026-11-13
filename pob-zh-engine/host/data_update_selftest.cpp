@@ -442,6 +442,7 @@ const Flavor& pt_flavor()
 struct Opt {
 	bool newer = true;    // remote has a newer tag than the installed data
 	bool tagsFail = false;
+	bool tagsGarbage = false; // tags answers 200 with a body that is not a tag list
 	bool hang = false;    // data.json download blocks until cancelled
 	std::string pobVer;   // non-empty: a local PoB install with an (empty-ish) TreeData\<pobVer>\a-3.png
 };
@@ -467,6 +468,7 @@ struct Ctx {
 			? R"([{"name":"3.30.0-ruthless","commit":{"sha":"ruthsha"}},{"name":"3.29.0","commit":{"sha":"newsha"}},{"name":"3.28.0","commit":{"sha":"oldsha"}}])"
 			: R"([{"name":"3.30.0-ruthless","commit":{"sha":"ruthsha"}},{"name":"3.28.0","commit":{"sha":"oldsha"}},{"name":"3.27.0","commit":{"sha":"olds"}}])";
 		net.tagsFail = o.tagsFail;
+		if (o.tagsGarbage) net.tagsBody = "<html>proxy login</html>";
 		net.repoeVer = o.newer ? "r2" : "r1";
 		net.dataBody = fl.dataGood;
 		net.dataHang = o.hang;
@@ -741,6 +743,15 @@ void test_throttle(Rep& R)
 		c.check(false, &ok2, 3000);
 		R.chk(4, ok2, u8"檢查「失敗」後 RequestCheck(false) 仍會再連網（失敗不計入節流）",
 		      ok2 ? "" : std::string(u8"第二次沒有任何請求；失敗後狀態=") + ph_name(v1.phase));
+	}
+	{
+		Opt o; o.newer = false; o.tagsGarbage = true;
+		Ctx c(fl, o);
+		bool ok1 = false, ok2 = false;
+		View v1 = c.check(false, &ok1, 5000);
+		c.check(false, &ok2, 3000);
+		R.chk(4, ok1 && ok2, u8"tags 回 200 但內容不是版本清單：不算檢查成功，RequestCheck(false) 仍會再連網",
+		      std::string(u8"狀態=") + ph_name(v1.phase));
 	}
 }
 

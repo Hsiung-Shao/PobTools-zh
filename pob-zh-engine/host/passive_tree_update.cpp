@@ -166,7 +166,6 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 		std::string tagsBody;
 		HttpsClient api(kApiHost);
 		if (api.GetString(kTagsPath, tagsBody, &tagsErr, &stop_)) {
-			remoteOk = true;
 			try {
 				ordered_json tags = ordered_json::parse(tagsBody);
 				std::tuple<int, int, int> best{ -1, -1, -1 };
@@ -176,8 +175,10 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 					if (!parse_semver(name, &v)) continue;
 					if (v > best) { best = v; remoteFullTag = name; }
 				}
-				if (!remoteFullTag.empty())
+				if (!remoteFullTag.empty()) {
 					remoteBest = { std::get<0>(best), std::get<1>(best) };
+					remoteOk = true; // a 200 that is not a tag list (proxy page, truncated) is no answer
+				}
 			} catch (...) {
 			}
 		}
@@ -188,7 +189,7 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 		// GitHub unreachable and nothing newer locally: not a completed check, so it
 		// must not start the daily throttle (same rule as AtlasUpdater).
 		if (!remoteOk) {
-			if (err) *err = tagsErr;
+			if (err) *err = tagsErr.empty() ? "no release tag in the GitHub answer" : tagsErr;
 			return false;
 		}
 		setPhase(PassiveUpdatePhase::UpToDate,
