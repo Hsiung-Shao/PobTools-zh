@@ -1304,6 +1304,10 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				check(u8"輸入框:輸入 Build 時畫出來仍是 Build(不被翻譯)", okDr && allAscii(dr), dr.dump().substr(0, 200));
 				bool okDu = child.Call("selftest_edit_control", json{{"buf", "Test"}, {"draw", true}, {"focus", false}}, du, 30000);
 				check(u8"輸入框:失去焦點後 Test 仍是 Test(不被翻譯)", okDu && allAscii(du), du.dump().substr(0, 200));
+				// the notes tab: the one multi-line box that follows what was typed (focused: a DrawString per line)
+				json nt;
+				bool okNt = child.Call("selftest_notes_box", json{{"text", "Test\nmy Build notes\nBuild"}}, nt, 30000);
+				check(u8"備註分頁:整行是 Test、Build 時照原文顯示(不被翻譯)", okNt && allAscii(nt) && nt["drawn"].size() >= 3, nt.dump().substr(0, 200));
 				// the same names where the list and the path bar above it draw them
 				json bl;
 				bool okBl = child.Call("selftest_build_list", json{{"buildName", "Build"}, {"folderName", "Test"}, {"subPath", "Test/"}}, bl, 30000);

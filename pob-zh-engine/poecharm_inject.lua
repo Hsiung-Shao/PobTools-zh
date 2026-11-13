@@ -2221,15 +2221,15 @@ local function withKeepScope(list, fn, ...)
 	return a, b, c
 end
 
--- Every string a single-line EditControl:Draw (and the click handler) passes
--- for this buffer that the engine would translate; nil when there is none,
--- which is the usual case. Rebuilt only when the text, caret, selection or F2
--- changed. Left alone: the gem name box (its buffer is a gem name, drawn in
--- Chinese on purpose) and the multi-line boxes (notes, item text), which keep
--- drawing as they did.
+-- Every string EditControl:Draw (and the click handler) passes for this buffer
+-- that the engine would translate; nil when there is none, which is the usual
+-- case. Rebuilt only when the text, caret, selection or F2 changed. Left alone:
+-- the gem name box (its buffer is a gem name, drawn in Chinese on purpose) and
+-- the multi-line boxes other than the notes tab's (item text keeps drawing as
+-- it did; 使用者裁定 2026-11-13: only the notes follow what was typed).
 local function editKeepList(self)
 	local buf = self.buf
-	if type(buf) ~= "string" or buf == "" or self.lineHeight or self.pobtoolsKeepOff
+	if type(buf) ~= "string" or buf == "" or self.pobtoolsKeepOff or (self.lineHeight and not self.pobtoolsKeepLines)
 		or type(PobToolsTranslateDisplay) ~= "function" then return nil end
 	local on = translateOn()
 	local memo = self.pobtoolsKeep
@@ -2243,10 +2243,24 @@ local function editKeepList(self)
 	local textCol, selCol = self.textCol or "", self.selCol or ""
 	local strip = type(StripEscapes) == "function" and StripEscapes or function(s) return s end
 	add(buf)
-	add(textCol .. buf:sub(1, left - 1))
-	add(selCol .. strip(buf:sub(left, right - 1)))
-	add(textCol .. buf:sub(right))
-	add(buf:sub(right))
+	if self.lineHeight then
+		-- same walk as the multi-line branch of Draw
+		for s, line, e in (buf .. "\n"):gmatch("()([^\n]*)\n()") do
+			add(line)
+			if left > s and left < e then add(line:sub(1, left - s)) end
+			if left ~= right and left < e and right > s then
+				local sel = selCol .. strip(line:sub(math.max(1, left - s + 1), math.min(#line, right - s)))
+				add(sel)
+				add(sel .. "  ")
+			end
+			if right > s and right < e then add(line:sub(right - s + 1)) end
+		end
+	else
+		add(textCol .. buf:sub(1, left - 1))
+		add(selCol .. strip(buf:sub(left, right - 1)))
+		add(textCol .. buf:sub(right))
+		add(buf:sub(right))
+	end
 	self.pobtoolsKeep = { buf = buf, caret = self.caret, sel = self.sel, on = on, list = list[1] and list or nil }
 	return self.pobtoolsKeep.list
 end
@@ -2400,6 +2414,18 @@ PATCHES["PathControl"] = function(class)
 	class.SetSubPath = keepArity(origSet, function(self, subPath, noUndo)
 		return withKeepScope(folders(subPath), origSet, self, subPath, noUndo)
 	end)
+end
+
+-- The notes are the user's own text as well: a line that was a whole dictionary
+-- key ("Test") was shown translated. The one multi-line box that opts in.
+PATCHES["NotesTab"] = function(class)
+	if not wrapConstructor(class, "NotesTab", function(self)
+		-- no error from inside POB's constructor: a renamed control costs this fix, not the build
+		local edit = type(self.controls) == "table" and self.controls.edit
+		if type(edit) == "table" then edit.pobtoolsKeepLines = true end
+	end) then
+		error("NotesTab has no constructor to wrap")
+	end
 end
 
 -- Tooltips: translate a line BEFORE POB wraps it.
@@ -2942,6 +2968,7 @@ local PATCH_SYMPTOM = {
 	BuildListControl        = "流派清單裡使用者取的英文名稱被翻成中文",
 	FolderListControl       = "資料夾清單裡使用者取的英文名稱被翻成中文",
 	PathControl             = "路徑列上使用者取的英文資料夾名稱被翻成中文",
+	NotesTab                = "備註分頁裡使用者打的英文整行被翻成中文",
 	Tooltip                 = "提示視窗的中文顯示",
 	ItemsTab                = "選了會加詞綴數的符文後，滑過新的詞綴欄會讓 POB 報錯",
 	Item                    = "貼上的物品會多出一條「Dex: 99」之類的假詞綴;缺半徑的傳奇珠寶(從無到有)放進插槽會讓 POB 報錯",

@@ -7727,6 +7727,18 @@ function M.selftest_gem_box(p)
 	return { drawn = selftest_drawn(ctl) }
 end
 
+-- The notes tab's (multi-line) edit box holding p.text; its own text is put back.
+function M.selftest_notes_box(p)
+	local e = ensure_build().notesTab.controls.edit
+	local was = e.buf
+	e:SetText(p.text or "")
+	e.hasFocus = p.focus ~= false
+	local ok, drawn = pcall(selftest_drawn, e)
+	e:SetText(was)
+	if not ok then error(drawn, 0) end
+	return { drawn = drawn }
+end
+
 -- party_action{action = "clear"|"disable"|"rebuild"}: Clear, Disable Party
 -- Effects and Rebuild All.
 function M.party_action(p)
