@@ -1,6 +1,7 @@
 #include "atlas_update.h"
 #include "error_log.h"
 #include "atlas_import.h"
+#include "atlas_i18n.h"
 #include "atlas_version_index.h" // versioned season layout + rolling retention
 #include "http_client.h"
 
@@ -437,7 +438,9 @@ bool AtlasUpdater::doCheck(std::string* err)
 	if (latestTag != tag_) {
 		ph = AtlasUpdatePhase::UpdateAvailable;
 		msg = u8"發現新賽季輿圖資料 " + latestTag + (tag_.empty() ? "" : u8"（目前 " + tag_ + u8"）");
-	} else if (!repoeVer.empty() && repoeVer != repoe_) {
+	} else if (AtlasI18n cur; !repoeVer.empty() && repoeVer != repoe_ &&
+	           // a mapping made from this season's game files beats one rebuilt from last season's repoe
+	           !(AtlasI18n::SeasonLags(repoeVer, latestTag) && cur.LoadVersion(exeDir_, latestTag) && cur.Official())) {
 		// same tree, newer translations: rebuild the zh mapping in place
 		setPhase(AtlasUpdatePhase::Checking, u8"更新繁中對照資料中…");
 		std::string zhErr;

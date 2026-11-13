@@ -86,10 +86,9 @@ bool AtlasI18n::LoadVersion(const std::wstring& exeDir, const std::string& tag)
 	}
 }
 
-bool AtlasI18n::LagsSeason(const std::string& tag) const
+bool AtlasI18n::SeasonLags(const std::string& src, const std::string& tag)
 {
 	int ra = 0, rb = 0, ta = 0, tb = 0;
-	const std::string& src = official_.empty() ? repoe_ : official_;
 	if (sscanf_s(src.c_str(), "%d.%d", &ra, &rb) != 2 || sscanf_s(tag.c_str(), "%d.%d", &ta, &tb) != 2)
 		return false;   // unknown on either side: no claim
 	return ra < ta || (ra == ta && rb < tb);

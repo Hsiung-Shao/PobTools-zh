@@ -2180,8 +2180,8 @@ private:
 				// whatever got paired to a NEW/CHANGED line is a translation of
 				// the old wording -> drop those (fall back to English) and the
 				// stale names of renamed nodes. Unchanged lines keep zh.
-				bool zhLags = !i18n.RepoeVersion().empty() &&
-				              AtlasVersionIndex::CompareSemver(i18n.RepoeVersion(), tag) < 0;
+				bool zhLags = !i18n.SourceVersion().empty() &&
+				              AtlasVersionIndex::CompareSemver(i18n.SourceVersion(), tag) < 0;
 				if (zhLags) {
 					PruneStaleTranslations(i18n, tree, ot);
 					DropRenamedNames(i18n, tree, ot);
@@ -3102,8 +3102,8 @@ private:
 		if (hb && bz.LagsSeason(base)) KeepFreshOnly(bz, bt);
 		if (ht && tz.LagsSeason(targ)) KeepFreshOnly(tz, tt);
 		else if (hb && ht) {
-			bool zhLags = !tz.RepoeVersion().empty() &&
-			              AtlasVersionIndex::CompareSemver(tz.RepoeVersion(), targ) < 0;
+			bool zhLags = !tz.SourceVersion().empty() &&
+			              AtlasVersionIndex::CompareSemver(tz.SourceVersion(), targ) < 0;
 			if (zhLags) {
 				PruneStaleTranslations(tz, tt, bt);
 				DropRenamedNames(tz, tt, bt);

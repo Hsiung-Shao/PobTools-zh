@@ -48,7 +48,11 @@ public:
 	// "3.29.3.6" lags "3.30.0", "3.29.0.4.2" does not lag "3.29.1"). While it lags the whole tree is
 	// shown in English (see the planner's applyZh). A mapping regenerated whole from the season's own
 	// game files says so ("official": game version) and that version is the one compared.
-	bool LagsSeason(const std::string& tag) const;
+	bool LagsSeason(const std::string& tag) const { return SeasonLags(SourceVersion(), tag); }
+	static bool SeasonLags(const std::string& ver, const std::string& tag);
+	// The version the translations actually date from: the game files' when "official", else repoe's.
+	const std::string& SourceVersion() const { return official_.empty() ? repoe_ : official_; }
+	bool Official() const { return !official_.empty(); }
 
 	// True when the zh of `en` is season-official (mapping "fresh" list: lines
 	// patched from the season's own game files while repoe still lags). Such
