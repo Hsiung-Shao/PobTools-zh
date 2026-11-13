@@ -90,7 +90,6 @@ public:
 	// enough -- the worker applies translation packs on its own schedule with
 	// nobody pressing anything, so the gate has to be here.
 	void SetTranslationUpdates(bool on) { transUpdates_.store(on); }
-	bool TranslationUpdatesEnabled() const { return transUpdates_.load(); }
 
 	// Main thread. The beta line: the app check reads the release LIST and takes
 	// the highest version of any kind, instead of releases/latest (which GitHub
@@ -101,7 +100,6 @@ public:
 	// button: the check runs on its own schedule.
 	// ⚠ The data line is untouched; both channels share the same data-<n>.
 	void SetBetaChannel(bool on) { betaChannel_.store(on); }
-	bool BetaChannelEnabled() const { return betaChannel_.load(); }
 
 	// Main thread. Valid in TransAvailable: apply the pending translation pack
 	// once, regardless of the setting above. Turning the setting off must not mean
@@ -134,7 +132,6 @@ public:
 	// the button is not enough — the worker does the translation update on its
 	// own schedule, with nobody pressing anything.
 	void SetHold(bool on) { hold_.store(on); }
-	bool IsHeld() const { return hold_.load(); }
 
 private:
 	friend int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly, bool allowBack);
