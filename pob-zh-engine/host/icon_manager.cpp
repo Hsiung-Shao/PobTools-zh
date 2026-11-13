@@ -69,22 +69,37 @@ static bool HttpGet(HINTERNET hConnect, const std::wstring& path, std::vector<un
 		WinHttpQueryHeaders(hReq, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
 			WINHTTP_HEADER_NAME_BY_INDEX, &code, &len, WINHTTP_NO_HEADER_INDEX);
 		if (code == 200) {
-			DWORD avail = 0;
-			do {
-				avail = 0;
+			bool complete = false; // a read error mid-body is a failed download, not a short one
+			for (;;) {
+				DWORD avail = 0;
 				if (!WinHttpQueryDataAvailable(hReq, &avail)) break;
-				if (avail == 0) break;
+				if (avail == 0) { complete = true; break; }
 				size_t off = out.size();
 				out.resize(off + avail);
 				DWORD rd = 0;
-				if (!WinHttpReadData(hReq, out.data() + off, avail, &rd)) { out.resize(off); break; }
+				if (!WinHttpReadData(hReq, out.data() + off, avail, &rd)) break;
 				out.resize(off + rd);
-			} while (avail > 0);
-			ok = !out.empty();
+			}
+			ok = complete && !out.empty();
 		}
 	}
 	WinHttpCloseHandle(hReq);
 	return ok;
+}
+
+unsigned char* IconLoadOrFetch(const std::wstring& cacheFile,
+                               const std::function<bool(std::vector<unsigned char>&)>& fetch, int* w, int* h)
+{
+	std::vector<unsigned char> bytes;
+	if (read_file_bytes(cacheFile, bytes)) {
+		if (unsigned char* px = DecodeImageRGBA(bytes.data(), (int)bytes.size(), w, h)) return px;
+		DeleteFileW(cacheFile.c_str()); // a cut-off download cached by an older build: fetch it again
+	}
+	bytes.clear();
+	if (!fetch(bytes) || bytes.empty()) return nullptr;
+	unsigned char* px = DecodeImageRGBA(bytes.data(), (int)bytes.size(), w, h);
+	if (px) write_file_bytes(cacheFile, bytes);
+	return px;
 }
 
 // IconManager
@@ -219,15 +234,9 @@ void IconManager::workerLoop()
 			urlPath = L"/image/" + widen(artPath) + L".png";
 		}
 		std::wstring cacheFile = cacheDir_ + cacheName + L".png";
-		std::vector<unsigned char> bytes;
-		if (!read_file_bytes(cacheFile, bytes)) {
-			if (HttpGet(hConnect, urlPath, bytes))
-				write_file_bytes(cacheFile, bytes);
-		}
-		if (bytes.empty()) continue;
-
 		int w = 0, h = 0;
-		unsigned char* rgba = DecodeImageRGBA(bytes.data(), (int)bytes.size(), &w, &h);
+		unsigned char* rgba = IconLoadOrFetch(cacheFile,
+			[&](std::vector<unsigned char>& b) { return HttpGet(hConnect, urlPath, b); }, &w, &h);
 		if (!rgba) continue;
 		{
 			std::lock_guard<std::mutex> lk(doneMx_);

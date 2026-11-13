@@ -20,6 +20,14 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include <functional>
+#include <vector>
+
+// The worker's load step: the cached file, else `fetch` (which is then cached). Returns decoded RGBA
+// (free with FreeDecoded) or null. Only bytes that decode are kept on disk; a cache file that does
+// not decode is deleted so a later run fetches it again.
+unsigned char* IconLoadOrFetch(const std::wstring& cacheFile,
+                               const std::function<bool(std::vector<unsigned char>&)>& fetch, int* w, int* h);
 
 class IconManager {
 public:

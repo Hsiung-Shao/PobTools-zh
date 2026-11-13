@@ -18,6 +18,8 @@
 #include "filter_card_ui.h"
 #include "filter_undo.h"
 #include "filter_edit_journal.h"
+#include "icon_manager.h" // IconLoadOrFetch
+#include "image_tex.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -2844,6 +2846,43 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 			rep.check(li >= 0 && pushed && u >= 0 && SerializeFilter(f) == before, "T31 one edit on the real file undoes byte-exact",
 			          "li=" + std::to_string(li) + " pushed=" + std::to_string(pushed) + " u=" + std::to_string(u));
 		}
+	}
+
+	// item-icon cache: only a download that decodes may be kept
+	{
+		static const unsigned char kPng[] = { // a 1x1 RGBA PNG
+			0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+			0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+			0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+			0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+			0x42, 0x60, 0x82 };
+		const std::vector<unsigned char> good(kPng, kPng + sizeof kPng), cut(kPng, kPng + 45);
+		wchar_t tmp[MAX_PATH];
+		GetTempPathW(MAX_PATH, tmp);
+		const std::wstring file = std::wstring(tmp) + L"pobtools_icon_selftest_" + std::to_wstring(GetCurrentProcessId()) + L".png";
+		auto onDisk = [&] { return GetFileAttributesW(file.c_str()) != INVALID_FILE_ATTRIBUTES; };
+		auto put = [&](const std::vector<unsigned char>& b) {
+			std::ofstream(file, std::ios::binary).write((const char*)b.data(), (std::streamsize)b.size());
+		};
+		int fetches = 0;
+		auto load = [&](const std::vector<unsigned char>& served) {
+			int w = 0, h = 0;
+			unsigned char* px = IconLoadOrFetch(file, [&](std::vector<unsigned char>& b) { fetches++; b = served; return true; }, &w, &h);
+			const bool ok = px && w == 1 && h == 1;
+			FreeDecoded(px);
+			return ok;
+		};
+		DeleteFileW(file.c_str());
+		rep.check(load(good) && onDisk() && fetches == 1, "I1 圖示下載完整時顯示並存入快取");
+		rep.check(load(cut) && fetches == 1, "I2 快取完好時不再下載");
+		DeleteFileW(file.c_str());
+		rep.check(!load(cut) && !onDisk(), "I3 下載到截斷的圖檔時不存入快取");
+		put(cut);
+		fetches = 0;
+		rep.check(load(good) && fetches == 1 && onDisk(), "I4 快取裡是壞檔時重新下載並換掉");
+		put(cut);
+		rep.check(!load(cut) && !onDisk(), "I5 壞快取重新下載仍失敗時刪掉壞檔");
+		DeleteFileW(file.c_str());
 	}
 
 	return rep.finish(exeDir + L"filter_selftest.txt");
