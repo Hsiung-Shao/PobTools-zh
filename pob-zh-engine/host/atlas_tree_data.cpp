@@ -1304,6 +1304,9 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 				rep.check(!z329.LagsSeason("3.29.1"), u8"[譯文] 同賽季重發(3.29.1)不算落後", z329.RepoeVersion());
 				rep.check(z329.LagsSeason("3.30.0"), u8"[譯文] 3.29 的譯文對 3.30 算落後", z329.RepoeVersion());
 			}
+			AtlasI18n z330;
+			if (z330.LoadVersion(exeDir, "3.30.0"))
+				rep.check(!z330.LagsSeason("3.30.0"), u8"[譯文] 由 3.30 遊戲檔整檔重產的譯文不算落後(repoe 仍是 3.29)", z330.RepoeVersion());
 		}
 
 		d.Reset();

@@ -46,7 +46,8 @@ public:
 	const std::string& RepoeVersion() const { return repoe_; }
 	// True when the mapping was built from an EARLIER LEAGUE than `tag` (major.minor only: repoe
 	// "3.29.3.6" lags "3.30.0", "3.29.0.4.2" does not lag "3.29.1"). While it lags the whole tree is
-	// shown in English (see the planner's applyZh).
+	// shown in English (see the planner's applyZh). A mapping regenerated whole from the season's own
+	// game files says so ("official": game version) and that version is the one compared.
 	bool LagsSeason(const std::string& tag) const;
 
 	// True when the zh of `en` is season-official (mapping "fresh" list: lines
@@ -80,6 +81,7 @@ private:
 	bool provisional_ = false;
 	std::string note_;
 	std::string repoe_;
+	std::string official_;
 	bool loaded_ = false;
 };
 

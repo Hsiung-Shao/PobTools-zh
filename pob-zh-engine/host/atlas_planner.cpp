@@ -2100,9 +2100,9 @@ private:
 		for (int i = 0; i < (int)tree.masteries.size(); i++) {
 			const AtlasMechanicDef* d = AtlasMechanicByEn(tree.masteries[i].name);
 			if (!d) continue;
-			// A renamed mastery (3.30 "Sacred Flora" = Harvest) has no official
-			// Chinese for the new name yet: show the game's English, not the old name.
-			labels[i] = (tree.masteries[i].name == d->en && (!zhLag_ || lagZh_)) ? d->zh : tree.masteries[i].name;
+			// A renamed mastery (3.30 "Sacred Flora" = Harvest) shows its own name, not the old one.
+			const std::string& mn = tree.masteries[i].name;
+			labels[i] = (zhLag_ && !lagZh_) ? mn : mn == d->en ? d->zh : AtlasMechanicRenamedZh(mn);
 			bool found = false;
 			for (auto& kv : mechMastIdx)
 				if (kv.first == d->id) { kv.second.push_back(i); found = true; break; }

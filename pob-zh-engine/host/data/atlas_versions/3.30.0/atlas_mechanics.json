@@ -87,7 +87,7 @@
 			]
 		},
 		{
-			"id": "Anomalies",
+			"id": "Kirac",
 			"clusters": 2,
 			"nodes": [
 				19199,
@@ -103,7 +103,7 @@
 			]
 		},
 		{
-			"id": "AzmeriForest",
+			"id": "Wildwood",
 			"clusters": 2,
 			"nodes": [
 				601,
@@ -640,7 +640,7 @@
 			]
 		},
 		{
-			"id": "MagicMonsters",
+			"id": "Magics",
 			"clusters": 2,
 			"nodes": [
 				2792,
@@ -817,7 +817,7 @@
 			]
 		},
 		{
-			"id": "RareMonsters",
+			"id": "Rares",
 			"clusters": 2,
 			"nodes": [
 				206,
@@ -884,7 +884,7 @@
 			]
 		},
 		{
-			"id": "Sentinek",
+			"id": "Sentinel",
 			"clusters": 2,
 			"nodes": [
 				5308,
@@ -978,7 +978,7 @@
 			]
 		},
 		{
-			"id": "Thread",
+			"id": "Scarab",
 			"clusters": 8,
 			"nodes": [
 				31,
@@ -1122,7 +1122,7 @@
 			]
 		},
 		{
-			"id": "UniqueMonsters",
+			"id": "Unique",
 			"clusters": 3,
 			"nodes": [
 				6106,
