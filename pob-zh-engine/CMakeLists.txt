@@ -524,6 +524,7 @@ if (WIN32)
         # ...or, where WebView2 cannot run (Wine / CrossOver), the same page in
         # the system browser over a loopback HTTP server
         host/modern_ui_browser.cpp
+        host/modern_ui_shared.cpp
         host/zip_extract.cpp
         host/hash_sha256.cpp
         host/sig_verify.cpp

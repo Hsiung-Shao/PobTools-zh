@@ -8,6 +8,7 @@
 #include "bridge_gate.h"
 #include "pob_protocol.h" // a link handed over by a second pob-zh.exe (WM_COPYDATA)
 #include "modern_ui_browser.h"
+#include "modern_ui_shared.h"
 #include "clipboard_util.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -142,40 +143,9 @@ struct Window {
 		return true;
 	}
 
-	void StopChild()
-	{
-		if (child) {
-			child->SetLineSink(nullptr);
-			child->SetExitSink(nullptr);
-			child->Stop(3000);
-			child.reset();
-		}
-	}
+	void StopChild() { StopHeadlessChild(child); }
 
-	json Prefs() const
-	{
-		json fonts = json::array();
-		for (const std::wstring& f : ListAvailableFonts(exeDir)) fonts.push_back(narrow(f));
-		// The launcher's own choice, re-read: "follow the launcher" must show what it uses NOW.
-		const LauncherConfig fromIni = LoadLauncherConfig(exeDir + L"pob-zh.ini");
-		const std::wstring launcherFont = fromIni.fontFile;
-		// Background: this window's game only; "launcherLook" is the launcher's Appearance set, re-read like the font.
-const int g = GameIndex(game);
-		// The launcher's set never carries a video (it cannot play one) nor a scope.
-		auto lookJson = [](const AppearanceConfig& a, bool follow, int scope, bool video) {
-			return json{ {"follow", follow}, {"background", narrow(NormalizeBackgroundFile(a.background, video))},
-			             {"bgBright", ClampPercent(a.bgBright, kBgBrightDefault)}, {"panelOpacity", ClampWindowOpacity(a.windowOpacity)},
-			             {"glassBlur", ClampPercent(a.glassBlur, 0)}, {"treeBg", ClampPercent(a.treeBg, 100)},
-			             {"bgScope", scope == 1 ? 1 : 0} };
-		};
-		json backgrounds = json::array();
-		for (const std::wstring& f : ListAvailableBackgrounds(exeDir, true)) backgrounds.push_back(narrow(f));
-		return json{ {"zoom", ClampModernZoom(cfg.modernZoom)}, {"fontSize", ClampModernFontSize(cfg.modernFontSize)},
-		             {"theme", narrow(NormalizeModernTheme(cfg.modernTheme))}, {"accent", narrow(NormalizeModernAccent(cfg.modernAccent))},
-		             {"font", narrow(NormalizeModernFont(cfg.modernFont))}, {"launcherFont", narrow(launcherFont)}, {"fonts", fonts},
-		             {"look", lookJson(cfg.modernLook[g].look, cfg.modernLook[g].follow, cfg.modernLook[g].bgScope, true)},
-		             {"launcherLook", lookJson(fromIni.look[g], true, 0, false)}, {"backgrounds", backgrounds} };
-	}
+	json Prefs() const { return ModernUiPrefs(exeDir, game, cfg); }
 
 	json Info() const
 	{
@@ -208,21 +178,8 @@ const int g = GameIndex(game);
 	// this one closes. Returns true when the line was that failing verdict (send nothing else to the page).
 	bool OnGateLine(const std::string& line)
 	{
-		if (line.find("\"gate_result\"") == std::string::npos) return false;
-		json msg;
-		try { msg = json::parse(line); } catch (...) { return false; }
-		if (!msg.is_object() || msg.value("event", "") != "gate_result") return false;
-		const json& d = msg.contains("data") ? msg["data"] : json::object();
 		BridgeGate::Verdict v;
-		v.ok = d.value("ok", false);
-		if (d.contains("failed") && d["failed"].is_array())
-			for (auto& f : d["failed"]) if (f.is_string()) v.failed.push_back(f.get<std::string>());
-		v.pobVersion = d.value("pobVersion", "");
-		v.pobBranch = d.value("pobBranch", "");
-		v.pobDir = pobDir;
-		v.bridgeHash = BridgeGate::BridgeFingerprint(exeDir);
-		BridgeGate::Write(exeDir, v);
-		if (v.ok || gateFellBack) return false;
+		if (!ModernUiRecordGate(exeDir, pobDir, line, v) || v.ok || gateFellBack) return false;
 		gateFellBack = true;
 		std::string why;
 		for (size_t i = 0; i < v.failed.size() && i < 5; i++) why += (i ? "; " : "") + v.failed[i];
@@ -269,18 +226,8 @@ const int g = GameIndex(game);
 		} else if (method == "host.read_clipboard") {
 			// The page's paste: WebView2 prompts before navigator.clipboard reads (or refuses), so it is read here.
 			reply(json{ {"text", ReadClipboardUtf8(hwnd)} });
-		} else if (method == "host.open_folder" && params.value("which", "") == "backgrounds") {
-			// The one folder outside the POB install the page may open: the background-image folder.
-			ShellExecuteW(nullptr, L"explore", BackgroundsDir(exeDir).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-			reply(json{ {"ok", true} });
 		} else if (method == "host.open_folder") {
-			// Only folders under the POB install, so "open a folder" never becomes "open anything".
-			std::wstring p = widen(params.value("path", ""));
-			for (auto& c : p) if (c == L'/') c = L'\\';
-			std::wstring root = pobDir;
-			bool under = !root.empty() && _wcsnicmp(p.c_str(), root.c_str(), root.size()) == 0;
-			if (!under) { fail("denied", "path is outside the POB install"); return; }
-			ShellExecuteW(nullptr, L"explore", p.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+			if (!ModernUiOpenFolder(exeDir, pobDir, params)) { fail("denied", "path is outside the POB install"); return; }
 			reply(json{ {"ok", true} });
 		} else if (method == "host.restart_engine") {
 			StopChild();
@@ -289,47 +236,8 @@ const int g = GameIndex(game);
 		} else if (method == "host.get_prefs") {
 			reply(Prefs());
 		} else if (method == "host.set_prefs") {
-			// The page's gear popover. Zoom applies at once; both persist to the ini like SaveWindowSize (re-read, change ours, write).
-			LauncherConfig fresh = LoadLauncherConfig(exeDir + L"pob-zh.ini");
-			if (params.contains("zoom")) fresh.modernZoom = ClampModernZoom(params.value("zoom", kModernZoomDefault));
-			if (params.contains("fontSize")) fresh.modernFontSize = ClampModernFontSize(params.value("fontSize", kModernFontSizeDefault));
-			cfg.modernZoom = fresh.modernZoom;
-			cfg.modernFontSize = fresh.modernFontSize;
-			if (params.contains("theme") && params["theme"].is_string()) fresh.modernTheme = NormalizeModernTheme(widen(params["theme"].get<std::string>()));
-			if (params.contains("accent") && params["accent"].is_string()) fresh.modernAccent = NormalizeModernAccent(widen(params["accent"].get<std::string>()));
-			if (params.contains("font") && params["font"].is_string()) {
-				// Only a file that is actually under Fonts\ -- anything else means "follow the launcher".
-				std::wstring f = NormalizeModernFont(widen(params["font"].get<std::string>()));
-				bool listed = false;
-				for (const std::wstring& a : ListAvailableFonts(exeDir)) if (_wcsicmp(a.c_str(), f.c_str()) == 0) listed = true;
-				fresh.modernFont = listed ? f : L"";
-			}
-			cfg.modernTheme = fresh.modernTheme;
-			cfg.modernAccent = fresh.modernAccent;
-			cfg.modernFont = fresh.modernFont;
-			if (params.contains("look") && params["look"].is_object()) {
-				// {follow:true} = back to the launcher's set; anything else is the
-				// page's own set (the page sends all five values with it).
-				const json& l = params["look"];
-				ModernLookConfig& m = fresh.modernLook[GameIndex(game)];
-				m.follow = l.value("follow", false);
-				if (!m.follow) {
-					if (l.contains("background") && l["background"].is_string()) {
-						std::wstring f = NormalizeBackgroundFile(widen(l["background"].get<std::string>()), true);
-						bool listed = f.empty();
-						for (const std::wstring& a : ListAvailableBackgrounds(exeDir, true)) if (_wcsicmp(a.c_str(), f.c_str()) == 0) listed = true;
-						m.look.background = listed ? f : L"";
-					}
-					auto num = [&](const char* k, int def) { return l.contains(k) && l[k].is_number() ? l[k].get<int>() : def; };
-					m.look.bgBright = ClampPercent(num("bgBright", m.look.bgBright), kBgBrightDefault);
-					m.look.windowOpacity = ClampWindowOpacity(num("panelOpacity", m.look.windowOpacity));
-					m.look.glassBlur = ClampPercent(num("glassBlur", m.look.glassBlur), 0);
-					m.look.treeBg = ClampPercent(num("treeBg", m.look.treeBg), 100);
-					m.bgScope = num("bgScope", m.bgScope) == 1 ? 1 : 0;
-				}
-				cfg.modernLook[GameIndex(game)] = m;
-			}
-			SaveLauncherConfig(exeDir + L"pob-zh.ini", fresh);
+			// The page's gear popover. Zoom applies at once; both persist to the ini.
+			ModernUiSetPrefs(exeDir, game, params, cfg);
 			ApplyZoom();
 			reply(Prefs());
 		} else {
@@ -570,7 +478,7 @@ bool ModernUiAvailable(const std::wstring& exeDir, std::wstring* why)
 	auto no = [&](const wchar_t* reason) { if (why) *why = reason; return false; };
 	if (PobLaunch::RunningUnderWine()) return no(L"WebView2 does not run under Wine");
 	if (!file_exists(exeDir + L"engine\\WebView2Loader.dll")) return no(L"engine\\WebView2Loader.dll is missing");
-	if (!file_exists(exeDir + L"ui\\index.html") || !file_exists(exeDir + L"ui\\theme2.html"))
+	if (!ModernUiBrowserAvailable(exeDir))
 		return no(L"ui\\index.html or ui\\theme2.html is missing (run `npm run build` in ui/)");
 	// Loader present: the delay-load below resolves from engine\ (SetDllDirectoryW
 	// in wWinMain). The function answers whether an Evergreen Runtime is installed.
