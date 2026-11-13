@@ -3,6 +3,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "win_util.h"
+#include "selftest_report.h"
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 
@@ -296,13 +297,8 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 		FILE* f = nullptr;
 		freopen_s(&f, "CONOUT$", "w", stdout);
 	}
-	std::string rep;
-	int fails = 0;
-	auto check = [&](bool ok, const char* what) {
-		rep += ok ? "PASS  " : "FAIL  ";
-		rep += what; rep += "\n";
-		if (!ok) fails++;
-	};
+	TestReport rep;
+	auto check = [&](bool ok, const char* what) { rep.check(ok, what); };
 
 	// semver ordering (the prune/active logic all rides on this)
 	check(AtlasVersionIndex::CompareSemver("3.29.0", "3.28.0") > 0, "3.29.0 > 3.28.0");
@@ -438,7 +434,7 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 			FindClose(h);
 		}
 		if (onDisk.empty()) {
-			rep += "      no installed season folders here - on-disk adoption check skipped\n";
+			rep.text += "      no installed season folders here - on-disk adoption check skipped\n";
 		} else {
 			AtlasVersionIndex live;
 			live.Load(exeDir);
@@ -446,7 +442,7 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 			for (const std::string& t : onDisk)
 				if (!live.Has(t)) missing += (missing.empty() ? "" : ",") + t;
 			check(missing.empty(), "every season folder on disk is registered in the index");
-			if (!missing.empty()) rep += "      missing: " + missing + "\n";
+			if (!missing.empty()) rep.text += "      missing: " + missing + "\n";
 			check(!live.Active().empty(), "a live index resolves an active season");
 			check(live.Has(live.Active()), "the active season is one of the registered ones");
 			// The newest COMPLETE season on disk is canonical; otherwise the planner shows it read-only and refuses to save.
@@ -461,7 +457,7 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 				check(live.Active() == newestComplete,
 				      "active = the newest complete season on disk");
 				if (live.Active() != newestComplete)
-					rep += "      active=" + live.Active() + " newest on disk=" + newestComplete + "\n";
+					rep.text += "      active=" + live.Active() + " newest on disk=" + newestComplete + "\n";
 			}
 		}
 	}
@@ -523,8 +519,5 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 		rmrf(root, rmrf);
 	}
 
-	rep += fails == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(fails) + "\n";
-	printf("%s", rep.c_str());
-	write_file_utf8(exeDir + L"atlas_index_selftest.txt", rep); // report file, per selftest convention
-	return fails == 0 ? 0 : 1;
+	return rep.finish(exeDir + L"atlas_index_selftest.txt");
 }

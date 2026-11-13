@@ -12,6 +12,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "win_util.h"
+#include "selftest_report.h"
 
 #include <json.hpp>
 
@@ -474,21 +475,6 @@ bool AtlasTreeData::LoadBuild(const std::wstring& exeDir)
 
 namespace {
 
-struct TestReport {
-	std::string text;
-	int failures = 0;
-
-	void check(bool ok, const char* what, const std::string& detail = std::string())
-	{
-		text += ok ? "PASS  " : "FAIL  ";
-		text += what;
-		if (!detail.empty()) { text += "  ("; text += detail; text += ")"; }
-		text += "\n";
-		if (!ok) failures++;
-	}
-	void note(const std::string& s) { text += "      " + s + "\n"; }
-};
-
 // Independent reachability via explicit-stack DFS (the model uses deque BFS),
 // optionally treating one node as removed.
 static std::vector<char> dfs_reach(const AtlasTreeData& d, int skip)
@@ -554,11 +540,7 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 	// T1: load + shape sanity
 	bool loaded = d.Load(exeDir, &err);
 	rep.check(loaded, "load atlas_tree_poe1.json", loaded ? "" : err);
-	if (!loaded) {
-		printf("%s", rep.text.c_str());
-		write_file_utf8(exeDir + L"atlas_selftest.txt", rep.text);
-		return 1;
-	}
+	if (!loaded) return rep.finish(exeDir + L"atlas_selftest.txt");
 	rep.note("nodes=" + std::to_string(d.nodes.size()) + " edges=" + std::to_string(d.edges.size()) +
 	         " totalPoints=" + std::to_string(d.TotalPoints()));
 	rep.check(d.root >= 0 && d.nodes[d.root].kind == kAtlasStart && d.nodes[d.root].alloc, "start node allocated");
@@ -1327,8 +1309,5 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 		d.Reset();
 	}
 
-	rep.text += rep.failures == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(rep.failures) + "\n";
-	printf("%s", rep.text.c_str());
-	write_file_utf8(exeDir + L"atlas_selftest.txt", rep.text);
-	return rep.failures == 0 ? 0 : 1;
+	return rep.finish(exeDir + L"atlas_selftest.txt");
 }

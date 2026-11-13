@@ -10,6 +10,7 @@
 #define NOMINMAX          // keep std::min/std::max usable (windows.h defines min/max macros)
 #include <windows.h>
 #include "win_util.h"
+#include "selftest_report.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -316,14 +317,8 @@ int RunAtlasDiffSelfTest(const std::wstring& exeDir)
 		freopen_s(&f, "CONOUT$", "w", stdout);
 	}
 
-	std::string rep;
-	int failures = 0;
-	auto check = [&](bool ok, const char* what) {
-		rep += ok ? "PASS  " : "FAIL  ";
-		rep += what;
-		rep += "\n";
-		if (!ok) failures++;
-	};
+	TestReport rep;
+	auto check = [&](bool ok, const char* what) { rep.check(ok, what); };
 
 	AtlasTreeData oldT, newT;
 	// id 100: value change 15 -> 20
@@ -509,11 +504,8 @@ int RunAtlasDiffSelfTest(const std::wstring& exeDir)
 		RemoveDirectoryW(dir.c_str());
 	}
 
-	rep += failures == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(failures) + "\n";
-	rep += "\n--- sample report ---\n" + FormatAtlasTreeDiffReport(d);
-	printf("%s", rep.c_str());
-	write_file_utf8(exeDir + L"atlas_diff_selftest.txt", rep);
-	return failures == 0 ? 0 : 1;
+	rep.text += "\n--- sample report ---\n" + FormatAtlasTreeDiffReport(d);
+	return rep.finish(exeDir + L"atlas_diff_selftest.txt");
 }
 
 // CLI (--atlas-diff <oldVer> <newVer>)

@@ -6,6 +6,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include "win_util.h"
+#include "selftest_report.h"
 
 #include <algorithm>
 #include <chrono>
@@ -639,21 +640,6 @@ namespace {
 // Selftest shorthand: most cases have nothing blocked.
 Mask no_block(const AtlasTreeData& g) { return Mask(g.nodes.size(), 0); }
 
-struct TestReport {
-	std::string text;
-	int failures = 0;
-
-	void check(bool ok, const char* what, const std::string& detail = std::string())
-	{
-		text += ok ? "PASS  " : "FAIL  ";
-		text += what;
-		if (!detail.empty()) { text += "  ("; text += detail; text += ")"; }
-		text += "\n";
-		if (!ok) failures++;
-	}
-	void note(const std::string& s) { text += "      " + s + "\n"; }
-};
-
 // Independent minimum over every node subset: the ground truth the DP is
 // checked against. Only usable for tiny graphs.
 int brute_force(const AtlasTreeData& d, const std::vector<int>& terms)
@@ -810,9 +796,7 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 	std::string err;
 	if (!d.Load(exeDir, &err)) {
 		rep.check(false, "load atlas_tree_poe1.json", err);
-		printf("%s", rep.text.c_str());
-		write_file_utf8(exeDir + L"atlas_opt_selftest.txt", rep.text);
-		return 1;
+		return rep.finish(exeDir + L"atlas_opt_selftest.txt");
 	}
 	rep.note("nodes=" + std::to_string(d.nodes.size()) + " edges=" + std::to_string(d.edges.size()) +
 	         " totalPoints=" + std::to_string(d.TotalPoints()) +
@@ -1256,9 +1240,5 @@ int RunAtlasOptSelfTest(const std::wstring& exeDir)
 	}
 	d.Reset();
 
-	rep.text += rep.failures == 0 ? "\nALL PASS\n"
-	                              : "\n" + std::to_string(rep.failures) + " FAILURE(S)\n";
-	printf("%s", rep.text.c_str());
-	write_file_utf8(exeDir + L"atlas_opt_selftest.txt", rep.text);
-	return rep.failures == 0 ? 0 : 1;
+	return rep.finish(exeDir + L"atlas_opt_selftest.txt");
 }

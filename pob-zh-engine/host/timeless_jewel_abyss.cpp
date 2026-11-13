@@ -1036,9 +1036,8 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 	check(checks >= 25, "the run performed its full set of checks",
 	      std::to_string(checks) + " checks");
 
-	const std::string tail = failures == 0
-		? "\nALL PASS (" + std::to_string(checks) + " checks)\n"
-		: "\nFAILURES: " + std::to_string(failures) + " of " + std::to_string(checks) + "\n";
+	const std::string tail = "\n" + std::to_string(checks) + " checks\n" +
+	                         (failures == 0 ? "RESULT PASS\n" : "RESULT FAIL\n");
 	report += tail;
 	printf("%s", tail.c_str());
 

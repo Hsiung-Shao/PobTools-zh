@@ -283,8 +283,7 @@ int RunAtlasAggSelfTest(const std::wstring& exeDir)
 		      "zh fallback to English");
 	}
 
-	std::string tail = failures == 0 ? "\nALL PASS\n"
-	                                 : "\nFAILURES: " + std::to_string(failures) + "\n";
+	std::string tail = failures == 0 ? "\nRESULT PASS\n" : "\nRESULT FAIL\n";
 	report += tail;
 	printf("%s", tail.c_str());
 

@@ -2917,7 +2917,8 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";
 	}
-	rep += "總計 PASS " + std::to_string(pass) + " FAIL " + std::to_string(fail) + (fail == 0 ? " ALL PASS" : " FAILURES") + "\r\n";
+	rep += "總計 PASS " + std::to_string(pass) + " FAIL " + std::to_string(fail) + "\r\n";
+	rep += fail == 0 ? "RESULT PASS\r\n" : "RESULT FAIL\r\n";
 
 	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
 		FILE* f = nullptr;

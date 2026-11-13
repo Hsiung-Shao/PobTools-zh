@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <shlobj.h> // SHCreateDirectoryExW
 #include "win_util.h"
+#include "selftest_report.h"
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 
@@ -673,14 +674,8 @@ int RunPassiveImportSelfTest(const std::wstring& exeDir)
 		FILE* f = nullptr;
 		freopen_s(&f, "CONOUT$", "w", stdout);
 	}
-	std::string rep;
-	int fails = 0;
-	auto check = [&](bool ok, const char* what) {
-		rep += ok ? "PASS  " : "FAIL  ";
-		rep += what;
-		rep += "\n";
-		if (!ok) fails++;
-	};
+	TestReport rep;
+	auto check = [&](bool ok, const char* what) { rep.check(ok, what); };
 
 	// tr_normalize: {N} / ranges / numbers each collapse to '#'
 	check(tr_normalize("8% increased Lightning Damage") == "#% increased Lightning Damage",
@@ -720,8 +715,5 @@ int RunPassiveImportSelfTest(const std::wstring& exeDir)
 	check(escape_newlines("a\nb") == "a\\nb" && unescape_newlines("a\\nb") == "a\nb",
 	      "newline escape round-trip");
 
-	rep += fails == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(fails) + "\n";
-	printf("%s", rep.c_str());
-	write_file_utf8(exeDir + L"pt_import_selftest.txt", rep);
-	return fails == 0 ? 0 : 1;
+	return rep.finish(exeDir + L"pt_import_selftest.txt");
 }

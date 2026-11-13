@@ -193,6 +193,7 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 	std::string err;
 	if (!d.Load(exeDir, &err)) {
 		ptlog(rep, "[FAIL] load  %s\n", err.c_str());
+		ptlog(rep, "RESULT FAIL\n");
 		if (rep) fclose(rep);
 		return 1;
 	}
@@ -291,6 +292,7 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 	}
 
 	ptlog(rep, "\n%d passed, %d failed\n", pass, fail);
+	ptlog(rep, fail == 0 ? "RESULT PASS\n" : "RESULT FAIL\n");
 	if (rep) fclose(rep);
 	return fail == 0 ? 0 : 1;
 }

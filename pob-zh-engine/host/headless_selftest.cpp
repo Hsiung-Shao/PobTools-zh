@@ -2540,7 +2540,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 
 done:
 	line("PASS " + std::to_string(g_pass) + "   FAIL " + std::to_string(g_fail));
-	line(g_fail == 0 ? "ALL PASS" : "FAILURES");
+	line(g_fail == 0 ? "RESULT PASS" : "RESULT FAIL");
 
 	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
 		FILE* f = nullptr;
@@ -3398,7 +3398,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 	}
 
 	line("PASS " + std::to_string(g_pass) + "   FAIL " + std::to_string(g_fail));
-	line(g_fail == 0 ? "ALL PASS" : "FAILURES");
+	line(g_fail == 0 ? "RESULT PASS" : "RESULT FAIL");
 	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
 		FILE* f = nullptr;
 		freopen_s(&f, "CONOUT$", "w", stdout);

@@ -3598,10 +3598,10 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 
 	remove_dir_rec(root);
 
-	report += fails == 0 ? "ALL PASS\r\n" : "FAILURES PRESENT\r\n";
+	report += fails == 0 ? "RESULT PASS\r\n" : "RESULT FAIL\r\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
 	write_file_bytes(exeDir + L"PobTools\\app_update_selftest.txt", report.data(), report.size());
 	printf("%s (report: PobTools\\app_update_selftest.txt)\n",
-	       fails == 0 ? "ALL PASS" : "FAILURES PRESENT");
+	       fails == 0 ? "RESULT PASS" : "RESULT FAIL");
 	return fails == 0 ? 0 : 1;
 }

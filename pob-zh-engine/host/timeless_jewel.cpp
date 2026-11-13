@@ -1616,7 +1616,7 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		      std::to_string(consoleRealms) + " with consoles");
 	}
 
-	std::string tail = failures == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(failures) + "\n";
+	std::string tail = failures == 0 ? "\nRESULT PASS\n" : "\nRESULT FAIL\n";
 	report += tail;
 	printf("%s", tail.c_str());
 

@@ -640,7 +640,6 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 	RegDeleteKeyW(HKEY_CURRENT_USER, key_path(scheme).c_str());
 	check("R13 test scheme cleaned up", query_scheme(scheme, me) == State::None);
 
-	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	{
 		int pass = 0, total = 0;
 		size_t pos = 0;
@@ -653,6 +652,7 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 		}
 		report += std::to_string(pass) + "/" + std::to_string(total) + " passed\n";
 	}
+	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
 	HANDLE h = CreateFileW((exeDir + L"PobTools\\pob_protocol_selftest.txt").c_str(), GENERIC_WRITE, 0, nullptr,
 	                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

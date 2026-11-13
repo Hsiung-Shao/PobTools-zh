@@ -4678,6 +4678,6 @@ int RunFontCoverageSelftest(const std::wstring& exeDir)
 			printf("  [PASS] every launcher character is drawable by at least one shipped font\n");
 		}
 	}
-	printf("\n%s\n", bad == 0 ? "ALL PASS" : "FAILED");
+	printf("\n%s\n", bad == 0 ? "RESULT PASS" : "RESULT FAIL");
 	return bad == 0 ? 0 : 1;
 }

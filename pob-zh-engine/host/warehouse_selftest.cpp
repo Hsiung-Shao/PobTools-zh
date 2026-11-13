@@ -1116,10 +1116,8 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 	}
 
 	PobLog::SetDirForTest(L"");
-	rep.text += rep.failures == 0
-	                ? "\nALL PASS (" + std::to_string(rep.checks) + " checks)\n"
-	                : "\nFAILURES: " + std::to_string(rep.failures) + " / " +
-	                      std::to_string(rep.checks) + "\n";
+	rep.text += "\n" + std::to_string(rep.checks) + " checks\n" +
+	            (rep.failures == 0 ? "RESULT PASS\n" : "RESULT FAIL\n");
 	PrintAndSave(exeDir, rep.text, L"warehouse_selftest.txt");
 	return rep.failures == 0 ? 0 : 1;
 }

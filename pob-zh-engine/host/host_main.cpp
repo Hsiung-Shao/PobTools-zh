@@ -486,7 +486,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--atlas-mechanics-selftest") {
 		std::string rep;
 		int fails = RunAtlasMechanicSelfTest(dir, rep);
-		rep += fails == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(fails) + "\n";
+		rep += fails == 0 ? "\nRESULT PASS\n" : "\nRESULT FAIL\n";
 		if (AttachConsole(ATTACH_PARENT_PROCESS)) {
 			FILE* f = nullptr;
 			freopen_s(&f, "CONOUT$", "w", stdout);

@@ -21,6 +21,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "selftest_report.h"
 #include <cstdio>
 #include <cstdint>
 #include <fstream>
@@ -28,21 +29,6 @@
 #include <imgui.h>
 
 namespace {
-
-struct TestReport {
-	std::string text;
-	int failures = 0;
-
-	void check(bool ok, const char* what, const std::string& detail = std::string())
-	{
-		text += ok ? "PASS  " : "FAIL  ";
-		text += what;
-		if (!detail.empty()) { text += "  ("; text += detail; text += ")"; }
-		text += "\n";
-		if (!ok) failures++;
-	}
-	void note(const std::string& s) { text += "      " + s + "\n"; }
-};
 
 // Synthetic NeverSink-style filter: BOM + CRLF + final newline, decorated
 // comments, quoted multi-value lists, trailing comments, an unknown keyword and
@@ -2860,13 +2846,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	rep.note("failures=" + std::to_string(rep.failures));
-	printf("%s", rep.text.c_str());
-
-	std::ofstream out(exeDir + L"filter_selftest.txt", std::ios::binary);
-	if (out) out.write(rep.text.data(), (std::streamsize)rep.text.size());
-
-	return rep.failures ? 1 : 0;
+	return rep.finish(exeDir + L"filter_selftest.txt");
 }
 
 // --filter-import-probe: the paste button's exact path, headless.

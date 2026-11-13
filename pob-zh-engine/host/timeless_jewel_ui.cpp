@@ -3165,7 +3165,7 @@ int RunTradeRealmCheck(const std::wstring& exeDir)
 			     std::to_string(kMaxJewelType) + ":" + hiddenList);
 	}
 
-	line(failures == 0 ? "\nALL PASS" : "\nFAILURES: " + std::to_string(failures));
+	line(failures == 0 ? "\nRESULT PASS" : "\nRESULT FAIL");
 	HANDLE h = CreateFileW((exeDir + L"tj_realm_check.txt").c_str(), GENERIC_WRITE, 0,
 	                       nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (h != INVALID_HANDLE_VALUE) {
