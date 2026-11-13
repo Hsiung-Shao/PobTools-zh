@@ -751,6 +751,11 @@ std::vector<TJSeedHit> TJSearch(const TJDataset& ds, const std::string& blob,
 
 	for (int seed = lo; seed <= hi; seed += step) {
 		if (cancel && *cancel) break;
+		// A seed that replaces a protected notable is out, whatever it would score.
+		bool spoiled = false;
+		for (int id : q.protectIds)
+			if (TJApply(ds, blob, q.jewelType, seed, id, "Notable", {}).replaced) { spoiled = true; break; }
+		if (spoiled) continue;
 		double total = 0;
 		int matches = 0;
 		std::set<const TJWantStat*> distinct;
@@ -1171,6 +1176,143 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		}
 	} else {
 		check(false, "load BrutalRestraint.bin", err);
+	}
+
+	// --- 搜尋可保護大點:被保護的大點被替換的種子一律剔除(T1-T6) ---
+	{
+		std::string mf, merr;
+		const std::string devo = "+# to Devotion";
+		if (!TJLoadBin(exeDir, ds, 4, mf, &merr)) {
+			check(false, "T1-T5 讀取激進的信仰查表", merr);
+		} else {
+			// 奉獻模板必須真的存在於激進的信仰的模板清單
+			bool haveDevo = false;
+			for (const auto& tp : TJStatTemplates(ds, 4)) if (tp.en == devo) { haveDevo = true; break; }
+			check(haveDevo, "T0 激進的信仰的模板清單含「+# to Devotion」");
+
+			const int slo = ds.seedMin.at(4), shi = ds.seedMax.at(4);
+			// 範圍小組:前 20 個大點,全種子掃描才快
+			std::vector<int> pool;
+			for (const auto& kv : ds.nodeIndex) {
+				if (kv.second.first >= ds.sizeNotable) continue;
+				pool.push_back(kv.first);
+				if (pool.size() >= 20) break;
+			}
+			// 逐節點記錄「被替換的種子」與未被替換的數量,挑「有時替換、有時不替換」的大點
+			std::map<int, std::set<int>> repSeeds;
+			std::map<int, int> keptCount;
+			for (int nid : pool) {
+				for (int s = slo; s <= shi; s++) {
+					TJTransform t = TJApply(ds, mf, 4, s, nid, "Notable", {});
+					if (!t.ok) continue;
+					if (t.replaced) repSeeds[nid].insert(s); else keptCount[nid]++;
+				}
+			}
+			std::vector<int> mixed;
+			for (int nid : pool)
+				if (!repSeeds[nid].empty() && keptCount[nid] > 0) mixed.push_back(nid);
+
+			if (mixed.size() < 2) {
+				check(false, "T1-T5 挑得到兩個「有時替換、有時不替換」的大點",
+				      std::to_string(mixed.size()) + " 個");
+			} else {
+				const int N1 = mixed[0], N2 = mixed[1];
+				const int M = mixed[1]; // T4 的計分節點,與被保護的 N1 不同
+				auto run = [&](const std::vector<int>& nodes, const std::vector<int>& prot) {
+					TJSearchQuery sq;
+					sq.jewelType = 4;
+					sq.scope = 1;
+					sq.wants.push_back({ devo, 0.0, 1.0 });
+					sq.nodeIds = nodes;
+					sq.protectIds = prot;
+					return TJSearch(ds, mf, sq, 0, nullptr);
+				};
+				auto seedsOf = [](const std::vector<TJSeedHit>& v) {
+					std::set<int> r;
+					for (const auto& h : v) r.insert(h.seed);
+					return r;
+				};
+				auto keeps = [&](const std::vector<TJSeedHit>& v, int nid) {
+					bool ok = !v.empty();
+					for (const auto& h : v) {
+						TJTransform t = TJApply(ds, mf, 4, h.seed, nid, "Notable", {});
+						ok = ok && t.ok && !t.replaced;
+					}
+					return ok;
+				};
+
+				const auto base = run(pool, {});
+				const auto prot1 = run(pool, { N1 });
+				const std::string n = std::to_string(base.size()) + " -> " + std::to_string(prot1.size());
+
+				// T1:結果種子的 N1 都沒被替換,且比不保護時少
+				check(keeps(prot1, N1) && prot1.size() < base.size(),
+				      "T1 保護的大點被替換的種子不出現", n);
+
+				// T2:被濾掉的種子正好是「N1 被替換」的種子
+				const auto baseSet = seedsOf(base), protSet = seedsOf(prot1);
+				std::set<int> removed, expected;
+				for (int s : baseSet) {
+					if (!protSet.count(s)) removed.insert(s);
+					if (repSeeds[N1].count(s)) expected.insert(s);
+				}
+				check(!removed.empty() && removed == expected,
+				      "T2 被濾掉的正好是替換 N 的種子",
+				      std::to_string(removed.size()) + " vs " + std::to_string(expected.size()));
+
+				// T3:保護清單明確為空時,結果與預設查詢逐筆相同
+				TJSearchQuery qd;
+				qd.jewelType = 4;
+				qd.scope = 1;
+				qd.wants.push_back({ devo, 0.0, 1.0 });
+				qd.nodeIds = pool;
+				TJSearchQuery qe = qd;
+				qe.protectIds.clear();
+				const auto ra = TJSearch(ds, mf, qd, 0, nullptr);
+				const auto rb = TJSearch(ds, mf, qe, 0, nullptr);
+				bool same = !ra.empty() && ra.size() == rb.size();
+				for (size_t i = 0; same && i < ra.size(); i++) same = ra[i].seed == rb[i].seed;
+				check(same, "T3 保護清單為空時結果不變", std::to_string(ra.size()) + " 筆");
+
+				// T4:N1 不在計分範圍(只計 M)也要生效
+				const auto baseM = run({ M }, {});
+				const auto protM = run({ M }, { N1 });
+				check(keeps(protM, N1) && protM.size() < baseM.size(),
+				      "T4 保護節點不在計分範圍也生效",
+				      std::to_string(baseM.size()) + " -> " + std::to_string(protM.size()));
+
+				// T5:同時保護兩個大點,兩個都沒被替換
+				const auto protBoth = run(pool, { N1, N2 });
+				check(keeps(protBoth, N1) && keeps(protBoth, N2) &&
+				      protBoth.size() <= prot1.size() && protBoth.size() < base.size(),
+				      "T5 保護兩個大點時兩個都未被替換",
+				      std::to_string(base.size()) + " -> " + std::to_string(prot1.size()) +
+				      " -> " + std::to_string(protBoth.size()));
+			}
+		}
+
+		// T6:只有激進的信仰的大點會「有時替換、有時不替換」
+		for (int jt = 1; jt <= 6; jt++) {
+			std::string blob6, e6;
+			const std::string label = "T6 軍團珠寶 type " + std::to_string(jt);
+			if (!TJLoadBin(exeDir, ds, jt, blob6, &e6)) { check(false, label + " 讀取查表", e6); continue; }
+			const int step = (jt == 5) ? 20 : 1;
+			const int lo = ds.seedMin.at(jt) * step, hi = ds.seedMax.at(jt) * step;
+			long long rep = 0, kept = 0;
+			for (int i = 0; i < 5; i++) {
+				const int s = lo + (((hi - lo) / step) * i / 4) * step; // 平均抽 5 個種子
+				for (const auto& kv : ds.nodeIndex) {
+					if (kv.second.first >= ds.sizeNotable) continue;
+					TJTransform t = TJApply(ds, blob6, jt, s, kv.first, "Notable", {});
+					if (!t.ok) continue;
+					if (t.replaced) rep++; else kept++;
+				}
+			}
+			const bool mixed6 = rep > 0 && kept > 0;
+			check(rep + kept > 0 && (jt == 4 ? mixed6 : !mixed6),
+			      label + (jt == 4 ? " 大點有時替換、有時不替換" : " 大點只會一種結果"),
+			      "替換 " + std::to_string(rep) + " / 未替換 " + std::to_string(kept));
+		}
 	}
 
 	// --- Glorious Vanity is the only Legion jewel that rolls a value into a

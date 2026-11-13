@@ -25,6 +25,7 @@ static const ImU32 kColEdgeInRad  = WithAlpha(Tok::TreeHit, 150);
 static const ImU32 kColHoverRing  = WithAlpha(Tok::Text, 110);
 static const ImU32 kColAffected   = Tok::TreeHit;                    // changed by the seed
 static const ImU32 kColReplaced   = Tok::TreeHit;                    // replaced: same hue, double ring
+static const ImU32 kColProtected  = Tok::Success;                    // user-protected: must not be replaced
 static const ImU32 kColSocket     = WithAlpha(PobUi::TreeKindColor(PobUi::TreeKind::Socket), 220);
 static const ImU32 kColSocketSel  = PobUi::TreeKindColor(PobUi::TreeKind::Socket);
 static const ImU32 kColSocketFill = WithAlpha(Tok::Surface2, 235);
@@ -194,6 +195,12 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 			if (n != -1 && d.nodes[n].kind != kPtSocket) out.clickedNode = n;
 		}
 	}
+	// right click: same "click, not drag" rule -- a right DRAG pans the canvas.
+	if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
+	    ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Right)) < 16.0f * uiScale * uiScale) {
+		int n = hitTest(d, screenToWorld(io.MousePos), false);
+		if (n != -1 && d.nodes[n].kind != kPtSocket) out.rightClickedNode = n;
+	}
 
 	const std::vector<unsigned char>* hi = in.hi;
 	auto hiOf = [&](int i) -> unsigned char {
@@ -314,6 +321,10 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 			dl->AddCircle(c, ring, h == kPtHiReplaced ? kColReplaced : kColAffected, 0, 3.5f);
 			if (h == kPtHiReplaced) dl->AddCircle(c, std::max(ring - 6.0f, 4.0f), kColReplaced, 0, 2.0f);
 		}
+		// protected: a ring outside the seed halo, so both stay readable together
+		if (in.protectedMark && i < (int)in.protectedMark->size() && (*in.protectedMark)[i])
+			dl->AddCircle(c, std::max((std::max(n.off.w, n.off.h) * 0.5f + 30.0f) * zoom_, 11.0f),
+			              kColProtected, 0, 3.0f);
 		if (i == hover_)
 			dl->AddCircle(c, std::max((std::max(n.off.w, n.off.h) * 0.5f + 16.0f) * zoom_, 5.0f),
 			              kColHoverRing, 0, 2.0f);

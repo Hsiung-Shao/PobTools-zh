@@ -676,6 +676,7 @@ public:
 			ptView.ResetView();
 			selSocket = -1;
 			ptSelected.clear();
+			ptProtected.clear();
 			ptHi.clear();
 			dispHi.clear();
 			ptTrans.clear();
@@ -1316,7 +1317,62 @@ public:
 		for (char c : ptSelected) if (c) picked++;
 		if (picked > 0) s += u8"（只看已選的 " + std::to_string(picked) + u8" 個節點）";
 		else s += u8"（已在樹上選取）";
+		const size_t prot = protectedIds().size();
+		if (prot > 0) s += u8"｜保護 " + std::to_string(prot) + u8" 個大點不被替換";
 		return s;
+	}
+
+	// Only Militant Faith decides per seed whether a notable is replaced or kept
+	// (--tj-selftest T6 measures this), so it is the only jewel where protecting
+	// one can change which seeds qualify.
+	bool canProtect() const { return jewelType == 4; }
+
+	// Ids of the protected notables inside the selected socket's radius. Marks
+	// left behind on another socket are ignored rather than cleared, the same way
+	// picks are.
+	std::vector<int> protectedIds() const
+	{
+		std::vector<int> ids;
+		if (!canProtect() || selSocket < 0) return ids;
+		for (int idx : ptData.NodesInRadius(selSocket, 1800.0f))
+			if (idx < (int)ptProtected.size() && ptProtected[idx] && ptData.nodes[idx].kind == kPtNotable)
+				ids.push_back(ptData.nodes[idx].id);
+		return ids;
+	}
+
+	// A Legion jewel turns every keystone in radius into its conqueror's, whatever
+	// the seed -- no search can avoid it, so say it where the socket is chosen.
+	std::string keystoneNote() const
+	{
+		if (selSocket < 0 || TJIsAbyss(jewelType)) return {};
+		static const std::string kNoBlob;
+		std::string lost, becomes;
+		for (int idx : ptData.NodesInRadius(selSocket, 1800.0f)) {
+			const PtNode& n = ptData.nodes[idx];
+			if (n.kind != kPtKeystone) continue;
+			TJTransform t = TJApply(*ds, kNoBlob, jewelType, -1, n.id, "Keystone", n.stats,
+			                        ConquerorType(jewelType), conquerorId_, n.name);
+			if (!t.ok || !t.replaced) continue;
+			lost += u8"「" + (n.nameZh.empty() ? n.name : n.nameZh) + u8"」";
+			becomes = t.newNameZh.empty() ? t.newName : t.newNameZh;
+		}
+		if (lost.empty()) return {};
+		return u8"此插槽的鑰石" + lost + u8"會變成「" + becomes + u8"」，與種子無關";
+	}
+
+	// The pinned block under both forms: the socket line, then the keystone
+	// warning when there is one.
+	float hintBlockH(const std::string& hint, const std::string& note, float w) const
+	{
+		ImFont* sf = PobUi::Fonts().small ? PobUi::Fonts().small : ImGui::GetFont();
+		float h = sf->CalcTextSizeA(sf->FontSize, FLT_MAX, w, hint.c_str()).y;
+		if (!note.empty()) h += ImGui::GetStyle().ItemSpacing.y + sf->CalcTextSizeA(sf->FontSize, FLT_MAX, w, note.c_str()).y;
+		return h;
+	}
+	void drawHintBlock(const std::string& hint, const std::string& note, float w, bool noSocket) const
+	{
+		PobUi::Hint(hint.c_str(), w, noSocket ? Tok::Warning : 0);
+		if (!note.empty()) PobUi::Hint(note.c_str(), w, Tok::Warning);
 	}
 
 	// ---- left: find seeds --------------------------------------------------
@@ -1327,8 +1383,8 @@ public:
 		const std::string hint = socketHint(&noSocket);
 		const float w = ImGui::GetContentRegionAvail().x;
 		// the bottom block (socket hint + the search button) is pinned; measure it
-		const ImFont* sf = PobUi::Fonts().small ? PobUi::Fonts().small : ImGui::GetFont();
-		const float hintH = ((ImFont*)sf)->CalcTextSizeA(sf->FontSize, FLT_MAX, w, hint.c_str()).y;
+		const std::string ksNote = keystoneNote();
+		const float hintH = hintBlockH(hint, ksNote, w);
 		const float bottomH = hintH + PobUi::D(6.0f) + std::floor(PobUi::D(44.0f));
 		const float scrollH = ImGui::GetContentRegionAvail().y - bottomH - PobUi::D(12.0f);
 
@@ -1464,7 +1520,7 @@ public:
 		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x,
 		                                 ImGui::GetWindowPos().y + ImGui::GetWindowHeight() -
 		                                     ImGui::GetStyle().WindowPadding.y - bottomH));
-		PobUi::Hint(hint.c_str(), w, noSocket ? Tok::Warning : 0);
+		drawHintBlock(hint, ksNote, w, noSocket);
 		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f) - ImGui::GetStyle().ItemSpacing.y));
 		const bool canSearch = !busy && !wants.empty() && selSocket >= 0;
 		if (PobUi::Button(busy ? u8"搜尋中…" : u8"搜尋這個插槽", PobUi::BtnKind::Primary, PobUi::BtnSize::Lg, nullptr, w,
@@ -1506,6 +1562,8 @@ public:
 				q.nodeIds.push_back(ptData.nodes[idx].id);
 			}
 		}
+		q.protectIds = protectedIds();
+		searchProtected_ = !q.protectIds.empty();
 		jobReported_ = false;
 		if (isAbyss)
 			job.startAbyss(ds.get(), blob, *abyssLut, q, ptData.nodes[selSocket].id, ptKind);
@@ -1546,11 +1604,11 @@ public:
 
 		bool noSocket = false;
 		const std::string hint = socketHint(&noSocket);
-		const ImFont* sf = PobUi::Fonts().small ? PobUi::Fonts().small : ImGui::GetFont();
-		const float hintH = ((ImFont*)sf)->CalcTextSizeA(sf->FontSize, FLT_MAX, w, hint.c_str()).y;
+		const std::string ksNote = keystoneNote();
+		const float hintH = hintBlockH(hint, ksNote, w);
 		const float y = ImGui::GetWindowPos().y + ImGui::GetWindowHeight() - ImGui::GetStyle().WindowPadding.y - hintH;
 		if (y > ImGui::GetCursorScreenPos().y) ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, y));
-		PobUi::Hint(hint.c_str(), w, noSocket ? Tok::Warning : 0);
+		drawHintBlock(hint, ksNote, w, noSocket);
 	}
 
 	void querySeed()
@@ -1755,6 +1813,7 @@ public:
 		tin.radiusWorld = (treeRadius || zorath) ? 1800.0f : 0.0f;
 		tin.hi = &dispHi;
 		tin.selected = ptSelected.empty() ? nullptr : &ptSelected;
+		tin.protectedMark = (canProtect() && !ptProtected.empty()) ? &ptProtected : nullptr;
 		tin.emphasize = emphNode;
 		const bool pickable = treeRadius || zorath;
 		tin.overlay = [this, pickable](ImDrawList* dl, ImVec2 mn, ImVec2 mx) { drawLegend(dl, mn, mx, pickable); };
@@ -1774,6 +1833,15 @@ public:
 			ptSelected[tout.clickedNode] = ptSelected[tout.clickedNode] ? 0 : 1;
 			selVersion++;
 		}
+		// right-click a notable in radius to protect it from being replaced
+		if (tout.rightClickedNode >= 0 && canProtect() && selSocket >= 0 &&
+		    ptData.nodes[tout.rightClickedNode].kind == kPtNotable) {
+			const std::vector<int> inRad = ptData.NodesInRadius(selSocket, 1800.0f);
+			if (std::find(inRad.begin(), inRad.end(), tout.rightClickedNode) != inRad.end()) {
+				if (ptProtected.size() != ptData.nodes.size()) ptProtected.assign(ptData.nodes.size(), 0);
+				ptProtected[tout.rightClickedNode] = ptProtected[tout.rightClickedNode] ? 0 : 1;
+			}
+		}
 		if (tout.hoveredNode >= 0) drawNodeTooltip(tout.hoveredNode);
 		else if (testHoverNode_ >= 0) drawNodeTooltip(testHoverNode_); // POBTOOLS_TJ_STATE=keystone
 	}
@@ -1788,7 +1856,7 @@ public:
 		const float gap = PobUi::D(16.0f), padX = PobUi::D(10.0f), padY = PobUi::D(6.0f);
 		const char* hitL = u8"種子改變的節點";
 		const char* sockL = u8"珠寶插槽";
-		const char* pickL = u8"點一般節點可單獨查看";
+		const char* pickL = canProtect() ? u8"左鍵點節點可單獨查看｜右鍵大點＝保護不被替換" : u8"點一般節點可單獨查看";
 		float w = padX * 2.0f + sw + PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, hitL).x + gap + sw +
 		          PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, sockL).x;
 		if (pickable) w += gap + f->CalcTextSizeA(px, FLT_MAX, 0, pickL).x;
@@ -1856,6 +1924,10 @@ public:
 			const std::vector<std::string> lines = PtDisplayStats(n);
 			if (!lines.empty()) ImGui::Separator();
 			for (const std::string& s : lines) ImGui::TextColored(text, "%s", s.c_str());
+		}
+		if (canProtect() && nodeIdx < (int)ptProtected.size() && ptProtected[nodeIdx]) {
+			ImGui::Separator();
+			ImGui::TextColored(PobUi::TokV4(Tok::Success), "%s", u8"已保護：搜尋會排除替換這個大點的種子（右鍵取消）");
 		}
 		ImGui::PopTextWrapPos();
 		ImGui::EndTooltip();
@@ -2073,7 +2145,9 @@ public:
 		if (job.results.empty()) {
 			if (job.done.load())
 				PobUi::EmptyState("##noresult", PobIcon::Search, u8"沒有符合條件的種子",
-				                  u8"降低最小值或最小總權重、關掉「必須包含全部詞綴」，或把範圍改成全部節點。");
+				                  searchProtected_
+				                      ? u8"符合詞綴的種子都會替換掉你保護的大點。在樹上右鍵取消幾個保護，或放寬詞綴條件。"
+				                      : u8"降低最小值或最小總權重、關掉「必須包含全部詞綴」，或把範圍改成全部節點。");
 			else
 				PobUi::EmptyState("##noresult", PobIcon::Search, u8"還沒有搜尋結果",
 				                  u8"在左側加入想要的詞綴、在樹上選好插槽，再按「搜尋這個插槽」。");
@@ -2913,6 +2987,23 @@ public:
 			centerPending_ = true;
 			mode = 0;
 			wants.clear();
+		} else if (testState_ == "protect") {
+			// Militant Faith on the socket already chosen above, two notables
+			// protected, searching for Devotion, the first seed opened.
+			jewelType = 4;
+			templates = TJStatTemplates(*ds, jewelType);
+			templatesFor = jewelType;
+			ensureBin(jewelType);
+			wants.clear();
+			for (const auto& t : templates)
+				if (t.en == "+# to Devotion") wants.push_back({ t.en, t.zh.empty() ? t.en : t.zh, 0.0f, 1.0f });
+			ptProtected.assign(ptData.nodes.size(), 0);
+			int marked = 0;
+			for (int idx : ptData.NodesInRadius(selSocket, 1800.0f))
+				if (ptData.nodes[idx].kind == kPtNotable && marked < 2) { ptProtected[idx] = 1; marked++; }
+			mode = 0;
+			autoPick_ = true;
+			runSearch();
 		} else if (testState_ == "jewelmenu") {
 			PobUi::TestOpenSelect("##jewel");
 		} else if (testState_ == "seederr") {
@@ -3096,6 +3187,8 @@ private:
 	int selSocket = -1;                          // node index of the socketed jewel
 	std::vector<unsigned char> ptHi;             // per-node highlight class
 	std::vector<char> ptSelected;                // per-node: user-picked focus set (1 = picked)
+	std::vector<char> ptProtected;               // per-node: notable the search must not let be replaced
+	bool searchProtected_ = false;               // the last search carried a protection (empty-state wording)
 	int selVersion = 0;                          // bumps on any selection change
 	std::map<int, TJTransform> ptTrans;          // node index -> transform (affected only)
 	std::vector<StatGroup> statGroups;
