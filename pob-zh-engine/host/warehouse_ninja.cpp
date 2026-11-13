@@ -463,7 +463,7 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 	HttpsClient http(kNinjaHost);
 	std::unordered_map<std::string, NinjaPrice> fresh;
 	double coreDivine = 0.0;
-	int fetchedTypes = 0;
+	int fetchedTypes = 0, triedTypes = 0;
 	auto polite = [&]() { Sleep(300); }; // it is a community resource
 
 	const std::wstring base = L"/" + widen(game) + L"/api/economy/";
@@ -472,6 +472,7 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 	auto runExchange = [&](const TypePlan* plans, size_t n) {
 		for (size_t i = 0; i < n; i++) {
 			if (cancel && cancel->load()) return;
+			triedTypes++;
 			std::string body, terr;
 			if (http.GetString(base + L"exchange/current/overview?league=" + leagueQ +
 			                       L"&type=" + widen(plans[i].type),
@@ -490,6 +491,7 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 	auto runItems = [&](const char* const* types, size_t n) {
 		for (size_t i = 0; i < n; i++) {
 			if (cancel && cancel->load()) return;
+			triedTypes++;
 			std::string body, terr;
 			if (http.GetString(base + L"stash/current/item/overview?league=" + leagueQ +
 			                       L"&type=" + widen(types[i]),
@@ -519,6 +521,7 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 		// the bulk market does not trade. Exchange keys win -- they are live trades.
 		for (const char* type : { "Currency", "Fragment" }) {
 			if (cancel && cancel->load()) break;
+			triedTypes++;
 			std::string body, terr;
 			if (http.GetString(base + L"stash/current/currency/overview?league=" + leagueQ +
 			                       L"&type=" + widen(type),
@@ -535,12 +538,15 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 		runItems(kPoe1ItemTypes, sizeof(kPoe1ItemTypes) / sizeof(kPoe1ItemTypes[0]));
 	}
 
-	if (fetchedTypes == 0) {
-		// Nothing new; the stale cache (if any) stays usable.
-		if (err) *err = u8"poe.ninja 無法連線或全部類別都失敗";
+	const bool cancelled = cancel && cancel->load();
+	if (cancelled || fetchedTypes == 0) {
+		// Nothing new, or a pass cut short: the table and cache we had (if any) stay as they were.
+		if (err) *err = cancelled ? u8"已取消" : u8"poe.ninja 無法連線或全部類別都失敗";
 		return !prices_.empty();
 	}
 
+	// A type that failed this pass keeps its last known prices instead of going unpriced.
+	if (fetchedTypes < triedTypes) fresh.insert(prices_.begin(), prices_.end());
 	prices_ = std::move(fresh);
 	fetchedUtc_ = NowUtc();
 

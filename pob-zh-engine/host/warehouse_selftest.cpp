@@ -11,6 +11,7 @@
 
 #include "atlas_cost.h"
 #include "error_log.h"
+#include "http_client.h" // HttpSetTestSource
 #include "warehouse_format.h"
 #include "warehouse_ninja.h"
 #include "warehouse_pricing.h"
@@ -23,8 +24,10 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -1071,6 +1074,55 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		          exists(L"poe1_Mercenaries.json") && exists(L"notes.json"));
 		DeleteFileW((dir + L"notes.json").c_str());
 		DeleteFileW((dir + L"poe1_Mercenaries.json").c_str());
+	}
+
+	// poe.ninja refresh: a cancelled or partly failed pass must not lose prices already known
+	{
+		std::atomic<bool> cancel{ false };
+		int calls = 0, cancelAt = -1;
+		bool failGems = false;
+		HttpSetTestSource([&](const std::wstring&, const std::wstring& path, std::vector<unsigned char>& out,
+		                      std::string* err, const std::atomic<bool>*) {
+			if (++calls == cancelAt) cancel = true;
+			const char* body = nullptr;
+			if (path.find(L"/exchange/") != std::wstring::npos) body = kExchangeFixture;
+			else if (path.find(L"type=SkillGem") != std::wstring::npos && !failGems) body = kGemOverviewFixture;
+			if (!body) { if (err) *err = "selftest: type unavailable"; return false; }
+			out.assign(body, body + strlen(body));
+			return true;
+		});
+		auto gemKeys = [](const NinjaPriceSource& s) {
+			int n = 0;
+			for (auto& kv : s.Prices())
+				if (kv.first.rfind("currency|", 0) != 0 && kv.first.rfind("card|", 0) != 0) n++;
+			return n;
+		};
+		NinjaPriceSource src;
+		src.Init(scratch);
+		std::string err;
+		bool ok = src.Refresh("poe1", "SelfTestLeague", true, &err, &cancel);
+		const int gems = gemKeys(src);
+		rep.check("N1 價格更新成功後寶石有價格", ok && gems > 0, err);
+
+		failGems = true;
+		ok = src.Refresh("poe1", "SelfTestLeague", true, &err, &cancel);
+		rep.check("N2 部分類別失敗時沿用上次的價格", ok && gemKeys(src) == gems, std::to_string(gemKeys(src)));
+
+		failGems = false;
+		const size_t before = src.Prices().size();
+		const long long utc = src.FetchedUtc();
+		cancelAt = calls + 2;
+		src.Refresh("poe1", "SelfTestLeague", true, &err, &cancel);
+		rep.check("N3 更新中途取消時價格表與時間不變",
+		          src.Prices().size() == before && src.FetchedUtc() == utc && gemKeys(src) == gems,
+		          std::to_string(src.Prices().size()) + "/" + std::to_string(before));
+		NinjaPriceSource disk; // a fresh instance reads what the cancelled pass left on disk
+		disk.Init(scratch);
+		cancel = false;
+		disk.Refresh("poe1", "SelfTestLeague", false, &err, &cancel);
+		rep.check("N4 取消後磁碟快取仍是完整的", gemKeys(disk) == gems, std::to_string(gemKeys(disk)));
+		HttpSetTestSource(nullptr);
+		DeleteFileW((scratch + L"PobTools\\cache\\ninja\\poe1_SelfTestLeague.json").c_str());
 	}
 
 	// request guard, shared by every panel and process
