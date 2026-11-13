@@ -36,7 +36,8 @@ public:
 	void Init(const std::wstring& exeDir);
 
 	// Worker thread. game = "poe1" / "poe2". Loads the disk cache and, when stale (or force),
-	// refetches every type. A type that fails is skipped; only "nothing fetched at all" is an error.
+	// refetches every type. A cancelled pass changes nothing. A type that fails keeps its last known prices
+	// (within a day of the last complete pass); only "nothing fetched at all" is an error.
 	bool Refresh(const std::string& game, const std::string& league, bool force,
 	             std::string* err, const std::atomic<bool>* cancel);
 
@@ -46,6 +47,8 @@ public:
 	// Chaos per divine; 0 = unknown.
 	double DivineRate() const { return divineRate_; }
 	long long FetchedUtc() const { return fetchedUtc_; }
+	// When every type last answered in one pass; 0 = never. Prices are only carried over from a recent one.
+	long long FullPassUtc() const { return fullUtc_; }
 	// The whole table (price-key -> chaos), for NinjaPriceFeed to hand out a copy.
 	const std::unordered_map<std::string, NinjaPrice>& Prices() const { return prices_; }
 
@@ -82,6 +85,7 @@ private:
 	std::unordered_map<std::string, NinjaPrice> prices_;
 	double divineRate_ = 0.0;
 	long long fetchedUtc_ = 0;
+	long long fullUtc_ = 0;
 };
 
 // GET /<game>/api/economy/leagues -> the league ids, current challenge league

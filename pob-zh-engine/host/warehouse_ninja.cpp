@@ -403,6 +403,7 @@ bool NinjaPriceSource::loadCache(const std::string& game, const std::string& lea
 		if (doc.value("game", std::string()) != game) return false;
 		if (doc.value("league", std::string()) != league) return false;
 		fetchedUtc_ = doc.value("fetchedUtc", (long long)0);
+		fullUtc_ = doc.value("fullUtc", (long long)0);
 		divineRate_ = doc.value("divineRate", 0.0);
 		prices_.clear();
 		auto jp = doc.find("prices");
@@ -432,6 +433,7 @@ void NinjaPriceSource::saveCache() const
 	doc["game"] = game_;
 	doc["league"] = league_;
 	doc["fetchedUtc"] = fetchedUtc_;
+	doc["fullUtc"] = fullUtc_;
 	doc["divineRate"] = divineRate_;
 	ordered_json jp = ordered_json::object();
 	for (const auto& kv : prices_) {
@@ -452,6 +454,7 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 	const std::string game = gameIn == "poe2" ? "poe2" : "poe1";
 	if (game_ != game || league_ != league || prices_.empty()) {
 		fetchedUtc_ = 0;
+		fullUtc_ = 0;
 		divineRate_ = 0.0;
 		prices_.clear();
 		game_ = game;
@@ -545,10 +548,17 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 		return !prices_.empty();
 	}
 
-	// A type that failed this pass keeps its last known prices instead of going unpriced.
-	if (fetchedTypes < triedTypes) fresh.insert(prices_.begin(), prices_.end());
+	// A type that failed this pass keeps its last known prices instead of going unpriced -- but only
+	// within a day of the last pass where every type answered, so a type that stays broken (or a
+	// weeks-old cache) cannot pass old prices off as current.
+	const long long now = NowUtc();
+	const bool full = fetchedTypes == triedTypes;
+	const bool carry = !full && fullUtc_ > 0 && now >= fullUtc_ && now - fullUtc_ < 24 * 3600;
+	const double oldDivine = divineRate_;
+	if (carry) fresh.insert(prices_.begin(), prices_.end());
 	prices_ = std::move(fresh);
-	fetchedUtc_ = NowUtc();
+	fetchedUtc_ = now;
+	if (full) fullUtc_ = now;
 
 	// Chaos Orb IS the unit prices were converted into: 1 by definition (no PoE1 source lists it).
 	NinjaPrice chaosOrb;
@@ -565,6 +575,7 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 		if (PriceOf(NinjaExchangeKey("Divine Orb"), &divine) && divine.chaos >= 30.0)
 			divineRate_ = divine.chaos;
 	}
+	if (divineRate_ <= 0 && carry) divineRate_ = oldDivine; // the rate rides along with the carried prices
 
 	saveCache();
 	return true;
