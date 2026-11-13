@@ -1,5 +1,6 @@
 #include "passive_import.h"
 #include "error_log.h"
+#include "data_updater.h" // DataUpdaterWriteCacheFile
 #include "launcher_config.h" // FindPoe1Dir
 
 #define WIN32_LEAN_AND_MEAN
@@ -627,7 +628,10 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 			if (!CopyFileW(src.c_str(), dst.c_str(), FALSE))
 				return fail(u8"複製圖集失敗: " + base);
 		}
-		if (!write_file_utf8(exeDir + L"Data\\passive_tree_poe1.json", out.dump()))
+		// .part then rename: a half-written tree would still report the new treeVersion (read from the file head),
+		// so the updater would call it current while the tree itself no longer parses
+		const std::string text = out.dump();
+		if (!DataUpdaterWriteCacheFile(exeDir + L"Data\\passive_tree_poe1.json", { text.begin(), text.end() }))
 			return fail(u8"寫入 Data/passive_tree_poe1.json 失敗");
 
 		if (summary) {

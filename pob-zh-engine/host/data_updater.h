@@ -16,8 +16,8 @@
 
 long long DataUpdaterNowFiletime(); // GetSystemTimeAsFileTime as 100ns units (data_updater.cpp)
 
-// Download-cache write: `dst` only ever appears complete (written as dst.part, then renamed), because a
-// retry trusts whatever already carries the final name.
+// Whole-file write for download caches and the installed passive tree: `dst` only ever appears complete
+// (written as dst.part, then renamed), because readers trust whatever already carries the final name.
 bool DataUpdaterWriteCacheFile(const std::wstring& dst, const std::vector<unsigned char>& bytes);
 
 // Phase needs Idle and Error; Status needs phase, message and reloadPending.

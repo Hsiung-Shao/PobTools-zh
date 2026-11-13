@@ -812,7 +812,24 @@ void test_cache_write(Rep& R)
 	         u8"快取留有上次中斷的 .part 時，該圖集仍重新下載、更新完成", vdesc(done));
 }
 
-// ---- T10 補：本機 POB TreeData 較新 ------------------------------------------------------------------------
+// the installed tree is replaced whole or not at all: a write that fails must leave the old tree readable
+void test_pt_tree_write(Rep& R)
+{
+	Opt o;
+	Ctx c(R.fl, o);
+	const std::wstring tree = c.dir + L"Data\\passive_tree_poe1.json";
+	const std::string before = slurp(tree);
+	CreateDirectoryW((tree + L".part").c_str(), nullptr); // makes the tree write itself fail
+	bool ok = false;
+	View v = c.check(true, &ok);
+	if (!ok || v.phase != Ph::UpdateAvailable) { R.chk_id("C4", false, u8"檢查到新版", vdesc(v)); return; }
+	c.u->update();
+	View done = c.wait_update(&ok);
+	R.chk_id("C4", done.phase == Ph::Error && !before.empty() && slurp(tree) == before,
+	         u8"樹檔寫入失敗時回報錯誤、舊樹檔原封不動", vdesc(done));
+}
+
+// ---- T10 補：本機 POB TreeData 較新------------------------------------------------------------------------
 
 void test_pob_local(Rep& R)
 {
@@ -862,6 +879,7 @@ int run(const std::wstring& exeDir, const Flavor& fl, const wchar_t* reportName)
 	test_throttle(R);
 	test_shutdown(R);
 	test_cache_write(R);
+	if (!fl.atlas) test_pt_tree_write(R);
 	if (!fl.atlas) test_pob_local(R);
 	else rep.note(u8"輿圖更新器不讀本機 POB，無對應補充項");
 	return rep.finish(exeDir + reportName);
