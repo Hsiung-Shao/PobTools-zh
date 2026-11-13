@@ -401,8 +401,9 @@
     // nodes
     const showIcons = zoom > 0.035;
     // Node Power heat, the Compare rings and search hits: one pass shared by both
-    // games' drawing (no branch may `continue` before reaching them: a mastery or a
-    // socket is a search hit too).
+    // games' drawing. A mastery or a socket is a search hit too, so those branches
+    // call it before they `continue`; the placeholder dots and the ascendancy
+    // start (not search hits) leave earlier.
     const overlays = (n: TreeNode, sx: number, sy: number, half: number, alloc: boolean) => {
       // Show Node Power: POB tints unallocated nodes by their power
       if (power && !alloc) {
