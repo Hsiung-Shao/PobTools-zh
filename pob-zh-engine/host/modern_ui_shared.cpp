@@ -89,6 +89,10 @@ bool ModernUiPathUnderPob(const std::wstring& pobDir, const std::wstring& path)
 		while (!r.empty() && r.back() == L'\\') r.pop_back();
 		return r;
 	};
+	// Drive-absolute only ("X:\..."): relative input would be judged against the working directory, and
+	// "shell:..." / "file:..." would reach ShellExecute as a namespace name instead of a path.
+	if (path.size() < 3 || !iswalpha(path[0]) || path[1] != L':' || (path[2] != L'\\' && path[2] != L'/')
+	    || path.find(L':', 2) != std::wstring::npos) return false;
 	const std::wstring root = full(pobDir), p = full(path);
 	if (root.empty() || p.size() < root.size() || _wcsnicmp(p.c_str(), root.c_str(), root.size()) != 0) return false;
 	return p.size() == root.size() || p[root.size()] == L'\\';

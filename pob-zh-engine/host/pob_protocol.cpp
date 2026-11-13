@@ -641,18 +641,6 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 	RegDeleteKeyW(HKEY_CURRENT_USER, key_path(scheme).c_str());
 	check("R13 test scheme cleaned up", query_scheme(scheme, me) == State::None);
 
-	{
-		int pass = 0, total = 0;
-		size_t pos = 0;
-		while (pos < report.size()) {
-			size_t nl = report.find('\n', pos);
-			std::string ln = report.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
-			if (ln.rfind("PASS ", 0) == 0) { pass++; total++; }
-			else if (ln.rfind("FAIL ", 0) == 0) total++;
-			pos = nl == std::string::npos ? report.size() : nl + 1;
-		}
-		report += std::to_string(pass) + "/" + std::to_string(total) + " passed\n";
-	}
 	// host.open_folder (new interface): only the POB install and what is inside it
 	{
 		const wchar_t* pob = L"C:\\Games\\Path of Building\\";
@@ -672,8 +660,25 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 		check("open_folder 沒有 POB 資料夾時一律拒絕", !ModernUiPathUnderPob(L"", L"C:\\Windows"));
 		check("open_folder 安裝資料夾不帶結尾反斜線也可", ModernUiPathUnderPob(L"C:\\Games\\Path of Building", L"C:\\Games\\Path of Building\\Builds")
 			&& !ModernUiPathUnderPob(L"C:\\Games\\Path of Building", L"C:\\Games\\Path of Building Evil"));
+		// relative and scheme-like input: must not be judged against the working directory
+		wchar_t cwd[MAX_PATH] = L"";
+		GetCurrentDirectoryW(MAX_PATH, cwd);
+		for (const wchar_t* rel : { L"shell:System", L"Builds", L"file:\\\\host\\share", L"C:Builds" })
+			check("open_folder 拒絕非完整路徑 " + narrow(rel), !ModernUiPathUnderPob(cwd, rel));
 	}
 
+	{
+		int pass = 0, total = 0;
+		size_t pos = 0;
+		while (pos < report.size()) {
+			size_t nl = report.find('\n', pos);
+			std::string ln = report.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+			if (ln.rfind("PASS ", 0) == 0) { pass++; total++; }
+			else if (ln.rfind("FAIL ", 0) == 0) total++;
+			pos = nl == std::string::npos ? report.size() : nl + 1;
+		}
+		report += std::to_string(pass) + "/" + std::to_string(total) + " passed\n";
+	}
 	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
 	HANDLE h = CreateFileW((exeDir + L"PobTools\\pob_protocol_selftest.txt").c_str(), GENERIC_WRITE, 0, nullptr,
