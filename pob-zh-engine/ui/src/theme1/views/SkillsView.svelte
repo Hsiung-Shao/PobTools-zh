@@ -37,7 +37,7 @@
             onmouseleave={hideTip}
           >
             <input type="checkbox" checked={g.enabled} onclick={(e) => e.stopPropagation()} onchange={(e) => app.run(() => api.setGroup(g.index, { enabled: e.currentTarget.checked })).then(changed)} />
-            <span class="gname">{g.displayLabelZh || g.displayLabel || g.label || "—"}</span>
+            <span class="gname"><PobText text={g.displayLabelZh || g.displayLabel || g.label || "—"} /></span>
             {#if g.isMain}<span class="badge gold">{t("skills.main")}</span>{/if}
             {#if g.includeInFullDPS}<span class="badge">{t("skills.inFullDps")}</span>{/if}
             {#if g.slot}<span class="badge">{data.slotOptions.find((s) => s.name === g.slot)?.labelZh ?? g.slot}</span>{/if}

@@ -3,6 +3,7 @@
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import Select from "$lib/ui/Select.svelte";
+  import PobText from "$lib/ui/PobText.svelte";
 
   type SubView = "summary" | "tree" | "items" | "skills" | "config";
 

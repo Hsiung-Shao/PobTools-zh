@@ -55,6 +55,13 @@ local function asc_tr(id, name)
 	local zh = id ~= nil and type(PobToolsAscendancyNameZh) == "function" and PobToolsAscendancyNameZh(id, name) or nil
 	return zh or tr(name)
 end
+-- A magic or normal item is named "Prefix Base of Suffix" by concatenation, so the whole
+-- name is no dictionary key: the inject splits it the way it does for the tooltip header
+-- (PobToolsItemNameZh). An older inject has none, and the name then stays as tr() leaves it.
+local function item_tr(it)
+	local zh = type(PobToolsItemNameZh) == "function" and PobToolsItemNameZh(it) or nil
+	return zh or tr(it.name)
+end
 -- tr() of a label POB composed from gem names ("A, B"): the engine translates
 -- it piece by piece, each piece meeting these id names (PobToolsSetDrawOverride
 -- for the span of the call).
@@ -1143,7 +1150,7 @@ function M.get_tree_state()
 					e.name = jewel.name
 					e.title = jewel.title
 					e.baseName = jewel.baseName
-					e.nameZh = jewel.title and (tr(jewel.title) .. ", " .. tr(jewel.baseName or "")) or tr(jewel.name or "")
+					e.nameZh = jewel.title and (tr(jewel.title) .. ", " .. tr(jewel.baseName or "")) or item_tr(jewel)
 					e.rarity = jewel.rarity
 					if viewer and viewer.GetJewelSocketOverlay then
 						local ok2, ov = pcall(viewer.GetJewelSocketOverlay, viewer, jewel, node.expansionJewel)
@@ -2743,7 +2750,7 @@ local function item_summary(it)
 	if it.title and it.baseName then
 		nameZh = tr(it.title) .. ", " .. tr(it.baseName)
 	else
-		nameZh = tr(it.name)
+		nameZh = item_tr(it)
 	end
 	return {
 		id = it.id,
@@ -3394,13 +3401,13 @@ function M.shared_items()
 	local m = shared_lists()
 	local items = {}
 	for i, it in ipairs(m.sharedItemList) do
-		items[i] = { index = i, name = it.name, nameZh = tr(it.name), rarity = it.rarity, raw = it.raw or it:BuildRaw() }
+		items[i] = { index = i, name = it.name, nameZh = item_tr(it), rarity = it.rarity, raw = it.raw or it:BuildRaw() }
 	end
 	local sets = {}
 	for i, set in ipairs(m.sharedItemSetList) do
 		local slots = {}
 		for slotName, it in pairs(set.slots or {}) do
-			slots[slotName] = { name = it.name, nameZh = tr(it.name), rarity = it.rarity }
+			slots[slotName] = { name = it.name, nameZh = item_tr(it), rarity = it.rarity }
 		end
 		sets[i] = { index = i, title = set.title, slots = as_object(slots) }
 	end
@@ -4056,7 +4063,7 @@ function M.compare_items()
 			local slot = set and set[slotName]
 			local id = slot and slot.selItemId
 			local it = id and id ~= 0 and tab.items[id]
-			return it and { name = it.name, nameZh = tr(it.name), rarity = it.rarity, raw = it:BuildRaw() } or nil
+			return it and { name = it.name, nameZh = item_tr(it), rarity = it.rarity, raw = it:BuildRaw() } or nil
 		end
 		local mine = itemIn(b.itemsTab, b.itemsTab.activeItemSet)
 		local theirs = e.itemsTab and itemIn(e.itemsTab, e.itemsTab.activeItemSet) or nil
@@ -7663,6 +7670,73 @@ function M.party_import(p)
 	b.buildFlag = true
 	frame()
 	return M.party_import_state()
+end
+
+-- Selftest probes (--headless-selftest only, no UI calls them): what a classic
+-- POB control hands to the renderer, after translation, when it draws.
+local function selftest_drawn(control)
+	local drawn = {}
+	local realDrawString = DrawString
+	DrawString = function(_, _, _, _, _, text)
+		drawn[#drawn + 1] = type(PobToolsTranslateDisplay) == "function" and PobToolsTranslateDisplay(text) or text
+	end
+	local ok, err = pcall(control.Draw, control, { x = 0, y = 0, width = 1920, height = 1080 })
+	DrawString = realDrawString
+	if not ok then error(err, 0) end
+	return drawn
+end
+
+-- One EditControl driven the way the keyboard does. The buffer goes back as hex:
+-- a half-deleted character is not valid UTF-8 and would not survive the JSON reply.
+function M.selftest_edit_control(p)
+	-- PoE1 constructs in two steps, the PoE2 fork still passes the arguments to new()
+	local rect = { 0, 0, 300, 20 }
+	local twoStep, e = pcall(function() return new("EditControl"):EditControl(nil, rect, "") end)
+	if not twoStep then e = new("EditControl", nil, rect, "") end
+	e.buf = p.buf or ""
+	e.caret = p.caret or (#e.buf + 1)
+	e.sel = p.sel
+	local realIsKeyDown = IsKeyDown
+	if p.ctrl then IsKeyDown = function(k) return k == "CTRL" end end
+	local ok, err = pcall(function() for _, key in ipairs(p.keys or {}) do e:OnKeyDown(key) end end)
+	IsKeyDown = realIsKeyDown
+	if not ok then error(err, 0) end
+	e.hasFocus = p.focus ~= false
+	return { bufHex = (e.buf:gsub(".", function(c) return string.format("%02X", c:byte()) end)), caret = e.caret,
+		drawn = p.draw and selftest_drawn(e) or {} }
+end
+
+-- The build list (with its path bar) holding one build and one folder under subPath.
+function M.selftest_build_list(p)
+	local listMode = { subPath = p.subPath or "", BuildList = function() end, list = {
+		{ buildName = p.buildName, fileName = p.buildName .. ".xml", subPath = p.subPath or "", level = 1, className = "Witch" },
+		{ folderName = p.folderName, subPath = p.subPath or "" },
+	} }
+	local rect = { 0, 0, 600, 300 }
+	local twoStep, list = pcall(function() return new("BuildListControl"):BuildListControl(nil, rect, listMode) end)
+	if not twoStep then list = new("BuildListControl", nil, rect, listMode) end
+	list.width = function() return 600 end -- BuildList.lua sets a function here; the path bar calls it
+	return { drawn = selftest_drawn(list) }
+end
+
+-- The skills tab's gem name box of that slot, holding p.name the way POB fills it.
+function M.selftest_gem_box(p)
+	local ctl = gem_slot_control(ensure_build(), p)
+	if not ctl then error("no gem box", 0) end
+	ctl.buf = p.name
+	return { drawn = selftest_drawn(ctl) }
+end
+
+-- The notes tab's (multi-line) edit box holding p.text; its own text is put back.
+function M.selftest_notes_box(p)
+	local e = ensure_build().notesTab.controls.edit
+	local was = e.buf
+	e:SetText(p.text or "")
+	e.hasFocus = p.focus ~= false
+	local ok, drawn = pcall(selftest_drawn, e)
+	e:SetText(was)
+	if not ok then error(drawn, 0) end
+	return { drawn = drawn }
 end
 
 -- party_action{action = "clear"|"disable"|"rebuild"}: Clear, Disable Party

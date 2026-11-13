@@ -84,7 +84,7 @@
             <div class="head card-title">{t(side.who === "mine" ? "compare.mine" : "compare.theirs")}</div>
             {#each side.list as g (g.index)}
               <div class="group" class:off={!g.enabled}>
-                <div class="gname">{g.labelZh || g.label}{g.isMain ? " ★" : ""}</div>
+                <div class="gname"><PobText text={g.labelZh || g.label} />{g.isMain ? " ★" : ""}</div>
                 <div class="gems dim small">{g.gems.map((x: { name: string; nameZh?: string; level?: number; quality?: number }) => `${x.nameZh || x.name} ${x.level}/${x.quality}`).join(" · ")}</div>
               </div>
             {/each}

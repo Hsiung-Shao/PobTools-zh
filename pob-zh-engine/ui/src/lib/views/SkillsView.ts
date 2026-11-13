@@ -3,8 +3,10 @@
   import { copyText } from "$lib/clipboard";
   import { dpsDeltaColor, dpsDeltaText, formatSignedNumber } from "$lib/gemDps";
   import { t } from "$lib/i18n";
+  import { pobPlain } from "$lib/pobtext";
   import { app } from "$lib/state.svelte";
   import { dataKey } from "$lib/lang.svelte";
+  import PobText from "$lib/ui/PobText.svelte";
   import TooltipCard from "$lib/ui/TooltipCard.svelte";
   import Select from "$lib/ui/Select.svelte";
 
@@ -277,7 +279,7 @@
   async function deleteGroup() {
     if (!group) return;
     // SkillListControl:OnSelDelete asks first when the group has gems in it
-    if (group.gems.length && !confirm(t("skills.deleteGroupConfirm", { name: group.displayLabelZh || group.displayLabel || group.label }))) return;
+    if (group.gems.length && !confirm(t("skills.deleteGroupConfirm", { name: pobPlain(group.displayLabelZh || group.displayLabel || group.label) }))) return;
     const r = await app.run(() => api.deleteGroup(group.index));
     if (r) await changed();
   }

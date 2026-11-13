@@ -4,6 +4,7 @@
   import { untrack } from "svelte";
   import { api, type BuildHeader, type DdEntry } from "$lib/bridge";
   import { t } from "$lib/i18n";
+  import { pobPlain } from "$lib/pobtext";
   import type { SelOption } from "$lib/select";
   import { app } from "$lib/state.svelte";
   import ClassChangeDialog from "$lib/ui/ClassChangeDialog.svelte";
@@ -96,7 +97,7 @@
     if (h) levelDraft = String(h.level);
   });
   // the drop-downs are controlled: they show POB's answer (pick.*), not what was clicked
-  const dd = (l: DdEntry[], byIndex = false): SelOption[] => l.map((o, i) => ({ value: byIndex ? i + 1 : (o.val ?? i + 1), label: o.labelZh || o.label }));
+  const dd = (l: DdEntry[], byIndex = false): SelOption[] => l.map((o, i) => ({ value: byIndex ? i + 1 : (o.val ?? i + 1), label: pobPlain(o.labelZh || o.label) }));
 
   async function setField(field: string, value: unknown) {
     const r = await app.run(() => api.setBuildField(field, value));

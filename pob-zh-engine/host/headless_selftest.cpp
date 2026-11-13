@@ -1264,6 +1264,62 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				      okZhTip && zhTip.value("reversed", false) && zhTip["lines"].size() >= 2, zhTip.dump().substr(0, 200));
 			}
 
+			// A magic item's name is "Prefix Base" glued together by POB: no dictionary key, so the list has to split it like the tooltip header does.
+			{
+				json mAdd, mLi, del;
+				bool okM = child.Call("add_item", json{{"raw", "Rarity: MAGIC\nHeavy Woodsplitter\n"}, {"equip", false}}, mAdd, 60000);
+				long long mId = okM ? mAdd["item"].value("id", 0LL) : 0;
+				std::string mZh;
+				if (mId > 0 && child.Call("list_items", json::object(), mLi, 60000))
+					for (auto& it : mLi["items"]) if (it.value("id", 0LL) == mId) mZh = it.value("nameZh", "");
+				bool hasZh = false;
+				for (unsigned char c : mZh) if (c >= 0x80) { hasZh = true; break; }
+				check(u8"list_items:魔法物品名稱(前綴+基底)在清單有中文", okM && hasZh, "nameZh=" + mZh + " " + (okM ? "" : mAdd.dump().substr(0, 200)));
+				if (mId > 0) child.Call("delete_item", json{{"id", mId}}, del, 60000);
+			}
+
+			// The classic POB edit box (build / folder names): upstream removes one BYTE per Backspace / Delete, and the engine
+			// translated whatever the box held when it happened to be a dictionary key.
+			{
+				json bk, dl, dr, du;
+				// "測文試", caret after 文 (byte 7) -> Backspace
+				bool okBk = child.Call("selftest_edit_control", json{{"buf", u8"測文試"}, {"caret", 7}, {"keys", json::array({"BACK"})}}, bk, 30000);
+				check(u8"輸入框:在兩個中文字之間按 Backspace 刪掉整個字", okBk && bk.value("bufHex", "") == "E6B8ACE8A9A6" && bk.value("caret", 0) == 4,
+				      bk.dump().substr(0, 200));
+				// "測試", caret at the start -> Delete
+				bool okDl = child.Call("selftest_edit_control", json{{"buf", u8"測試"}, {"caret", 1}, {"keys", json::array({"DELETE"})}}, dl, 30000);
+				check(u8"輸入框:在中文字前按 Delete 刪掉整個字", okDl && dl.value("bufHex", "") == "E8A9A6" && dl.value("caret", 0) == 1, dl.dump().substr(0, 200));
+				// "測試 ", caret at the end -> Ctrl+Backspace (upstream walks over the space, then cuts into 試)
+				json cb;
+				bool okCb = child.Call("selftest_edit_control", json{{"buf", u8"測試 "}, {"keys", json::array({"BACK"})}, {"ctrl", true}}, cb, 30000);
+				check(u8"輸入框:中文字後有空白時按 Ctrl+Backspace 不留半個字", okCb && cb.value("bufHex", "") == "E6B8AC" && cb.value("caret", 0) == 4,
+				      cb.dump().substr(0, 200));
+				auto allAscii = [](const json& r) {
+					if (!r.contains("drawn") || !r["drawn"].is_array() || r["drawn"].empty()) return false;
+					for (auto& s : r["drawn"])
+						for (unsigned char c : s.get<std::string>()) if (c >= 0x80) return false;
+					return true;
+				};
+				bool okDr = child.Call("selftest_edit_control", json{{"buf", "Build"}, {"draw", true}}, dr, 30000);
+				check(u8"輸入框:輸入 Build 時畫出來仍是 Build(不被翻譯)", okDr && allAscii(dr), dr.dump().substr(0, 200));
+				bool okDu = child.Call("selftest_edit_control", json{{"buf", "Test"}, {"draw", true}, {"focus", false}}, du, 30000);
+				check(u8"輸入框:失去焦點後 Test 仍是 Test(不被翻譯)", okDu && allAscii(du), du.dump().substr(0, 200));
+				// the notes tab: the one multi-line box that follows what was typed (focused: a DrawString per line)
+				json nt;
+				bool okNt = child.Call("selftest_notes_box", json{{"text", "Test\nmy Build notes\nBuild"}}, nt, 30000);
+				check(u8"備註分頁:整行是 Test、Build 時照原文顯示(不被翻譯)", okNt && allAscii(nt) && nt["drawn"].size() >= 3, nt.dump().substr(0, 200));
+				// the same names where the list and the path bar above it draw them
+				json bl;
+				bool okBl = child.Call("selftest_build_list", json{{"buildName", "Build"}, {"folderName", "Test"}, {"subPath", "Test/"}}, bl, 30000);
+				auto drew = [&](const char* s) {
+					if (!bl.contains("drawn")) return false;
+					for (auto& d : bl["drawn"]) if (d.get<std::string>() == s) return true;
+					return false;
+				};
+				check(u8"流派清單與路徑列:名為 Build 的流派、名為 Test 的資料夾照原文顯示", okBl && drew("Build") && drew(">> Test") && drew("Test"),
+				      bl.dump().substr(0, 200));
+			}
+
 			json dbU, dbZh, dbR;
 			bool okDbU = okLoad && child.Call("item_db", json{{"kind", "unique"}, {"query", "shavronne"}, {"page", 1}, {"size", 10}}, dbU, 180000);
 			bool okDbZh = okDbU && child.Call("item_db", json{{"kind", "unique"}, {"query", u8"\u859b\u6717"}, {"page", 1}, {"size", 10}}, dbZh, 60000);
@@ -1594,6 +1650,13 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			json tt;
 			bool okTt = gemsOk && child.Call("gem_tooltip", json{{"group", newIdx}, {"index", 1}}, tt, 60000);
 			check("gem_tooltip: POB's gem tooltip for the new gem", okTt && tt["lines"].size() >= 3, okTt ? "" : tt.dump().substr(0, 200));
+			// the one edit box whose text is NOT the user's: it stays translated
+			json gb;
+			bool okGb = gemsOk && child.Call("selftest_gem_box", json{{"group", newIdx}, {"index", 1}, {"name", "Fireball"}}, gb, 30000);
+			bool gbZh = false;
+			if (okGb && gb.contains("drawn"))
+				for (auto& d : gb["drawn"]) if (d.get<std::string>() == u8"火球") gbZh = true;
+			check(u8"技能頁寶石名稱框:Fireball 仍畫成中文(不受輸入框保留英文影響)", gbZh, gb.dump().substr(0, 200));
 			json sm, st1;
 			bool okSm = gemsOk && child.Call("set_build_field", json{{"field", "mainSocketGroup"}, {"value", newIdx}}, sm, 60000) &&
 			            child.Call("get_stats", json::object(), st1, 30000);

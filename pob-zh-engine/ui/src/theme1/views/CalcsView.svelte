@@ -15,6 +15,7 @@
   import BreakdownPanel from "../components/BreakdownPanel.svelte";
   import MinionLibrary from "$lib/ui/MinionLibrary.svelte";
   import PobText from "$lib/ui/PobText.svelte";
+  import { pobPlain } from "$lib/pobtext";
   import { subsectionSummary } from "$lib/calcs-summary";
   import Select from "$lib/ui/Select.svelte";
 
@@ -203,7 +204,7 @@
                 {@const w = c.widget!}
                 <span class="cell ctl" style:grid-column={ncol > 1 ? "2 / -1" : undefined}>
                   {#if w.kind === "dropdown"}
-                    <Select class="select sm" value={String(w.index ?? 1)} disabled={!w.enabled || app.busy > 0} options={(w.list ?? []).map((o, i) => ({ value: String(i + 1), label: o.labelZh || o.label }))} onchange={(v) => setControl(c.control!, Number(v))} />
+                    <Select class="select sm" value={String(w.index ?? 1)} disabled={!w.enabled || app.busy > 0} options={(w.list ?? []).map((o, i) => ({ value: String(i + 1), label: pobPlain(o.labelZh || o.label) }))} onchange={(v) => setControl(c.control!, Number(v))} />
                   {:else if w.kind === "edit"}
                     <input class="input sm num" value={String(w.value ?? "")} disabled={!w.enabled || app.busy > 0} onchange={(e) => setControl(c.control!, e.currentTarget.value)} />
                   {:else if w.kind === "check"}
