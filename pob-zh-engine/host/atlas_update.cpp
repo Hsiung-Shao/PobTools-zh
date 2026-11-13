@@ -431,29 +431,34 @@ bool AtlasUpdater::doCheck(std::string* err)
 		st_.latestTag = latestTag;
 	}
 
+	AtlasUpdatePhase ph = AtlasUpdatePhase::UpToDate;
+	std::string msg; // stays empty when the zh rebuild failed: keep the old mapping, retry on a future check
+	bool zhRefreshed = false;
 	if (latestTag != tag_) {
-		setPhase(AtlasUpdatePhase::UpdateAvailable,
-			u8"發現新賽季輿圖資料 " + latestTag + (tag_.empty() ? "" : u8"（目前 " + tag_ + u8"）"));
+		ph = AtlasUpdatePhase::UpdateAvailable;
+		msg = u8"發現新賽季輿圖資料 " + latestTag + (tag_.empty() ? "" : u8"（目前 " + tag_ + u8"）");
 	} else if (!repoeVer.empty() && repoeVer != repoe_) {
 		// same tree, newer translations: rebuild the zh mapping in place
 		setPhase(AtlasUpdatePhase::Checking, u8"更新繁中對照資料中…");
 		std::string zhErr;
 		if (refreshZhMapping(latestTag, repoeVer, &zhErr)) {
 			repoe_ = repoeVer;
-			std::lock_guard<std::mutex> lk(stMx_);
-			st_.phase = AtlasUpdatePhase::UpToDate;
-			st_.message = u8"繁中對照已更新（repoe " + repoeVer + u8"）";
-			st_.zhRefreshed = true;
-		} else {
-			// keep the old mapping; retry on a future check
-			setPhase(AtlasUpdatePhase::UpToDate, "");
+			msg = u8"繁中對照已更新（repoe " + repoeVer + u8"）";
+			zhRefreshed = true;
 		}
 	} else {
-		setPhase(AtlasUpdatePhase::UpToDate, u8"輿圖資料已是最新（" + latestTag + u8"）");
+		msg = u8"輿圖資料已是最新（" + latestTag + u8"）";
 	}
 
+	// record first: Poll() readers treat the phase change as "check finished"
 	lastCheckUtc_ = DataUpdaterNowFiletime();
 	saveVersionRecord();
+	{
+		std::lock_guard<std::mutex> lk(stMx_);
+		st_.phase = ph;
+		st_.message = msg;
+		if (zhRefreshed) st_.zhRefreshed = true;
+	}
 	return true;
 }
 

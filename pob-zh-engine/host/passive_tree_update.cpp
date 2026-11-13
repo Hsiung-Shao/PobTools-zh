@@ -189,13 +189,14 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 		// GitHub unreachable and nothing newer locally: not a completed check, so it
 		// must not start the daily throttle (same rule as AtlasUpdater).
 		if (!remoteOk) {
-			if (err) *err = tagsErr.empty() ? "no release tag in the GitHub answer" : tagsErr;
+			if (err) *err = tagsErr.empty() ? u8"GitHub 回應中找不到正式版 tag" : tagsErr;
 			return false;
 		}
-		setPhase(PassiveUpdatePhase::UpToDate,
-			currentVer_.empty() ? u8"天賦樹資料未知版本" : u8"天賦樹資料已是最新（" + currentVer_ + u8"）");
+		// record first: Poll() readers treat the phase change as "check finished"
 		lastCheckUtc_ = DataUpdaterNowFiletime();
 		saveRecord();
+		setPhase(PassiveUpdatePhase::UpToDate,
+			currentVer_.empty() ? u8"天賦樹資料未知版本" : u8"天賦樹資料已是最新（" + currentVer_ + u8"）");
 		return true;
 	}
 
@@ -209,13 +210,12 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 		std::lock_guard<std::mutex> lk(stMx_);
 		st_.latestVer = latestVer_;
 	}
+	lastCheckUtc_ = DataUpdaterNowFiletime();
+	saveRecord();
 	setPhase(PassiveUpdatePhase::UpdateAvailable,
 		u8"發現新賽季天賦樹 " + latestVer_ +
 		(currentVer_.empty() ? "" : u8"（目前 " + currentVer_ + u8"）") +
 		(localBest == newest ? u8"｜POB 已更新，圖集可直接取用" : ""));
-
-	lastCheckUtc_ = DataUpdaterNowFiletime();
-	saveRecord();
 	return true;
 }
 
