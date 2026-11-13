@@ -1,5 +1,6 @@
 #include "pob_protocol.h"
 #include "error_log.h"
+#include "modern_ui_shared.h" // selftest: the host.open_folder path rule
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -652,6 +653,27 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 		}
 		report += std::to_string(pass) + "/" + std::to_string(total) + " passed\n";
 	}
+	// host.open_folder (new interface): only the POB install and what is inside it
+	{
+		const wchar_t* pob = L"C:\\Games\\Path of Building\\";
+		struct Case { const wchar_t* path; bool allow; const char* name; };
+		const Case cases[] = {
+			{ L"C:\\Games\\Path of Building\\Builds", true, "open_folder 允許安裝資料夾內的子資料夾" },
+			{ L"C:/Games/Path of Building/Builds/sub", true, "open_folder 允許正斜線寫法" },
+			{ L"c:\\games\\path of building", true, "open_folder 允許安裝資料夾本身(大小寫不同)" },
+			{ L"C:\\Games\\Path of Building\\..\\..\\Windows", false, "open_folder 拒絕用 .. 跳出安裝資料夾" },
+			{ L"C:\\Games\\Path of Building\\Builds\\..\\..\\Secret", false, "open_folder 拒絕先進再跳出" },
+			{ L"C:\\Games\\Path of Building Evil\\x", false, "open_folder 拒絕同前綴的兄弟資料夾" },
+			{ L"C:\\Windows", false, "open_folder 拒絕安裝資料夾以外的路徑" },
+			{ L"", false, "open_folder 拒絕空路徑" },
+		};
+		for (const Case& c : cases)
+			check(c.name, ModernUiPathUnderPob(pob, c.path) == c.allow);
+		check("open_folder 沒有 POB 資料夾時一律拒絕", !ModernUiPathUnderPob(L"", L"C:\\Windows"));
+		check("open_folder 安裝資料夾不帶結尾反斜線也可", ModernUiPathUnderPob(L"C:\\Games\\Path of Building", L"C:\\Games\\Path of Building\\Builds")
+			&& !ModernUiPathUnderPob(L"C:\\Games\\Path of Building", L"C:\\Games\\Path of Building Evil"));
+	}
+
 	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
 	HANDLE h = CreateFileW((exeDir + L"PobTools\\pob_protocol_selftest.txt").c_str(), GENERIC_WRITE, 0, nullptr,

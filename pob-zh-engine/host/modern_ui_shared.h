@@ -15,6 +15,8 @@ nlohmann::json ModernUiPrefs(const std::wstring& exeDir, const std::wstring& gam
 void ModernUiSetPrefs(const std::wstring& exeDir, const std::wstring& game, const nlohmann::json& params, LauncherConfig& cfg);
 // host.open_folder: the background-image folder, or a folder under the POB install. False = refused (outside it).
 bool ModernUiOpenFolder(const std::wstring& exeDir, const std::wstring& pobDir, const nlohmann::json& params);
+// The rule behind it: `path` is the POB install itself or lies inside it. Pure (no disk access).
+bool ModernUiPathUnderPob(const std::wstring& pobDir, const std::wstring& path);
 // A child line that is the bridge's `gate_result`: parsed into `v` and written to bridge_gate.json. False = not that line.
 bool ModernUiRecordGate(const std::wstring& exeDir, const std::wstring& pobDir, const std::string& line, BridgeGate::Verdict& v);
 void StopHeadlessChild(std::unique_ptr<HeadlessProc::Child>& child);

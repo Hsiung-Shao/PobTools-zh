@@ -79,6 +79,21 @@ void ModernUiSetPrefs(const std::wstring& exeDir, const std::wstring& game, cons
 	SaveLauncherConfig(exeDir + L"pob-zh.ini", fresh);
 }
 
+bool ModernUiPathUnderPob(const std::wstring& pobDir, const std::wstring& path)
+{
+	// Resolve "..", "/" and trailing slashes first: a raw prefix compare lets "<pob>\..\.." and "<pob> Evil" through.
+	auto full = [](const std::wstring& s) {
+		wchar_t buf[1024];
+		DWORD n = s.empty() ? 0 : GetFullPathNameW(s.c_str(), 1024, buf, nullptr);
+		std::wstring r(buf, n < 1024 ? n : 0);
+		while (!r.empty() && r.back() == L'\\') r.pop_back();
+		return r;
+	};
+	const std::wstring root = full(pobDir), p = full(path);
+	if (root.empty() || p.size() < root.size() || _wcsnicmp(p.c_str(), root.c_str(), root.size()) != 0) return false;
+	return p.size() == root.size() || p[root.size()] == L'\\';
+}
+
 bool ModernUiOpenFolder(const std::wstring& exeDir, const std::wstring& pobDir, const json& params)
 {
 	if (params.value("which", "") == "backgrounds") {
@@ -90,8 +105,7 @@ bool ModernUiOpenFolder(const std::wstring& exeDir, const std::wstring& pobDir, 
 	// Only folders under the POB install, so "open a folder" never becomes "open anything".
 	std::wstring p = widen(params.value("path", ""));
 	for (auto& c : p) if (c == L'/') c = L'\\';
-	bool under = !pobDir.empty() && _wcsnicmp(p.c_str(), pobDir.c_str(), pobDir.size()) == 0;
-	if (!under) return false;
+	if (!ModernUiPathUnderPob(pobDir, p)) return false;
 	ShellExecuteW(nullptr, L"explore", p.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 	return true;
 }
