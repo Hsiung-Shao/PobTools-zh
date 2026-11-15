@@ -1708,6 +1708,31 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 			      "group query round-trips through the url's q= parameter");
 		}
 
+		// 超過一次查詢上限的組分批送:每按一次往後一批,送完從頭
+		{
+			auto is = [](TradeBatch b, size_t begin, size_t end) { return b.begin == begin && b.end == end; };
+			auto str = [](TradeBatch b) { return std::to_string(b.begin) + ".." + std::to_string(b.end); };
+			check(is(TradeNextBatch(144, 0), 0, 40), "B1 144 個種子第一次送第 1-40 個", str(TradeNextBatch(144, 0)));
+			check(is(TradeNextBatch(144, 40), 40, 80), "B2 送過前 40 個後下一批是第 41-80 個", str(TradeNextBatch(144, 40)));
+			check(is(TradeNextBatch(144, 120), 120, 144), "B3 最後一批只有剩下的 24 個", str(TradeNextBatch(144, 120)));
+			check(is(TradeNextBatch(144, 144), 0, 40), "B4 全部送完後從頭開始", str(TradeNextBatch(144, 144)));
+			check(is(TradeNextBatch(30, 0), 0, 30), "B5 不到上限的組一次送完", str(TradeNextBatch(30, 0)));
+			check(is(TradeNextBatch(0, 0), 0, 0), "B6 沒有種子時是空批", str(TradeNextBatch(0, 0)));
+			// 一路按下去,每個種子恰好送出一次、順序不變
+			std::vector<int> sent;
+			size_t next = 0, rounds = 0;
+			do {
+				const TradeBatch b = TradeNextBatch(144, next);
+				for (size_t i = b.begin; i < b.end; i++) sent.push_back((int)i);
+				next = b.end;
+				rounds++;
+			} while (next < 144 && rounds < 10);
+			bool inOrder = sent.size() == 144;
+			for (size_t i = 0; inOrder && i < sent.size(); i++) inOrder = sent[i] == (int)i;
+			check(inOrder && rounds == 4, "B7 144 個種子按 4 次剛好每個送一次",
+			      std::to_string(sent.size()) + " sent in " + std::to_string(rounds));
+		}
+
 		// Remembered region/league/platform. Round-tripped through the real file
 		// because that is what breaks (encoding, missing dir); the user's own
 		// state is saved and put back afterwards.

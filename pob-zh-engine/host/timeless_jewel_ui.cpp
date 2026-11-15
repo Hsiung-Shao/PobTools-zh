@@ -100,6 +100,12 @@ std::string TradeQueryJson(const std::string& tradeStatId, int seed)
 	return q;
 }
 
+TradeBatch TradeNextBatch(size_t total, size_t next)
+{
+	const size_t begin = next < total ? next : 0;
+	return { begin, (std::min)(total, begin + kMaxTradeSeeds) };
+}
+
 // Query JSON matching ANY of several seeds (PoE "count" stat group, one filter
 // per seed, count >= 1) so a whole match-group fits in one search.
 std::string TradeQueryJsonMulti(const std::string& tradeStatId, const std::vector<int>& seeds)
@@ -1501,6 +1507,7 @@ public:
 			showError(u8"讀不到這顆珠寶的查表資料", binErr, false);
 			return;
 		}
+		tradeNext_.clear();   // every search starts its groups at the first batch
 		const bool isAbyss = TJIsAbyss(jewelType);
 		const bool isZorath = TJIsZorath(jewelType);
 		TJSearchQuery q;
@@ -2149,15 +2156,14 @@ public:
 			ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + lineH));
 			ImGui::Dummy(ImVec2(w, PobUi::D(4.0f)));
 		}
-		labelRow(u8"依命中節點數分組", u8"分組後每組標頭有「交易查詢整組」，把那一組的種子一次送到交易站（每次最多 40 個）",
+		labelRow(u8"依命中節點數分組", u8"分組後每組標頭有「交易查詢整組」，把那一組的種子送到交易站（每次最多 40 個，超過的再按一次送下一批）",
 		         PobUi::SwitchWidth(), std::floor(PobUi::D(28.0f)), [&]() { PobUi::Switch("##group", &groupResults); });
 		ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
 		if (!groupResults) {
 			// ungrouped: one search for the whole list, from the top
 			std::vector<int> seeds;
 			for (const auto& h : job.results) seeds.push_back(h.seed);
-			const int n = (int)(std::min)(seeds.size(), kMaxTradeSeeds);
-			drawTradeGroupButton(seeds, (u8"交易查詢全部（前 " + std::to_string(n) + u8" 個）").c_str(), "all", 0.0f);
+			drawTradeGroupButton(seeds, u8"交易查詢全部", "all", 0.0f);
 			ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
 		}
 		const float listH = (std::max)(PobUi::D(120.0f), bottom - ImGui::GetCursorScreenPos().y);
@@ -2167,20 +2173,49 @@ public:
 
 	// A trade button for several seeds, with what happens past the cap said in
 	// its tooltip (and in a hint beside it when the cap actually bites).
-	void drawTradeGroupButton(const std::vector<int>& seeds, const char* label, const char* tag, float minW)
+	// The button's label: past the cap it names the batch the next click sends
+	// ("… 41-80"). Call under the same ID stack as drawTradeGroupButton.
+	std::string tradeGroupLabel(const std::vector<int>& seeds, const char* base, const char* tag)
+	{
+		if (seeds.size() <= kMaxTradeSeeds) return base;
+		const TradeBatch b = TradeNextBatch(seeds.size(), tradeNext_[ImGui::GetID(tag)]);
+		return std::string(base) + " " + std::to_string(b.begin + 1) + "-" + std::to_string(b.end);
+	}
+
+	void drawTradeGroupButton(const std::vector<int>& seeds, const char* base, const char* tag, float minW)
 	{
 		const bool capped = seeds.size() > kMaxTradeSeeds;
-		if (PobUi::Button(label, PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::ExternalLink, minW, !tradeOff()))
-			tradeSeeds(seeds, tag);
+		size_t& next = tradeNext_[ImGui::GetID(tag)];
+		const TradeBatch b = TradeNextBatch(seeds.size(), next);
+		// the ID stays `tag` while the visible label moves on to the next batch
+		const std::string label = tradeGroupLabel(seeds, base, tag) + "###" + tag;
+		if (PobUi::Button(label.c_str(), PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::ExternalLink, minW, !tradeOff())) {
+			tradeSeeds(std::vector<int>(seeds.begin() + b.begin, seeds.begin() + b.end), tag);
+			next = b.end;
+		}
+		// Test aid (POBTOOLS_TJ_STATE=tradeclick): synthetic left clicks on the first
+		// trade button that has more than one batch -- POBTOOLS_TJ_CLICKS of them
+		// (default 1), 12 frames apart so each lands as its own click.
+		if (testState_ == "tradeclick" && capped && (testTradeId_ == 0 || testTradeId_ == ImGui::GetItemID()) &&
+		    testTradeClicks_ < testTradeWant_ && ImGui::GetFrameCount() >= testTradeAt_) {
+			testTradeId_ = ImGui::GetItemID();
+			testTradeClicks_++;
+			testTradeAt_ = ImGui::GetFrameCount() + 12;
+			const ImVec2 a = ImGui::GetItemRectMin(), z = ImGui::GetItemRectMax();
+			ImGuiIO& io = ImGui::GetIO();
+			io.AddMousePosEvent((a.x + z.x) * 0.5f, (a.y + z.y) * 0.5f);
+			io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+			io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+		}
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
 			std::string tip;
 			if (tradeOff()) tip = tradeOffWhy();
 			else {
-				tip = u8"一次在交易站搜尋 " + std::to_string((std::min)(seeds.size(), kMaxTradeSeeds)) +
-				      u8" 個種子（任一符合即列出，即時購買）。";
+				tip = u8"一次在交易站搜尋 " + std::to_string(b.end - b.begin) + u8" 個種子（任一符合即列出，即時購買）。";
 				if (capped)
 					tip += u8"交易站一次查詢最多 " + std::to_string(kMaxTradeSeeds) + u8" 個種子，這裡共 " +
-					       std::to_string(seeds.size()) + u8" 個，只送排名最前的 " + std::to_string(kMaxTradeSeeds) + u8" 個。";
+					       std::to_string(seeds.size()) + u8" 個：這次送排名第 " + std::to_string(b.begin + 1) + "-" +
+					       std::to_string(b.end) + u8" 個，再按一次送下一批，送完最後一批會從頭開始。";
 			}
 			PobUi::Tooltip(tip.c_str());
 		}
@@ -2354,6 +2389,7 @@ public:
 		if (sig == sumSig_) return;
 		sumSig_ = sig;
 		sumCache_.clear();
+		tradeNext_.clear();   // a new result list starts every group at its first batch
 		resultNodesCache_ = resultNodes();
 	}
 
@@ -2539,9 +2575,8 @@ public:
 		const float w = ImGui::GetContentRegionAvail().x;
 		const float h = std::floor(PobUi::D(36.0f));
 		const float smH = std::floor(PobUi::D(28.0f));
-		const int n = (int)(std::min)(seeds.size(), kMaxTradeSeeds);
 		const char* tlbl = u8"交易查詢整組";
-		const float bw = PobUi::ButtonWidth(tlbl, PobUi::BtnSize::Sm, PobIcon::ExternalLink);
+		const float bw = PobUi::ButtonWidth(tradeGroupLabel(seeds, tlbl, "group").c_str(), PobUi::BtnSize::Sm, PobIcon::ExternalLink);
 		const float toggleW = (std::max)(PobUi::D(40.0f), w - bw - PobUi::D(8.0f));
 
 		ImGui::SetNextItemAllowOverlap();
@@ -2561,9 +2596,9 @@ public:
 		}
 		char lbl[64], note[64];
 		snprintf(lbl, sizeof(lbl), u8"命中 %d 個節點", matches);
-		// past the cap the note says how many go to the trade site (the button's
-		// tooltip says why)
-		if (seeds.size() > kMaxTradeSeeds) snprintf(note, sizeof(note), u8"%d 個種子・交易取前 %d", count, n);
+		// past the cap the note says how many go to the trade site per click (the
+		// button names the batch, its tooltip says why)
+		if (seeds.size() > kMaxTradeSeeds) snprintf(note, sizeof(note), u8"%d 個種子・每次查 %d 個", count, (int)kMaxTradeSeeds);
 		else snprintf(note, sizeof(note), u8"%d 個種子", count);
 		dl->PushClipRect(p, ImVec2(p.x + toggleW, p.y + h), true);
 		dl->AddText(body, px, ImVec2(x, ty), Tok::Text, lbl);
@@ -2871,6 +2906,8 @@ public:
 //   keystone = Glorious Vanity, no seed, Bitter Frost's tooltip forced open
 //              (POBTOOLS_TJ_CONQ = conqueror index)
 //   protect = Militant Faith, two notables protected, a search run
+//   tradeclick = a search, then one synthetic click on the first trade button
+//                with more than 40 seeds (POBTOOLS_TJ_TRADE_DUMP gets what it sent)
 //   protectclick = Militant Faith, one synthetic right click on a notable;
 //                  POBTOOLS_TJ_CLICK_DUMP = file that gets "selected=N protected=N"
 	// Nothing is written: under a test aid the league fetch, the tree-update
@@ -2907,7 +2944,9 @@ public:
 		const int hi = ds->seedMax.count(jewelType) ? ds->seedMax.at(jewelType) : 18000;
 		const int mid = lo + (hi - lo) / 2;
 		if (testState_ == "results" || testState_ == "resultsflat" || testState_ == "resultsseed" ||
-		    testState_ == "tradepanel" || testState_ == "noleague" || testState_ == "tradedump") {
+		    testState_ == "tradepanel" || testState_ == "noleague" || testState_ == "tradedump" ||
+		    testState_ == "tradeclick") {
+			if (const char* c = std::getenv("POBTOOLS_TJ_CLICKS")) testTradeWant_ = (std::max)(1, atoi(c));
 			mode = 0;
 			groupResults = testState_ != "resultsflat";
 			autoPick_ = testState_ == "resultsseed";
@@ -3128,7 +3167,10 @@ private:
 	float tradeRowW_ = 0.0f;
 	// the search form, minus the stat list, last frame (sizes the list)
 	float formOtherH_ = 0.0f;
-	bool testDumped_ = false;     // POBTOOLS_TJ_STATE=tradedump: done once
+	std::map<ImGuiID, size_t> tradeNext_;   // per trade button: where its last batch stopped
+	ImGuiID testTradeId_ = 0;     // POBTOOLS_TJ_STATE=tradeclick: the button being clicked
+	int testTradeClicks_ = 0, testTradeWant_ = 1, testTradeAt_ = 0;
+	bool testDumped_ = false;    // POBTOOLS_TJ_STATE=tradedump: done once
 	bool verInMenu_ = false;
 	// banners: a failure that needs the user (paste, copy, data); a dismissed
 	// tree-update error stays dismissed until the message changes

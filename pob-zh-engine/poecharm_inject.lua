@@ -1357,7 +1357,11 @@ PATCHES["DropDownControl"] = function(class)
 	local orig = class.Draw
 	if type(orig) ~= "function" then error("DropDownControl has no Draw to wrap") end
 	class.Draw = keepArity(orig, function(self, ...)
-		if type(self) ~= "table" or rawget(self, "_ptRowZh") == nil then return orig(self, ...) end
+		if type(self) ~= "table" then return orig(self, ...) end
+		-- 上游 master 2.67.2 匯入分頁:上次的聯盟不在清單裡時 selIndex 留成 nil,
+		-- 點開聯盟下拉就報錯(beta 已修)。比照 beta:選第一列。
+		if self.selIndex == nil and type(self.list) == "table" and self.list[1] ~= nil then self:SetSel(1) end
+		if rawget(self, "_ptRowZh") == nil then return orig(self, ...) end
 		return withRowOverride(self, self.dropped and true or false, orig, ...)
 	end)
 	local origW = class.CheckDroppedWidth
