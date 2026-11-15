@@ -2193,10 +2193,14 @@ public:
 			tradeSeeds(std::vector<int>(seeds.begin() + b.begin, seeds.begin() + b.end), tag);
 			next = b.end;
 		}
-		// Test aid (POBTOOLS_TJ_STATE=tradeclick): one synthetic left click on the
-		// first trade button that has more than one batch.
-		if (testState_ == "tradeclick" && capped && !testTradeClicked_) {
-			testTradeClicked_ = true;
+		// Test aid (POBTOOLS_TJ_STATE=tradeclick): synthetic left clicks on the first
+		// trade button that has more than one batch -- POBTOOLS_TJ_CLICKS of them
+		// (default 1), 12 frames apart so each lands as its own click.
+		if (testState_ == "tradeclick" && capped && (testTradeId_ == 0 || testTradeId_ == ImGui::GetItemID()) &&
+		    testTradeClicks_ < testTradeWant_ && ImGui::GetFrameCount() >= testTradeAt_) {
+			testTradeId_ = ImGui::GetItemID();
+			testTradeClicks_++;
+			testTradeAt_ = ImGui::GetFrameCount() + 12;
 			const ImVec2 a = ImGui::GetItemRectMin(), z = ImGui::GetItemRectMax();
 			ImGuiIO& io = ImGui::GetIO();
 			io.AddMousePosEvent((a.x + z.x) * 0.5f, (a.y + z.y) * 0.5f);
@@ -2942,6 +2946,7 @@ public:
 		if (testState_ == "results" || testState_ == "resultsflat" || testState_ == "resultsseed" ||
 		    testState_ == "tradepanel" || testState_ == "noleague" || testState_ == "tradedump" ||
 		    testState_ == "tradeclick") {
+			if (const char* c = std::getenv("POBTOOLS_TJ_CLICKS")) testTradeWant_ = (std::max)(1, atoi(c));
 			mode = 0;
 			groupResults = testState_ != "resultsflat";
 			autoPick_ = testState_ == "resultsseed";
@@ -3163,7 +3168,8 @@ private:
 	// the search form, minus the stat list, last frame (sizes the list)
 	float formOtherH_ = 0.0f;
 	std::map<ImGuiID, size_t> tradeNext_;   // per trade button: where its last batch stopped
-	bool testTradeClicked_ = false;   // POBTOOLS_TJ_STATE=tradeclick: clicked once
+	ImGuiID testTradeId_ = 0;     // POBTOOLS_TJ_STATE=tradeclick: the button being clicked
+	int testTradeClicks_ = 0, testTradeWant_ = 1, testTradeAt_ = 0;
 	bool testDumped_ = false;    // POBTOOLS_TJ_STATE=tradedump: done once
 	bool verInMenu_ = false;
 	// banners: a failure that needs the user (paste, copy, data); a dismissed
