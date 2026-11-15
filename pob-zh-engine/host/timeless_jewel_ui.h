@@ -43,6 +43,12 @@ constexpr size_t kMaxTradeSeeds = 40;
 std::string TradeQueryJson(const std::string& tradeStatId, int seed);
 std::string TradeQueryJsonMulti(const std::string& tradeStatId, const std::vector<int>& seeds);
 
+// A group with more seeds than one search carries is sent a batch per click:
+// the [begin, end) slice of its rank-ordered seeds to send now, given where the
+// previous search stopped (`next`); past the end it starts over.
+struct TradeBatch { size_t begin, end; };
+TradeBatch TradeNextBatch(size_t total, size_t next);
+
 // Pure URL assembly (no browser launch) so --tj-selftest can assert on it.
 // Returns "" when league or query is empty. platform: 0 pc, 1 xbox, 2 sony,
 // ignored by regions without consoles.
