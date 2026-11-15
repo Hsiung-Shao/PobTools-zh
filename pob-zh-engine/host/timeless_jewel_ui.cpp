@@ -100,14 +100,14 @@ std::string TradeQueryJson(const std::string& tradeStatId, int seed)
 	return q;
 }
 
-// Query JSON matching ANY of several seeds (PoE "count" stat group, one filter
-// per seed, count >= 1) so a whole match-group fits in one search.
 TradeBatch TradeNextBatch(size_t total, size_t next)
 {
 	const size_t begin = next < total ? next : 0;
 	return { begin, (std::min)(total, begin + kMaxTradeSeeds) };
 }
 
+// Query JSON matching ANY of several seeds (PoE "count" stat group, one filter
+// per seed, count >= 1) so a whole match-group fits in one search.
 std::string TradeQueryJsonMulti(const std::string& tradeStatId, const std::vector<int>& seeds)
 {
 	std::string filters;
@@ -1507,6 +1507,7 @@ public:
 			showError(u8"讀不到這顆珠寶的查表資料", binErr, false);
 			return;
 		}
+		tradeNext_.clear();   // every search starts its groups at the first batch
 		const bool isAbyss = TJIsAbyss(jewelType);
 		const bool isZorath = TJIsZorath(jewelType);
 		TJSearchQuery q;
