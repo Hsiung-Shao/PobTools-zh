@@ -4685,6 +4685,13 @@ function C:CheckDroppedWidth()
 	for _, v in ipairs(self.list) do w = math.max(w, DrawStringWidth(16, "VAR", type(v) == "table" and v.label or v)) end
 	self.droppedWidth = w
 end
+function C:SetSel(i)
+	if i ~= self.selIndex then
+		self.selIndex = i
+		if self.selFunc then self.selFunc(i, self.list[i]) end
+	end
+end
+function C:ScrollSelIntoView() return self.selIndex - 2 end
 """
 R15_DD_P1 = """
 local C = newClass("DropDownControl")
@@ -4861,6 +4868,34 @@ def r15_draw(h, expr, dropped):
     ok, err = h.eval('function(d) local dd = %s local ok, e = pcall(function() dd.dropped = d dd:Draw({}) end) '
                      'return ok, e end' % expr)(dropped)
     return ok, err, list(h.r15["drawn"]), h.r15["override"]
+
+
+def test_sn_dropdown_nil_selindex(fork):
+    """SN1 ~ SN3 -- 下拉沒選到任何列(上游 master 2.67.2 匯入分頁的聯盟下拉)時,繪製先選第一列。"""
+    h = r15_harness(fork)
+
+    def probe(list_src, sel_src):
+        return h.eval('''function()
+            local dd = r15NewDD(%s) local calls = 0
+            dd.selFunc = function() calls = calls + 1 end
+            dd.selIndex = %s
+            local ok, e = pcall(function() dd:Draw({}) return dd:ScrollSelIntoView() end)
+            return ok, tostring(e), dd.selIndex, calls end''' % (list_src, sel_src))()
+
+    ok, err, sel, calls = probe('{ "Standard", "Any" }', 'nil')
+    check("%s SN1 沒選列時畫過就選第一列並通知一次,點開不報錯" % fork,
+          ok and sel == 1 and calls == 1, "ok=%r err=%r sel=%r calls=%r" % (ok, err, sel, calls))
+    ok, err, sel, calls = probe('{ "Standard", "Any" }', '2')
+    check("%s SN2 已選列時不動選取、不多通知" % fork,
+          ok and sel == 2 and calls == 0, "ok=%r err=%r sel=%r calls=%r" % (ok, err, sel, calls))
+    ok, err, sel, calls = h.eval('''function()
+        local dd = r15NewDD({ }) local calls = 0
+        dd.selFunc = function() calls = calls + 1 end
+        dd.selIndex = nil
+        local ok, e = pcall(function() dd:Draw({}) end)
+        return ok, tostring(e), dd.selIndex, calls end''')()
+    check("%s SN3 空清單沒選列時照舊不選、不通知" % fork,
+          ok and sel is None and calls == 0, "ok=%r err=%r sel=%r calls=%r" % (ok, err, sel, calls))
 
 
 def test_r15_dropdown_override(fork):
@@ -5776,6 +5811,7 @@ def main():
         test_r1_gem_unsupported_note(fork)
         test_r2_tattoo_label_prev_line(fork)
         test_slash_ctx_mastery(fork)
+        test_sn_dropdown_nil_selindex(fork)
         test_r15_dropdown_override(fork)
         test_r15_popup_rows(fork)
         test_r15_gem_list_name(fork)
