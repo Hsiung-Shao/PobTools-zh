@@ -18,6 +18,16 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.8.9 (2026-11-15)\n"
+	u8"Fixed\n"
+	u8"　·Classic PoB character import: opening the league dropdown after signing in raised an error. (When the last league used is no longer listed)\n"
+	u8"　·Classic PoB: with compact large numbers on, damage was shown in metres in Traditional Chinese. (e.g. 10.5M)\n"
+	u8"　·Classic PoB: several labels in Options and Find Timeless Jewel were not translated.\n"
+	u8"Added\n"
+	u8"　·Timeless Jewel calculator: a group with more than 40 seeds sends the next batch each time you press the trade search.\n"
+	u8"Changed\n"
+	u8"　·Atlas planner: 3.30 node and mechanic names now use the official in-game Chinese. (Replaces the provisional translation)\n"
+	u8"\n"
 	u8"v1.8.8 (2026-11-14)\n"
 	u8"Fixed\n"
 	u8"　·Classic PoB text boxes: Backspace or Delete between two Chinese characters left garbage behind.\n"
