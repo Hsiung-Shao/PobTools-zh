@@ -57,6 +57,39 @@ int ThreadClampCount(int n, const ThreadRules& rules)
 	return std::clamp(n, 1, ThreadMaxCount(rules));
 }
 
+bool ThreadSingleTypeFromStats(const std::vector<std::string>& allocatedStatsEn)
+{
+	for (const std::string& s : allocatedStatsEn)
+		if (s.find("only apply one type of") != std::string::npos && s.find("Thread") != std::string::npos)
+			return true;
+	return false;
+}
+
+int RitualVesselSlots(const ThreadDb& db, const std::vector<ThreadSlot>& slots)
+{
+	int ritual = 0;
+	for (const ThreadSlot& s : slots) {
+		const ThreadDef* d = db.ById(s.id);
+		if (d && d->mechanic == "Ritual") ritual += s.count;
+	}
+	int n = 0;
+	while (n < kMaxRitualVessels && ritual >= kRitualVesselThresholds[n]) n++;
+	return n;
+}
+
+int ClampRitualVessels(int n, const ThreadDb& db, const std::vector<ThreadSlot>& slots)
+{
+	return std::clamp(n, 0, RitualVesselSlots(db, slots));
+}
+
+std::vector<const ThreadDef*> ThreadDb::Pickable(const std::vector<ThreadSlot>& cur, const ThreadRules& rules) const
+{
+	std::vector<const ThreadDef*> out;
+	for (const ThreadDef& d : defs_)
+		if (CanPlace(cur, d.id, rules) == ThreadPlace::kOk) out.push_back(&d);
+	return out;
+}
+
 bool ThreadDb::Load(const std::wstring& exeDir, std::string* err)
 {
 	std::string body;
@@ -152,12 +185,12 @@ std::vector<ThreadSlot> ThreadDb::Sanitize(const std::vector<ThreadSlot>& slots,
 		}
 	}
 	if (note) {
-		if (unknown) *note += u8"，忽略 " + std::to_string(unknown) + u8" 個未知絲線";
-		if (dup)     *note += u8"，忽略 " + std::to_string(dup) + u8" 個重複種類的絲線槽";
-		if (mixed)   *note += u8"，關鍵天賦只允許一種絲線，捨棄其他 " + std::to_string(mixed) + u8" 種";
-		if (over)    *note += u8"，超過 " + std::to_string(kMaxThreadSlots) + u8" 個絲線槽的 " +
+		if (unknown) *note += u8"，忽略 " + std::to_string(unknown) + u8" 個未知綢帶";
+		if (dup)     *note += u8"，忽略 " + std::to_string(dup) + u8" 個重複種類的綢帶格";
+		if (mixed)   *note += u8"，關鍵天賦只允許一種綢帶，捨棄其他 " + std::to_string(mixed) + u8" 種";
+		if (over)    *note += u8"，超過 " + std::to_string(kMaxThreadSlots) + u8" 個綢帶格的 " +
 		                      std::to_string(over) + u8" 個項目已捨棄";
-		if (clamped) *note += u8"，" + std::to_string(clamped) + u8" 個絲線槽的數量已調整到 1～" +
+		if (clamped) *note += u8"，" + std::to_string(clamped) + u8" 個綢帶格的數量已調整到 1～" +
 		                      std::to_string(ThreadMaxCount(rules));
 	}
 	return out;

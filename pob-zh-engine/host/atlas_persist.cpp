@@ -44,6 +44,8 @@ static void parse_extras(const ordered_json& obj, AtlasBuildEntry& e)
 			e.threads.push_back({ ji->get<std::string>(),
 			                      jn != t.end() && jn->is_number_integer() ? jn->get<int>() : 1 });
 		}
+	auto jv = obj.find("vessels");
+	e.ritualVessels = jv != obj.end() && jv->is_number_integer() ? jv->get<int>() : 0;
 	e.targets.clear();
 	if (obj.contains("targets") && obj["targets"].is_array())
 		e.targets = parse_alloc_array(obj["targets"]);
@@ -133,6 +135,7 @@ static void write_extras(ordered_json& obj, const AtlasBuildEntry& e)
 		for (const ThreadSlot& t : e.threads) th.push_back({ { "id", t.id }, { "n", t.count } });
 		obj["threads"] = std::move(th);
 	}
+	if (e.ritualVessels > 0) obj["vessels"] = e.ritualVessels;
 	if (!e.targets.empty()) obj["targets"] = e.targets;
 	if (!e.blocked.empty()) obj["blocked"] = e.blocked;
 	if (!e.variants.empty()) {

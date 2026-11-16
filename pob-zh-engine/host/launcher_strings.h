@@ -258,11 +258,31 @@
 	X(uiModeShortTheme1, u8"主題 1",                       u8"Theme 1")                               \
 	X(uiModeShortTheme2, u8"主題 2",                       u8"Theme 2")                               \
 	X(pobRunningPill,    u8"執行中 ×%d",                   u8"Running ×%d")                           \
-	X(notFoundPoe1Card,  u8"把裡面有 Launch.lua 的 POB 資料夾放在 pob-zh.exe 旁，回到這裡就會偵測到。", \
-	                     u8"Put a POB folder with Launch.lua in it next to pob-zh.exe; it is detected when you come back here.") \
-	X(notFoundPoe2Card,  u8"把資料夾名稱含 PoE2、裡面有 Launch.lua 的 POB 放在 pob-zh.exe 旁，回到這裡就會偵測到。", \
-	                     u8"Put a POB folder whose name contains PoE2, with Launch.lua in it, next to pob-zh.exe; it is detected when you come back here.") \
+	X(notFoundPoe1Card,  u8"把裡面有 Launch.lua 的 POB 資料夾放在 pob-zh.exe 旁，下次開啟就會偵測到；或按右側按鈕下載官方版。", \
+	                     u8"Put a POB folder with Launch.lua in it next to pob-zh.exe (detected on the next start), or download the official build with the button.") \
+	X(notFoundPoe2Card,  u8"把資料夾名稱含 PoE2、裡面有 Launch.lua 的 POB 放在 pob-zh.exe 旁，下次開啟就會偵測到；或按右側按鈕下載官方版。", \
+	                     u8"Put a POB folder whose name contains PoE2, with Launch.lua in it, next to pob-zh.exe (detected on the next start), or download the official build with the button.") \
 	X(launchAnother,     u8"再開一個",                     u8"Open another")                          \
+	X(pobDownload,       u8"下載原版 POB",                 u8"Download POB")                          \
+	X(pobDlPill,         u8"下載中",                       u8"Downloading")                           \
+	X(pobDlStarting,     u8"正在連線到官方發布頁…",        u8"Contacting the official release page…") \
+	X(pobDlProgress,     u8"正在下載官方可攜版：%llu / %llu MB", u8"Downloading the official portable build: %llu / %llu MB") \
+	X(pobDlExtracting,   u8"下載完成，正在解壓縮…",        u8"Downloaded; extracting…")               \
+	X(pobDlDone,         u8"原版 POB 已安裝",              u8"POB installed")                         \
+	X(pobDlFailed,       u8"下載失敗：",                   u8"Download failed: ")                     \
+	X(pobDlOtherBusy,    u8"另一個下載進行中",             u8"Another download is in progress")       \
+	X(pobDlLaunchBlocked, u8"原版 POB 下載中；啟動會關閉這個視窗並中斷下載，請等下載完成。", \
+	                     u8"POB is downloading; launching closes this window and aborts it. Wait for the download to finish.") \
+	X(importPickTitle,   u8"選擇舊工具的資料夾",           u8"Pick the other tool's folder")          \
+	X(importBuilds,     u8"從舊工具匯入流派…",            u8"Import builds from another tool…")      \
+	X(importBuildsHint,  u8"選擇舊工具的資料夾（它的 exe 與 POB 資料夾同層），裡面儲存的流派會連同子資料夾複製過來，不會覆蓋現有檔案。", \
+	                     u8"Pick the other tool's folder (its exe beside the POB folder). The builds saved in it are copied over with their subfolders; nothing existing is overwritten.") \
+	X(importRunning,     u8"匯入中…",                      u8"Importing…")                            \
+	X(importNoSource,    u8"那個資料夾裡找不到 POB（Launch.lua）。", u8"No POB (Launch.lua) found in that folder.") \
+	X(importResult,      u8"已匯入 %d 個、另存 %d 個（同名）、略過 %d 個（已存在）、失敗 %d 個。", \
+	                     u8"Imported %d, saved %d under a new name (name clash), skipped %d (already there), failed %d.") \
+	X(importNeedPoe1,    u8"PoE1 的流派未匯入，請先下載 PoE1 版 POB。", u8" PoE1 builds were not imported: download the PoE1 POB first.") \
+	X(importNeedPoe2,    u8"PoE2 的流派未匯入，請先下載 PoE2 版 POB。", u8" PoE2 builds were not imported: download the PoE2 POB first.") \
 	X(launchBlockedUpdating, u8"更新下載中，完成後即可啟動", u8"An update is downloading; you can launch once it is done") \
 	X(editorName,        u8"翻譯編輯器",                   u8"Translation editor")                    \
 	X(warehouseBadge,    u8"PoE1 國際服",                  u8"PoE1 international")                    \

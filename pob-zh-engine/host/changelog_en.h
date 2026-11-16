@@ -18,6 +18,14 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.8.10 (2026-11-16)\n"
+	u8"Added\n"
+	u8"　·Launcher: import builds from an older localisation tool. (A build with the same name is saved as a copy, never overwritten)\n"
+	u8"　·Launcher: download the original PoB when none is found. (Both PoE1 and PoE2)\n"
+	u8"　·Atlas planner: Threads and the Blood-filled Vessel in the sidebar. (Pick the thread type and count)\n"
+	u8"Changed\n"
+	u8"　·Atlas planner: the map device slots are gone from the sidebar and the main map moved to the top. (Cost now counts the map only)\n"
+	u8"\n"
 	u8"v1.8.9 (2026-11-15)\n"
 	u8"Fixed\n"
 	u8"　·Classic PoB character import: opening the league dropdown after signing in raised an error. (When the last league used is no longer listed)\n"

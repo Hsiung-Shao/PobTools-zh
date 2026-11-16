@@ -19,7 +19,7 @@ enum class LauncherResult {
 // GL context and ImGui context, so it can be called again after POB exits.
 // appUpd (optional) drives the update prompt in the header; when its stage
 // is ready the window closes and ApplyAppUpdate is returned.
-LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, const std::wstring& exeDir,
+LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const std::wstring& exeDir,
                             AppUpdater* appUpd = nullptr);
 
 // Headless check that EVERY shipped font can draw EVERY character the launcher

@@ -26,6 +26,7 @@
 #include "launcher_ui.h"
 #include "launcher_editor.h"
 #include "editor_selftest.h"
+#include "pob_migrate.h"    // --migrate-selftest
 #include "trans_editor_logic.h"   // RunTransEditorSelftest
 #include "panel_selftest.h"
 #include "paste_selftest.h"
@@ -536,6 +537,17 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// Headless POB-install detection check (synthetic %TEMP% layouts; report file).
 	if (arg1 == L"--detect-selftest") {
 		return RunDetectInstallsSelfTest(dir);
+	}
+	if (arg1 == L"--migrate-selftest") {
+		return RunMigrateSelfTest(dir);
+	}
+	// ONLINE probe (not a selftest): --pob-download-probe poe1|poe2 downloads and
+	// installs the stock POB beside the exe; result in PobTools\pob_download_probe.txt.
+	if (arg1 == L"--pob-download-probe") {
+		std::string err;
+		const bool ok = DownloadAndInstallPob(dir, arg2 == L"poe2", nullptr, nullptr, &err);
+		write_file_utf8(dir + L"PobTools\\pob_download_probe.txt", ok ? "OK\n" : "FAIL " + err + "\n");
+		return ok ? 0 : 1;
 	}
 
 	// Headless shared-theme invariants (no GLFW window or renderer required).

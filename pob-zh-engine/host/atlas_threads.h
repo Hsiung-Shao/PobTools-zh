@@ -22,6 +22,13 @@
 static const int kMaxThreadSlots = 3;
 static const int kMaxThreadsPerSlot = 8;
 static const int kKeystoneThreadBonus = 2;
+// Blood-filled Vessel slots of the map device: Ritual threads unlock them
+// (clientstring MapDeviceRitualSlotHover: "Additional Ritual Threads reveal more
+// Blood-Filled Vessel slots (maximum 3)"). The game data has no thresholds;
+// these are the user's in-game reading (2026-11-16), the first one unsure (1 or
+// 2) so the permissive value is used.
+static const int kMaxRitualVessels = 3;
+static const int kRitualVesselThresholds[kMaxRitualVessels] = { 1, 4, 8 };
 
 struct ThreadDef {
 	std::string id;        // language-neutral key (BaseItemTypes id)
@@ -51,6 +58,19 @@ int ThreadMaxCount(const ThreadRules& rules);
 // `n` clamped into 1 .. ThreadMaxCount(rules).
 int ThreadClampCount(int n, const ThreadRules& rules);
 
+// True when one of the allocated atlas nodes' English stat lines is the
+// single-thread-type keystone ("You can only apply one type of [Thread] to your
+// Maps"). Matched on the stat text, not the node id, so a re-exported tree
+// keeps working.
+bool ThreadSingleTypeFromStats(const std::vector<std::string>& allocatedStatsEn);
+
+class ThreadDb;
+// Blood-filled Vessel slots the placed threads unlock (0..kMaxRitualVessels):
+// only a thread whose mechanic is "Ritual" counts.
+int RitualVesselSlots(const ThreadDb& db, const std::vector<ThreadSlot>& slots);
+// `n` clamped into 0 .. RitualVesselSlots(db, slots).
+int ClampRitualVessels(int n, const ThreadDb& db, const std::vector<ThreadSlot>& slots);
+
 class ThreadDb {
 public:
 	// Reads exeDir\Data\threads_poe1.json. Missing or malformed is not fatal:
@@ -72,6 +92,10 @@ public:
 	// specific one.
 	ThreadPlace CanPlace(const std::vector<ThreadSlot>& cur, const std::string& id,
 	                     const ThreadRules& rules) const;
+
+	// The types the picker may offer for a NEW slot: every catalogue entry
+	// CanPlace accepts, in catalogue order.
+	std::vector<const ThreadDef*> Pickable(const std::vector<ThreadSlot>& cur, const ThreadRules& rules) const;
 
 	// Force a list into a legal state, preserving order: drops unknown ids,
 	// drops a type already seen (first one wins), under the keystone drops every

@@ -527,6 +527,8 @@ if (WIN32)
         host/modern_ui_browser.cpp
         host/modern_ui_shared.cpp
         host/zip_extract.cpp
+        host/pob_migrate.cpp
+        host/pob_migrate_selftest.cpp
         host/hash_sha256.cpp
         host/sig_verify.cpp
         # 倉庫收益統計（測試性質，POESESSID 通道）：provider + 資料層 + 服務 + UI + 自檢
@@ -635,6 +637,8 @@ if (WIN32)
     # gen_atlas_maps.py --verify. Like the scarabs these have NO online updater,
     # so a new league needs a fresh run of both.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/astrolabes_poe1.json" DESTINATION "Data")
+    # 3.30 thread catalogue (names from GGPK BaseItemTypes); no online updater either.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/threads_poe1.json" DESTINATION "Data")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas_maps_poe1.json" DESTINATION "Data")
     # The shipped CJK font. Until 2026-08 this file existed ONLY in dist\Fonts\,
     # which is gitignored and has no install rule -- so a `cmake --install` into a

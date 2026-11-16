@@ -57,6 +57,9 @@ struct AtlasBuildEntry {
 	// 3.30 thread slots, in slot order (max 3). JSON key "threads": [{"id": "...", "n": 6}, ...]; written only
 	// when non-empty, shared like scarabs.
 	std::vector<ThreadSlot> threads;
+	// Blood-filled Vessels placed with the map (0..3, unlocked by Ritual threads). JSON key "vessels", written
+	// only when > 0.
+	int ritualVessels = 0;
 	// At most one per quadrant (the game refuses a second Shaped Region); serialized as an OBJECT keyed by quadrant (sparse, order-independent).
 	std::vector<AstrolabePlacement> astrolabes;
 	std::string mapId;                 // the project's main map (WorldAreas.Id), "" = none

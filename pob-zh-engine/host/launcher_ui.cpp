@@ -1,5 +1,6 @@
 #include "launcher_ui.h"
 #include <map>                  // RunFontCoverageSelftest's union bookkeeping
+#include "pob_migrate.h"
 #include "editor_util.h"        // EdBrowseForFolder (one folder picker for the app)
 #include "launcher_strings.h"
 #include "launcher_strings_io.h"
@@ -1019,7 +1020,7 @@ static std::wstring OpenImageDialog(void* owner)
 
 static int ClampOpacityThunk(int v, int /*fallback*/) { return ClampWindowOpacity(v); }
 
-LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, const std::wstring& exeDir,
+LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const std::wstring& exeDir,
                             AppUpdater* appUpd)
 {
 	if (!glfwInit()) {
@@ -1075,6 +1076,43 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	BrowserRunning browserRunning;
 	std::future<BrowserRunning> browserPoll;
 	double browserPollAt = -10.0;
+	// Stock-POB download (one at a time) and the old-tool build import. Shared
+	// with the worker; the guard is declared after the futures so it cancels
+	// before their destructors wait on the worker.
+	struct PobDl {
+		std::atomic<bool> cancel{ false };
+		std::atomic<unsigned long long> got{ 0 }, total{ 0 };
+		std::string err; // written by the worker, read after the future is ready
+	};
+	std::shared_ptr<PobDl> pobDl;
+	bool pobDlPoe2 = false;
+	std::future<bool> pobDlJob;
+	std::future<BuildImportResult> importJob;
+	std::string importMsg;
+	struct PobDlCancelAtExit {
+		std::shared_ptr<PobDl>& d;
+		~PobDlCancelAtExit() { if (d) d->cancel = true; }
+	} pobDlCancelAtExit{ pobDl };
+	auto startPobDl = [&](bool poe2) {
+		pobDl = std::make_shared<PobDl>();
+		pobDlPoe2 = poe2;
+		pobDlJob = std::async(std::launch::async, [d = pobDl, exeDir, poe2]() {
+			return DownloadAndInstallPob(exeDir, poe2, &d->cancel,
+				[d](unsigned long long got, unsigned long long total) { d->got = got; d->total = total; }, &d->err);
+		});
+	};
+	auto startImport = [&](const std::wstring& from) {
+		importJob = std::async(std::launch::async, [from, exeDir]() { return ImportBuildsFromTool(from, exeDir); });
+	};
+	// Test aids for the off-screen screenshot (no input is ever sent to the window):
+	// POBTOOLS_LAUNCHER_DL=poe1|poe2 starts that download, POBTOOLS_LAUNCHER_IMPORT=<dir> that import.
+	{
+		wchar_t buf[MAX_PATH] = L"";
+		DWORD n = GetEnvironmentVariableW(L"POBTOOLS_LAUNCHER_DL", buf, MAX_PATH);
+		if (n > 0 && n < MAX_PATH) startPobDl(wcscmp(buf, L"poe2") == 0);
+		n = GetEnvironmentVariableW(L"POBTOOLS_LAUNCHER_IMPORT", buf, MAX_PATH);
+		if (n > 0 && n < MAX_PATH) startImport(buf);
+	}
 	// The remembered compatibility verdict (PobTools\bridge_gate.json, written
 	// by the new-interface window). Re-read every couple of seconds: the
 	// window that just fell back to classic writes it while we are open.
@@ -1874,7 +1912,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// POB instances this launcher started (KeepOpen mode). Counted every
 		// frame because that call is also where finished processes are reaped.
 		const int pobCount = PobLaunch::PobRunningCount();
-		const bool pobBusy = PobLaunch::AnyPobRunning(exeDir);
+		// A stock-POB download counts too: applying an update would close the window and abort it.
+		const bool pobBusy = PobLaunch::AnyPobRunning(exeDir) || pobDlJob.valid();
 
 		// Hand the watchdog thread a snapshot of the POB windows to ask after.
 		// It cannot call RunningInstances itself (not thread-safe), and this
@@ -2369,9 +2408,19 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		const bool keepOpen = tabbed || (cfg.exitMode == LaunchExitMode::KeepOpen);
 		PobUi::SectionHeader(S.gamesSection, inner);
 		ImGui::Dummy(ImVec2(0, D(4.0f)));
+		if (pobDlJob.valid() && pobDlJob.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+			if (pobDlJob.get()) {
+				installs = DetectInstalls(exeDir);
+				PobUi::ShowToast(S.pobDlDone);
+			} else if (!pobDl->cancel) {
+				PobUi::ShowToast((std::string(S.pobDlFailed) + pobDl->err).c_str(), PobUi::Tone::Bad);
+			}
+		}
 		for (int g = 0; g < 2; g++) {
 			const bool poe2 = g == 1;
 			const bool ok = poe2 ? !installs.poe2Lua.empty() : !installs.poe1Lua.empty();
+			const bool dlThis = pobDlJob.valid() && pobDlPoe2 == poe2;
+			char dlText[160];
 			const int running = PobLaunch::PobRunningCountFor(poe2 ? L"poe2" : L"poe1");
 			const bool modernFor = cfg.uiMode != 0 && modernUiOk && !modernGateBlockedFor(poe2);
 			GameCardSpec spec;
@@ -2380,12 +2429,26 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			const std::string& ver = poe2 ? installs.poe2Version : installs.poe1Version;
 			spec.meta = (ver.empty() ? std::string("POB") : "POB v" + ver) + " \xc2\xb7 " +
 			            (!modernFor ? S.uiModeShortClassic : cfg.uiMode == 2 ? S.uiModeShortTheme2 : S.uiModeShortTheme1);
-			if (!ok) {
+			if (!ok && dlThis) {
+				const unsigned long long got = pobDl->got, total = pobDl->total, mb = 1024 * 1024;
+				if (total == 0) snprintf(dlText, sizeof(dlText), "%s", S.pobDlStarting);
+				else if (got >= total) snprintf(dlText, sizeof(dlText), "%s", S.pobDlExtracting);
+				else snprintf(dlText, sizeof(dlText), S.pobDlProgress, got / mb, total / mb);
+				spec.missing = dlText;
+				spec.pillTone = PobUi::Tone::Run;
+				spec.pill = S.pobDlPill;
+				spec.action = S.cancel;
+				spec.primary = false;
+				// hashing + extracting cannot be cancelled
+				if (total && got >= total) { spec.enabled = false; spec.disabledTip = S.pobDlExtracting; }
+			} else if (!ok) {
 				spec.missing = poe2 ? S.notFoundPoe2Card : S.notFoundPoe1Card;
 				spec.pillTone = PobUi::Tone::Bad;
 				spec.pill = S.missing;
-				spec.action = S.bgOpenFolder;
-				spec.primary = false;
+				spec.action = S.pobDownload;
+				if (pobDlJob.valid()) { spec.enabled = false; spec.disabledTip = S.pobDlOtherBusy; }
+				// an app update in flight closes the window when it is ready, which would abort this
+				else if (updaterBusy) { spec.enabled = false; spec.disabledTip = S.launchBlockedUpdating; }
 			} else if (running > 0) {
 				char buf[64];
 				snprintf(buf, sizeof(buf), S.pobRunningPill, running);
@@ -2400,10 +2463,14 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			// An update in flight does not grey the card out; only the action stops,
 			// and its tooltip says why.
 			if (ok && updaterBusy) { spec.enabled = false; spec.disabledTip = S.launchBlockedUpdating; }
+			// Launching in the close/return modes ends ShowLauncher, which cancels the download.
+			else if (ok && !keepOpen && pobDlJob.valid()) { spec.enabled = false; spec.disabledTip = S.pobDlLaunchBlocked; }
 			if (GameCard(poe2 ? "##game2" : "##game1", spec, inner)) {
-				if (!ok) {
-					// Not found: open the folder the POB has to be put in.
-					ShellExecuteW(nullptr, L"open", exeDir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+				if (dlThis) {
+					pobDl->cancel = true;
+				} else if (!ok) {
+					// Not found: fetch the official portable build beside the exe.
+					startPobDl(poe2);
 				} else {
 					poe2Sel = poe2;
 					// "Default interface: new" opens the WebView2 window instead, when
@@ -2433,6 +2500,30 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::Unindent(D(4.0f));
 			}
 		}
+
+		// Moving over from another launcher: copy the builds its POB holds into ours.
+		if (importJob.valid() && importJob.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+			const BuildImportResult r = importJob.get();
+			if (!r.sourceFound) importMsg = S.importNoSource;
+			else {
+				char buf[256];
+				snprintf(buf, sizeof(buf), S.importResult, r.poe1.copied + r.poe2.copied, r.poe1.renamed + r.poe2.renamed,
+				         r.poe1.skipped + r.poe2.skipped, r.poe1.failed + r.poe2.failed);
+				importMsg = buf;
+				if (r.needPoe1) importMsg += S.importNeedPoe1;
+				if (r.needPoe2) importMsg += S.importNeedPoe2;
+			}
+		}
+		ImGui::Dummy(ImVec2(0, D(8.0f)));
+		if (PobUi::Button(S.importBuilds, PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, nullptr, 0.0f, !importJob.valid())) {
+			const std::wstring picked = EdBrowseForFolder(widen(S.importPickTitle).c_str());
+			if (!picked.empty()) {
+				importMsg = S.importRunning;
+				startImport(picked);
+			}
+		}
+		PobUi::Hint(importMsg.empty() ? S.importBuildsHint : importMsg.c_str(), inner);
+		ImGui::Dummy(ImVec2(0, D(4.0f)));
 
 		// Browser-mode sessions of the new interface (either game).
 		if (browserPoll.valid() && browserPoll.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -3976,7 +4067,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		            closingTabs || closingPanels || sizeDirty || updaterBusy ||
 		            ust.phase == AppUpdatePhase::Checking ||
 		            ust.phase == AppUpdatePhase::TransUpdating ||
-		            PobUi::ToastVisible() || relaunchRequested ||
+		            PobUi::ToastVisible() || relaunchRequested || pobDlJob.valid() || importJob.valid() ||
 		            std::any_of(bgThumbs.begin(), bgThumbs.end(), [](const BgThumb& t) { return t.job != nullptr; }) ||
 		            (tabbed && !dock.Empty());
 		pace.forceRender = g_launcherRedraw || !shotPath.empty();

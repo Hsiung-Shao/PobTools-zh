@@ -13,6 +13,7 @@
 #include "atlas_mechanics.h"
 #include "atlas_persist.h"
 #include "atlas_scarabs.h"
+#include "atlas_threads.h"
 #include "atlas_stat_agg.h"
 #include "atlas_tree_data.h"
 #include "atlas_update.h"
@@ -197,6 +198,8 @@ public:
 			PobLog::Error("data", "astrolabes_poe1.json: " + astroErr);
 		if (!mapDb.Load(exeDir, &mapErr))
 			PobLog::Error("data", "atlas_maps_poe1.json: " + mapErr);
+		if (!threadDb.Load(exeDir, &threadErr))
+			PobLog::Error("data", "threads_poe1.json: " + threadErr);
 		int mapsDropped = 0; // main map no longer on the atlas (e.g. 3.30 removed it)
 		for (AtlasBuildEntry& b : buildFile.builds) {
 			b.scarabs = scarabDb.Sanitize(b.scarabs, nullptr);
@@ -241,6 +244,11 @@ public:
 			else if (page == L"provmap" && GetEnvironmentVariableW(L"POBTOOLS_TOOL_SHOT", nullptr, 0) > 0) {
 				for (const AtlasMapDef& d : mapDb.All())
 					if (d.provisional) { buildFile.Active().mapId = d.id; break; }
+			}
+			else if (page == L"threads" && GetEnvironmentVariableW(L"POBTOOLS_TOOL_SHOT", nullptr, 0) > 0) {
+				buildFile.Active().threads = { { "Metadata/Items/Threads/ThreadRitual", 6 },
+				                               { "Metadata/Items/Threads/ThreadAbyss", 8 } };
+				buildFile.Active().ritualVessels = 2;
 			}
 			else if (page == L"delete") askDelete_ = true;
 			else if (page == L"reset") askReset_ = true;
@@ -549,7 +557,7 @@ public:
 					if (PobUi::Button(shareLbl, PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::Share))
 						copyShareCode();
 					if (ImGui::IsItemHovered())
-						PobUi::Tooltip(u8"把這個專案（配點、星盤、地圖格、備註）複製成一段文字，貼給別人匯入");
+						PobUi::Tooltip(u8"把這個專案（配點、星盤、備註）複製成一段文字，貼給別人匯入");
 					rx = ImGui::GetItemRectMax().x + PobUi::D(8.0f);
 				}
 				at(rx, smH);
@@ -670,7 +678,7 @@ public:
 			}
 			{
 				const PobUi::DialogResult r = PobUi::ConfirmDialog(u8"##delproj", &askDelete_, u8"刪除這個專案？",
-					u8"配點、星盤、地圖格、備註與收益紀錄會一起刪除，無法復原。", buildFile.Active().name.c_str(),
+					u8"配點、星盤、備註與收益紀錄會一起刪除，無法復原。", buildFile.Active().name.c_str(),
 					u8"取消", u8"刪除", nullptr);
 				if (r == PobUi::DialogResult::Danger && buildFile.RemoveBuild(buildFile.active)) {
 					tree.ApplyAllocIds(buildFile.Active().alloc);
@@ -684,7 +692,7 @@ public:
 			}
 			{
 				const PobUi::DialogResult r = PobUi::ConfirmDialog(u8"##resetalloc", &askReset_, u8"清除所有已配置的節點？",
-					u8"這個專案的配點會全部清除，無法復原。星盤、地圖格與備註不受影響。", nullptr,
+					u8"這個專案的配點會全部清除，無法復原。星盤與備註不受影響。", nullptr,
 					u8"取消", u8"清除全部", nullptr);
 				if (r == PobUi::DialogResult::Danger) {
 					tree.Reset();
@@ -1032,9 +1040,9 @@ public:
 				}
 				ImGui::PopID();
 			}
-			ImGui::PushID("astrolabes"); renderAstrolabePanel(); ImGui::PopID();
 			ImGui::PushID("mainmap");    renderMapPanel();       ImGui::PopID();
-			ImGui::PushID("mapslots");   renderScarabPanel();    ImGui::PopID();
+			ImGui::PushID("astrolabes"); renderAstrolabePanel(); ImGui::PopID();
+			ImGui::PushID("threads");    renderThreadPanel();    ImGui::PopID();
 			ImGui::PushID("notes");      renderNotesPanel();     ImGui::PopID();
 			ImGui::PushID("mechanics");  renderMechanicPanel();  ImGui::PopID();
 			// (the pickers and the slot menus are submitted after EndChild, below)
@@ -1107,7 +1115,6 @@ public:
 
 		// Outside every child: a popup submitted inside one gets clipped to it,
 		// and this one is wide enough to be flipped clean out of the panel.
-		renderScarabPicker();
 		renderAstroPicker();
 		renderSlotMenus();
 		flushMsg();   // what this frame's actions reported
@@ -1219,6 +1226,11 @@ private:
 	// saved scarab list survives untouched), and no network just means no icons.
 	ScarabDb scarabDb;
 	std::string scarabErr;
+	// 3.30 threads, optional on the same terms. NOT sanitized in Init: the
+	// legal counts depend on a keystone of the tree, so renderThreadPanel does it
+	// once the active build's tree is on screen.
+	ThreadDb threadDb;
+	std::string threadErr;
 
 	// Astrolabes (3.29 Shaped Regions, one per atlas quadrant) and the map
 	// catalogue behind the project's main-map pick. Optional on exactly the same
@@ -1333,18 +1345,8 @@ private:
 		const NinjaPriceFeed::Status ps = priceFeed_.Poll();
 
 		const AtlasBuildEntry& b = buildFile.Active();
-		std::vector<MapCostInput> slots;
-		for (const std::string& id : b.scarabs) {
-			const ScarabDef* d = scarabDb.ById(id);
-			if (!d) continue;
-			MapCostInput in;
-			in.id = d->id;
-			in.en = d->en;
-			in.zh = d->zh;
-			in.art = d->art;
-			in.tradable = d->stash;
-			slots.push_back(std::move(in));
-		}
+		// The 地圖格 section is gone (user, 2026-11-16): saved slots stay in the file but cost nothing.
+		const std::vector<MapCostInput> slots;
 		const MapCostSummary cost = ComputeMapCost(
 		    slots, b.mapPrice,
 		    [&ps](const std::string& key, NinjaPrice* out) {
@@ -1409,10 +1411,9 @@ private:
 
 	// The project's per-map cost, beside the revenue panel's 主要增減 (design
 	// 2026-10-08). The panel draws the card (padded); this is its content,
-	// laid out in PobUi::CardInnerWidth(): a head row -- title, total, the two
-	// price actions --, the item table, and the plan footer. Cost basis = what
-	// was actually PAID: a bulk buyer records the market once and the cost stops
-	// floating; a batch buyer types each batch's price into the 單價 column.
+	// laid out in PobUi::CardInnerWidth(): a head row -- title, total, the price
+	// refresh --, the map row, and the plan footer. The only cost left is the
+	// map itself (地圖格 removed 2026-11-16); saved costPrices stay untouched.
 	void renderCostCard(const NinjaPriceFeed::Status& ps, const MapCostSummary& cost)
 	{
 		AtlasBuildEntry& b = buildFile.Active();
@@ -1426,7 +1427,7 @@ private:
 		ImFont* small = PobUi::Fonts().small ? PobUi::Fonts().small : ImGui::GetFont();
 		const float smallPx = small->FontSize;
 
-		// ---- head: title, total ...... 清除記錄 | 記錄目前市價 | 重新取得價格
+		// ---- head: title, total ...... 重新取得價格
 		{
 			const ImVec2 head = ImGui::GetCursorScreenPos();
 			const float btnH = std::floor(PobUi::D(28.0f));
@@ -1439,38 +1440,9 @@ private:
 			                                 head.y + std::floor((headH - ImGui::GetFontSize()) * 0.5f)));
 			ImGui::TextColored(PobUi::TokV4(Tok::AccentText), "%s", tot.c_str());
 
-			const char* lClear = u8"清除記錄";
-			const char* lRecord = u8"記錄目前市價";
 			const char* lRefresh = ps.busy ? u8"取得價格中…##refresh" : u8"重新取得價格##refresh";
-			const float gap = PobUi::D(4.0f);
-			float w = PobUi::ButtonWidth(lRecord, PobUi::BtnSize::Sm) + gap +
-			          PobUi::ButtonWidth(lRefresh, PobUi::BtnSize::Sm, PobIcon::Refresh);
-			if (!b.costPrices.empty()) w += PobUi::ButtonWidth(lClear, PobUi::BtnSize::Sm) + gap;
+			const float w = PobUi::ButtonWidth(lRefresh, PobUi::BtnSize::Sm, PobIcon::Refresh);
 			ImGui::SetCursorScreenPos(ImVec2(innerX + innerW - w, head.y + std::floor((headH - btnH) * 0.5f)));
-			if (!b.costPrices.empty()) {
-				if (PobUi::Button(lClear, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) {
-					b.costPrices.clear();
-					b.costRecordedUtc = 0;
-					saveActive();
-				}
-				if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"清除記錄的成本單價，回到跟隨市價");
-				ImGui::SameLine(0, gap);
-			}
-			if (PobUi::Button(lRecord, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, nullptr, 0.0f,
-			                  ps.prices && !cost.lines.empty())) {
-				for (const MapCostLine& l : cost.lines)
-					if (l.marketEach > 0.0) b.costPrices[l.id] = l.marketEach;
-				b.costRecordedUtc = (long long)std::time(nullptr);
-				saveActive();
-			}
-			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-				std::string tip = u8"一次大量購入：按一下記錄當下市價，之後成本固定、不再隨市價浮動。\n"
-				                  u8"分批購入：直接在「單價」欄輸入實際買價。";
-				if (b.costRecordedUtc > 0) tip += u8"\n目前的記錄：" + FmtLocalUtc(b.costRecordedUtc);
-				else if (!b.costPrices.empty()) tip += u8"\n目前的成本為手動輸入";
-				ImGui::SetTooltip("%s", tip.c_str());
-			}
-			ImGui::SameLine(0, gap);
 			if (PobUi::Button(lRefresh, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::Refresh, 0.0f, !ps.busy))
 				priceFeed_.Request("poe1", costLeague_, true);
 			if (ps.prices && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -1487,10 +1459,6 @@ private:
 			ImGui::PopStyleColor();
 		}
 
-		if (!scarabDb.available()) {
-			PobUi::Hint(u8"缺少地圖格資料檔，無法估算");
-			return;
-		}
 		// Column widths from what they hold (header vs a sample value), not a
 		// fixed N*scale: the user's font size is not part of `scale`. The name
 		// column takes the rest and wraps instead of cutting a long name.
@@ -1530,65 +1498,6 @@ private:
 				const float tw = ImGui::CalcTextSize(label).x;
 				ImGui::GetWindowDrawList()->AddText(ImVec2(c == 0 ? p.x : p.x + cellW - tw, p.y), Tok::TextMuted, label);
 			}
-			if (cost.lines.empty()) {
-				ImGui::TableNextRow();
-				ImGui::TableNextColumn();
-				PobUi::Hint(u8"此方案的地圖格沒有放碎片");
-			}
-			for (const MapCostLine& l : cost.lines) {
-				ImGui::TableNextRow();
-				ImGui::PushID(l.id.c_str());
-				ImGui::TableNextColumn();
-				icons.RequestPath(l.art);
-				// Icon and text centred on the price field's height.
-				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + iconDy);
-				const ImVec2 ip = ImGui::GetCursorScreenPos();
-				if (unsigned tex = icons.TextureByPath(l.art)) {
-					ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(iconSz, iconSz));
-				} else {
-					ImGui::GetWindowDrawList()->AddRectFilled(ip, ImVec2(ip.x + iconSz, ip.y + iconSz), Tok::Surface3,
-					                                          PobUi::D(4.0f));
-					ImGui::Dummy(ImVec2(iconSz, iconSz));
-				}
-				ImGui::SameLine(0, PobUi::D(8.0f));
-				ImGui::SetCursorPosY(ImGui::GetCursorPosY() - iconDy + textDy);
-				const std::string& nm = (showZh && !l.zh.empty()) ? l.zh : l.en;
-				ImGui::TextWrapped("%s", nm.c_str());
-				if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", (&nm == &l.en ? l.zh : l.en).c_str());
-				ImGui::TableNextColumn();
-				{
-					char q[16];
-					snprintf(q, sizeof(q), "x%d", l.qty);
-					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + textDy);
-					CostRightText(q, text);
-				}
-				// 單價: the recorded/typed price, or -- dimmed -- the market it
-				// currently follows. Typing a price fixes it for this project.
-				ImGui::TableNextColumn();
-				double unit = l.chaosEach;
-				if (!l.fromBasis) ImGui::PushStyleColor(ImGuiCol_Text, dim);
-				ImGui::SetNextItemWidth(-FLT_MIN);
-				if (ImGui::InputDouble("##unit", &unit, 0.0, 0.0, "%.1f")) {
-					if (unit > 0.0) b.costPrices[l.id] = unit;
-					else b.costPrices.erase(l.id); // 0 = back to following the market
-				}
-				if (!l.fromBasis) ImGui::PopStyleColor();
-				if (ImGui::IsItemDeactivatedAfterEdit()) saveActive();
-				if (ImGui::IsItemHovered()) {
-					const std::string market =
-					    l.marketEach > 0.0 ? money(l.marketEach)
-					                       : std::string(l.tradable ? u8"未估價" : u8"不可交易");
-					ImGui::SetTooltip(u8"%s\n目前市價：%s",
-					                  l.fromBasis ? u8"已記錄的成本單價（混沌石）；改成 0 = 回到跟隨市價"
-					                              : u8"目前跟隨市價；輸入實際買價即可固定",
-					                  market.c_str());
-				}
-				ImGui::TableNextColumn();
-				if (l.priced) CostRightText(money(l.chaosTotal).c_str(), text);
-				else CostRightText(l.tradable ? u8"未估價" : u8"不可交易", dim);
-				ImGui::PopID();
-			}
-
 			// The map itself: poe.ninja no longer prices regular maps, so it is
 			// whatever the player pays -- typed once per project, saved with it.
 			ImGui::TableNextRow();
@@ -2472,7 +2381,7 @@ private:
 		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
 	}
 
-	// Submitted OUTSIDE the scrolling panel (see renderScarabPicker).
+	// Submitted OUTSIDE the scrolling panel (a popup inside the child gets clipped to it).
 	void renderAstroPicker()
 	{
 		if (!astroDb.available()) return;
@@ -2580,26 +2489,6 @@ private:
 			}
 			PobUi::EndMenuPopup();
 		}
-
-		if (openScarabMenu_) {
-			ImGui::OpenPopup("##scarabslotmenu");
-			openScarabMenu_ = false;
-		}
-		if (PobUi::BeginMenuPopup("##scarabslotmenu")) {
-			const bool valid = scarabMenuIdx_ >= 0 && scarabMenuIdx_ < (int)b.scarabs.size();
-			const ScarabDef* d = valid ? scarabDb.ById(b.scarabs[scarabMenuIdx_]) : nullptr;
-			PobUi::Hint(d ? scarabName(*d).c_str() : u8"地圖格");
-			if (PobUi::MenuRow(PobIcon::Refresh, u8"替換…", nullptr, valid)) {
-				scarabSearch[0] = '\0';
-				scarabReplaceIdx_ = scarabMenuIdx_;
-				openScarabPicker = true;
-			}
-			if (PobUi::MenuRow(PobIcon::Trash, u8"移除", nullptr, valid, true)) {
-				b.scarabs.erase(b.scarabs.begin() + scarabMenuIdx_);
-				saveActive();
-			}
-			PobUi::EndMenuPopup();
-		}
 	}
 
 	// --- main map section (one per project) ---
@@ -2647,6 +2536,142 @@ private:
 		int t = buildFile.Active().mapTier;
 		if (t > 0) return t;
 		return mapDb.TiersPresent().empty() ? 0 : mapDb.TiersPresent().back();
+	}
+
+	const std::string& threadName(const ThreadDef& d)
+	{
+		return (showZh && !d.zh.empty()) ? d.zh : d.en;
+	}
+
+	// 3.30 map device: up to three thread types, each with a count, plus the
+	// Blood-filled Vessel slots Ritual threads unlock.
+	void renderThreadPanel()
+	{
+		AtlasBuildEntry& b = buildFile.Active();
+		if (!threadDb.available()) {
+			if (PobUi::CollapsingSection(u8"綢帶", "###threadhdr", PobIcon::Link, nullptr, false)) {
+				ImGui::TextWrapped(u8"綢帶資料未載入：%s", threadErr.c_str());
+				PobUi::Hint(u8"已存的綢帶設定不會被更動。");
+			}
+			return;
+		}
+		ThreadRules rules;
+		{
+			std::vector<std::string> st;
+			for (const AtlasNode& n : tree.nodes)
+				if (n.alloc) st.insert(st.end(), n.stats.begin(), n.stats.end());
+			rules.singleTypeKeystone = ThreadSingleTypeFromStats(st);
+		}
+		// The keystone is read off the tree on screen, which an older-season
+		// preview and the sandbox do not share with the saved build: read-only there.
+		const bool editable = !planningMode && onCanonicalSeason();
+		// Never fixed behind the user's back: a tree click can be undone, the
+		// threads it would drop cannot. Offer the fix instead.
+		std::string fixNote;
+		std::vector<ThreadSlot> fixed;
+		if (editable) fixed = threadDb.Sanitize(b.threads, rules, &fixNote);
+		const int maxCount = ThreadMaxCount(rules);
+		const std::string hdr = u8"綢帶  " + std::to_string(b.threads.size()) + " / " + std::to_string(kMaxThreadSlots);
+		const std::string sub = rules.singleTypeKeystone
+			? u8"已點關鍵天賦：單一種類，最多 " + std::to_string(maxCount) + u8" 條"
+			: u8"每種最多 " + std::to_string(maxCount) + u8" 條";
+		if (!PobUi::CollapsingSection(hdr.c_str(), "###threadhdr", PobIcon::Link, sub.c_str()))
+			return;
+
+		ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
+		PobUi::PushControlFrame();
+		ImGui::PushStyleColor(ImGuiCol_PopupBg, PobUi::TokV4(Tok::SurfaceRaised));
+		const float gap = PobUi::D(6.0f);
+		const float numW = std::floor(ImGui::CalcTextSize("00").x + ImGui::GetStyle().FramePadding.x * 2.0f + PobUi::D(8.0f));
+		const float rmW = PobUi::ButtonWidth("##rm", PobUi::BtnSize::Sm, PobIcon::X);
+		const float comboW = (std::max)(PobUi::D(80.0f), ImGui::GetContentRegionAvail().x - numW - rmW - gap * 2.0f);
+		bool changed = false;
+		int removeIdx = -1;
+		if (!editable) PobUi::Hint(planningMode ? u8"規劃模式中不能編輯綢帶" : u8"舊賽季預覽中不能編輯綢帶");
+		if (!fixNote.empty()) {
+			PobUi::Hint((u8"目前配置不符規則" + fixNote).c_str(), 0.0f, Tok::Warning);
+			if (PobUi::Button(u8"依規則修正##fix", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm)) {
+				b.threads = fixed;
+				changed = true;
+			}
+		}
+		ImGui::BeginDisabled(!editable);
+		for (int i = 0; i < (int)b.threads.size(); i++) {
+			ImGui::PushID(i);
+			const ThreadDef* cur = threadDb.ById(b.threads[i].id);
+			ImGui::SetNextItemWidth(comboW);
+			if (ImGui::BeginCombo("##type", cur ? threadName(*cur).c_str() : b.threads[i].id.c_str())) {
+				// what this row could hold instead: legal against the OTHER rows
+				std::vector<ThreadSlot> others = b.threads;
+				others.erase(others.begin() + i);
+				for (const ThreadDef* d : threadDb.Pickable(others, rules))
+					if (ImGui::Selectable(threadName(*d).c_str(), d == cur) && d != cur) {
+						b.threads[i].id = d->id;
+						changed = true;
+					}
+				ImGui::EndCombo();
+			}
+			ImGui::SameLine(0, gap);
+			ImGui::SetNextItemWidth(numW);
+			int n = b.threads[i].count;
+			if (ImGui::InputInt("##count", &n, 0, 0))
+				b.threads[i].count = ThreadClampCount(n, rules);
+			if (ImGui::IsItemDeactivatedAfterEdit()) changed = true;
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip(u8"條數，1～%d", maxCount);
+			ImGui::SameLine(0, gap);
+			if (PobUi::Button("##rm", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::X)) removeIdx = i;
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"移除這種綢帶");
+			ImGui::PopID();
+		}
+		if (removeIdx >= 0) {
+			b.threads.erase(b.threads.begin() + removeIdx);
+			changed = true;
+		}
+		const std::vector<const ThreadDef*> addable = threadDb.Pickable(b.threads, rules);
+		if (!addable.empty()) {
+			ImGui::SetNextItemWidth(comboW);
+			if (ImGui::BeginCombo("##add", u8"＋ 加入綢帶…")) {
+				for (const ThreadDef* d : addable)
+					if (ImGui::Selectable(threadName(*d).c_str())) {
+						b.threads.push_back({ d->id, 1 });
+						changed = true;
+					}
+				ImGui::EndCombo();
+			}
+		} else if (rules.singleTypeKeystone && !b.threads.empty()) {
+			PobUi::Hint(u8"關鍵天賦生效中，只能放一種綢帶");
+		}
+
+		// Blood-filled Vessels: the only mechanic item the device takes so far.
+		const int vesselSlots = RitualVesselSlots(threadDb, b.threads);
+		if (vesselSlots > 0) {
+			ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted(showZh ? u8"浸血碑器" : "Blood-filled Vessel");
+			ImGui::SameLine(0, gap);
+			ImGui::SetNextItemWidth(numW);
+			// shown clamped, stored untouched until an edit ends: retyping a
+			// thread count passes through smaller values
+			int v = ClampRitualVessels(b.ritualVessels, threadDb, b.threads);
+			if (ImGui::InputInt("##vessels", &v, 0, 0))
+				b.ritualVessels = ClampRitualVessels(v, threadDb, b.threads);
+			if (ImGui::IsItemDeactivatedAfterEdit()) changed = true;
+			ImGui::SameLine(0, gap);
+			PobUi::Hint((u8"/ " + std::to_string(vesselSlots) + u8" 格").c_str());
+			if (ImGui::IsItemHovered())
+				PobUi::Tooltip((u8"祭祀綢帶達 " + std::to_string(kRitualVesselThresholds[0]) + u8" / " +
+				                std::to_string(kRitualVesselThresholds[1]) + u8" / " +
+				                std::to_string(kRitualVesselThresholds[2]) + u8" 條各開一格").c_str());
+		}
+		ImGui::EndDisabled();
+		ImGui::PopStyleColor();
+		PobUi::PopControlFrame();
+		if (changed) {
+			b.ritualVessels = ClampRitualVessels(b.ritualVessels, threadDb, b.threads);
+			saveActive();
+		}
+		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
 	}
 
 	void renderMapPanel()
@@ -2787,217 +2812,6 @@ private:
 			}
 		}
 		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
-	}
-
-	// --- map device section (地圖格: Vaal fragments; scarabs removed for 3.30) ---
-	// Kept beside the atlas stats but never merged into them: these are map
-	// modifiers, not passive bonuses, and their numbers do not add up with the
-	// tree's. The picker filters on en+zh and only asks for the icons of the
-	// rows actually on screen.
-	char scarabSearch[256] = "";
-	bool openScarabPicker = false;   // set inside the panel, acted on outside it
-	const std::vector<std::string>& scarabLines(const ScarabDef& d)
-	{
-		// One list or the other, never a line from each: a Description cell can
-		// split into a different number of lines per locale.
-		return (showZh && !d.descZh.empty()) ? d.descZh : d.descEn;
-	}
-	const std::string& scarabName(const ScarabDef& d)
-	{
-		return (showZh && !d.zh.empty()) ? d.zh : d.en;
-	}
-	std::string scarabRefuseText(const ScarabAddResult& r)
-	{
-		switch (r.code) {
-		case ScarabAdd::kFull:
-			return u8"地圖裝置只有 " + std::to_string(kMaxScarabs) + u8" 個地圖格";
-		case ScarabAdd::kOverLimit:
-			return u8"這個項目最多只能放 " + std::to_string(r.limit) + u8" 份";
-		default:
-			return u8"這個項目不在目前的資料中";
-		}
-	}
-
-	int scarabReplaceIdx_ = -1;    // the picker replaces this slot; -1 = adds a new one
-	int scarabMenuIdx_ = -1;       // the filled slot whose menu is open
-	bool openScarabMenu_ = false;
-
-	void renderScarabPanel()
-	{
-		AtlasBuildEntry& b = buildFile.Active();
-		if (!scarabDb.available()) {
-			if (PobUi::CollapsingSection(u8"地圖格", "###scarabhdr", PobIcon::Layers, nullptr, false)) {
-				ImGui::TextWrapped(u8"地圖格資料未載入：%s", scarabErr.c_str());
-				PobUi::Hint(u8"已存的地圖格設定不會被更動。");
-			}
-			return;
-		}
-		const std::string hdr = u8"地圖格  " + std::to_string(b.scarabs.size()) + " / " + std::to_string(kMaxScarabs);
-		if (!PobUi::CollapsingSection(hdr.c_str(), "###scarabhdr", PobIcon::Layers, u8"地圖裝置碎片"))
-			return;
-
-		ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
-		const float slot = std::floor(PobUi::D(44.0f));
-		for (int i = 0; i < kMaxScarabs; i++) {
-			if (i) ImGui::SameLine(0, PobUi::D(10.0f));
-			ImGui::PushID(i);
-			if (i < (int)b.scarabs.size()) {
-				const ScarabDef* d = scarabDb.ById(b.scarabs[i]);
-				unsigned tex = 0;
-				if (d) {
-					icons.RequestPath(d->art);
-					tex = icons.TextureByPath(d->art);
-				}
-				if (PobUi::Slot("##slot", tex, d ? u8"…" : "?", true, slot)) {
-					scarabMenuIdx_ = i;
-					openScarabMenu_ = true;
-				}
-				if (d && ImGui::IsItemHovered()) {
-					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PobUi::D(14.0f), PobUi::D(10.0f)));
-					ImGui::BeginTooltip();
-					ImGui::TextColored(PobUi::TokV4(Tok::AccentText), "%s", scarabName(*d).c_str());
-					ImGui::PushTextWrapPos(360.0f * scale);
-					for (const std::string& s : scarabLines(*d))
-						ImGui::TextUnformatted(StripStatMarkup(s).c_str());
-					ImGui::PopTextWrapPos();
-					PobUi::Hint(u8"點擊可替換或移除");
-					ImGui::EndTooltip();
-					ImGui::PopStyleVar();
-				}
-			} else {
-				// Every empty slot opens the same picker: which one was clicked
-				// does not matter, a new item always goes after the last one.
-				if (PobUi::Slot("##slot", 0, nullptr, false, slot)) {
-					scarabSearch[0] = '\0';
-					scarabReplaceIdx_ = -1;
-					// Raised here, submitted outside the panel -- see renderScarabPicker.
-					openScarabPicker = true;
-				}
-				if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"放一個地圖碎片");
-			}
-			ImGui::PopID();
-		}
-		ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
-		if (b.scarabs.empty()) {
-			PobUi::Hint(u8"尚未放置任何項目");
-		} else {
-			for (const std::string& id : b.scarabs) {
-				const ScarabDef* d = scarabDb.ById(id);
-				if (!d) continue;
-				ImGui::TextColored(PobUi::TokV4(Tok::AccentText), "%s", scarabName(*d).c_str());
-				ImGui::Indent(PobUi::D(10.0f));
-				ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(Tok::TextMuted));
-				for (const std::string& s : scarabLines(*d))
-					ImGui::TextWrapped("%s", StripStatMarkup(s).c_str());
-				ImGui::PopStyleColor();
-				ImGui::Unindent(PobUi::D(10.0f));
-			}
-		}
-		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
-	}
-
-	// Submitted OUTSIDE the scrolling panel, on purpose.
-	//
-	// A popup opened from inside a child window is clipped to that child. This
-	// picker is ~460px wide and the slots sit near the panel's right edge, so
-	// ImGui's auto-placement flips it leftwards onto the atlas canvas -- outside
-	// the panel's clip rect. The popup then renders nothing at all while still
-	// swallowing every mouse click. Submitting it in the main window means it is
-	// never clipped.
-	void renderScarabPicker()
-	{
-		if (!scarabDb.available()) return;
-		AtlasBuildEntry& b = buildFile.Active();
-		if (openScarabPicker) {
-			ImGui::OpenPopup(u8"選擇地圖格項目");
-			openScarabPicker = false;
-		}
-		ImGui::PushStyleColor(ImGuiCol_PopupBg, PobUi::TokV4(Tok::SurfaceRaised));
-		ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, PobUi::D(8.0f));
-		if (ImGui::BeginPopup(u8"選擇地圖格項目")) {
-			// Replacing = the slot emptied first; CanAdd (the one rule) then decides
-			// on that list, and the slot keeps what it had when it refuses.
-			const bool replacing = scarabReplaceIdx_ >= 0 && scarabReplaceIdx_ < (int)b.scarabs.size();
-			std::vector<std::string> base = b.scarabs;
-			if (replacing) base.erase(base.begin() + scarabReplaceIdx_);
-			if (replacing) {
-				const ScarabDef* old = scarabDb.ById(b.scarabs[scarabReplaceIdx_]);
-				PobUi::Hint((u8"替換：" + (old ? scarabName(*old) : std::string("?"))).c_str());
-			}
-			if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
-			PobUi::SearchField("##scarabsearch", scarabSearch, (int)sizeof(scarabSearch),
-			                   u8"搜尋名稱或效果（中英、模糊）…", std::floor(PobUi::D(320.0f)));
-			ScarabQuery q = MakeScarabQuery(scarabSearch);
-
-			// Rank by match quality; an empty query scores everything 1 so
-			// the list keeps its natural file order until you type.
-			std::vector<std::pair<int, const ScarabDef*>> hits;
-			for (const ScarabDef& d : scarabDb.All()) {
-				int s = ScarabMatchScore(d, q);
-				if (s > 0) hits.push_back({ s, &d });
-			}
-			if (!q.empty())
-				std::stable_sort(hits.begin(), hits.end(),
-					[](const auto& a, const auto& b) {
-						if (a.first != b.first) return a.first > b.first;
-						return a.second->zh.size() < b.second->zh.size(); // tighter name first
-					});
-			PobUi::Hint((std::to_string(hits.size()) + u8" 件 · " + scarabDb.Source()).c_str());
-
-			ImGui::BeginChild("##scarablist", ImVec2(420.0f * scale, 360.0f * scale));
-			ImGuiListClipper clip;
-			clip.Begin((int)hits.size());
-			while (clip.Step()) {
-				for (int k = clip.DisplayStart; k < clip.DisplayEnd; k++) {
-					const ScarabDef& d = *hits[k].second;
-					ScarabAddResult can = scarabDb.CanAdd(base, d.id);
-					ImGui::PushID(k);
-					// Only rows the clipper actually emits; fetched once, then
-					// served from the disk cache.
-					icons.RequestPath(d.art);
-					unsigned tex = icons.TextureByPath(d.art);
-					float sz = ImGui::GetTextLineHeight() * 1.4f;
-					if (tex) ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(sz, sz));
-					else     ImGui::Dummy(ImVec2(sz, sz));
-					ImGui::SameLine();
-					if (!can.ok()) ImGui::BeginDisabled();
-					if (ImGui::Selectable(scarabName(d).c_str())) {
-						// Checked again at the moment of writing, on the list it will
-						// actually land in.
-						if (scarabDb.CanAdd(base, d.id).ok()) {
-							if (replacing) base.insert(base.begin() + scarabReplaceIdx_, d.id);
-							else base.push_back(d.id);
-							b.scarabs = base;
-							saveActive();
-						}
-						scarabReplaceIdx_ = -1;
-						ImGui::CloseCurrentPopup();
-					}
-					if (!can.ok()) ImGui::EndDisabled();
-					if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PobUi::D(14.0f), PobUi::D(10.0f)));
-						ImGui::BeginTooltip();
-						ImGui::TextColored(PobUi::TokV4(Tok::AccentText), "%s", scarabName(d).c_str());
-						ImGui::PushTextWrapPos(360.0f * scale);
-						for (const std::string& s : scarabLines(d))
-							ImGui::TextUnformatted(StripStatMarkup(s).c_str());
-						ImGui::PopTextWrapPos();
-						if (d.limit > 1) PobUi::Hint((u8"可放置 " + std::to_string(d.limit) + u8" 份").c_str());
-						if (!d.stash) PobUi::Hint(u8"（未出現在碎片倉庫與交易站）");
-						if (!can.ok()) PobUi::Hint(scarabRefuseText(can).c_str(), 0.0f, Tok::Warning);
-						ImGui::EndTooltip();
-						ImGui::PopStyleVar();
-					}
-					ImGui::PopID();
-				}
-			}
-			ImGui::EndChild();
-			ImGui::EndPopup();
-		} else {
-			scarabReplaceIdx_ = -1;   // closed without a pick: the next + adds again
-		}
-		ImGui::PopStyleVar();
-		ImGui::PopStyleColor();
 	}
 
 	// --- project notes ---
@@ -3408,10 +3222,10 @@ private:
 		buildFile.builds[idx].scarabs = scarabDb.Sanitize(e.scarabs, &snote);
 		buildFile.builds[idx].astrolabes = astroDb.Sanitize(e.astrolabes, &anote);
 		snote += anote;
-		// 3.30 threads: no catalogue ships yet, so keep them as received (the
-		// same outcome as ThreadDb::Sanitize without data). The UI commit must
-		// route this through ThreadDb::Sanitize.
+		// Kept as received: the keystone that decides the legal counts comes
+		// from the tree applied below, so renderThreadPanel sanitizes them.
 		buildFile.builds[idx].threads = e.threads;
+		buildFile.builds[idx].ritualVessels = e.ritualVessels;
 		buildFile.builds[idx].mapId = mapDb.SanitizeOne(e.mapId);
 		if (!e.mapId.empty() && buildFile.builds[idx].mapId.empty())
 			snote += u8"，忽略 1 張未知地圖";
@@ -3429,8 +3243,6 @@ private:
 		if (!buildFile.builds[idx].astrolabes.empty())
 			importMsg += u8"、" + std::to_string(buildFile.builds[idx].astrolabes.size()) + u8" 片幻塑界域";
 		if (!buildFile.builds[idx].mapId.empty()) importMsg += u8"、主力地圖";
-		if (!buildFile.builds[idx].scarabs.empty())
-			importMsg += u8"、" + std::to_string(buildFile.builds[idx].scarabs.size()) + u8" 個地圖格項目";
 		if (!buildFile.builds[idx].notes.empty()) importMsg += u8"、備註";
 		if (!buildFile.builds[idx].profit.empty()) importMsg += u8"、收益紀錄";
 		importMsg += snote; // "，忽略 N 個未知甲蟲" etc., empty when nothing was dropped

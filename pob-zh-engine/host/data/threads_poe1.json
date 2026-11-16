@@ -1,0 +1,95 @@
+{
+ "source": "GGPK 3.30.0.1 BaseItemTypes",
+ "threads": [
+  {
+   "id": "Metadata/Items/Threads/ThreadAbyss",
+   "en": "Abyss Thread",
+   "zh": "深淵綢帶",
+   "art": "",
+   "mechanic": "Abyss",
+   "descEn": [],
+   "descZh": []
+  },
+  {
+   "id": "Metadata/Items/Threads/ThreadBestiary",
+   "en": "Bestiary Thread",
+   "zh": "獸獵綢帶",
+   "art": "",
+   "mechanic": "Bestiary",
+   "descEn": [],
+   "descZh": []
+  },
+  {
+   "id": "Metadata/Items/Threads/ThreadBetrayal",
+   "en": "Betrayal Thread",
+   "zh": "反叛綢帶",
+   "art": "",
+   "mechanic": "Betrayal",
+   "descEn": [],
+   "descZh": []
+  },
+  {
+   "id": "Metadata/Items/Threads/ThreadBlight",
+   "en": "Blight Thread",
+   "zh": "凋落綢帶",
+   "art": "",
+   "mechanic": "Blight",
+   "descEn": [],
+   "descZh": []
+  },
+  {
+   "id": "Metadata/Items/Threads/ThreadBreach",
+   "en": "Breach Thread",
+   "zh": "裂痕綢帶",
+   "art": "",
+   "mechanic": "Breach",
+   "descEn": [],
+   "descZh": []
+  },
+  {
+   "id": "Metadata/Items/Threads/ThreadExpedition",
+   "en": "Expedition Thread",
+   "zh": "探險綢帶",
+   "art": "",
+   "mechanic": "Expedition",
+   "descEn": [],
+   "descZh": []
+  },
+  {
+   "id": "Metadata/Items/Threads/ThreadIncursion",
+   "en": "Incursion Thread",
+   "zh": "穿越綢帶",
+   "art": "",
+   "mechanic": "Incursion",
+   "descEn": [],
+   "descZh": []
+  },
+  {
+   "id": "Metadata/Items/Threads/ThreadLegion",
+   "en": "Legion Thread",
+   "zh": "戰亂綢帶",
+   "art": "",
+   "mechanic": "Legion",
+   "descEn": [],
+   "descZh": []
+  },
+  {
+   "id": "Metadata/Items/Threads/ThreadRitual",
+   "en": "Ritual Thread",
+   "zh": "祭祀綢帶",
+   "art": "",
+   "mechanic": "Ritual",
+   "descEn": [],
+   "descZh": []
+  },
+  {
+   "id": "Metadata/Items/Threads/ThreadUltimatum",
+   "en": "Ultimatum Thread",
+   "zh": "通牒綢帶",
+   "art": "",
+   "mechanic": "Ultimatum",
+   "descEn": [],
+   "descZh": []
+  }
+ ]
+}
