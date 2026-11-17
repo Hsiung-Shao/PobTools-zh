@@ -168,7 +168,8 @@ struct LauncherConfig {
 	int            uiMode = 0;
 	std::wstring   fontFile;                // CJK font under Fonts\; empty = default
 	// Also draw ASCII in the POB window from the selected font (engine env
-	// POB_ZH_FONT_ALL). Default on; the monospaced face is always exempt.
+	// POB_ZH_FONT_ALL). Default on; Pico also replaces the monospaced face
+	// and always uses its own ASCII, even when this legacy switch is off.
 	bool           fontApplyAll = true;
 	// Parallel to kOptionalDicts: 1 = the engine loads that file (default).
 	std::vector<char> optionalDictOn = std::vector<char>(kOptionalDictCount, 1);

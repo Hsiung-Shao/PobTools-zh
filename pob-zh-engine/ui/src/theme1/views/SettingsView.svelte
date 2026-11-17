@@ -190,6 +190,9 @@
           onchange={(v) => prefs.set({ font: String(v) })}
         />
         <span class="sample">天賦樹 詞綴 Passive Tree 패시브 트리 1,234.5%</span>
+        {#if ["misans-regular.ttf", "misanstc-regular.ttf"].includes(prefs.effectiveFont.toLowerCase())}
+          <span class="dim hint">MiSans / MiSans TC — Xiaomi · Fonts/MiSans/LICENSE.pdf</span>
+        {/if}
       </div>
     </div>
     <div class="foot">

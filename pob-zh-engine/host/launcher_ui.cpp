@@ -2954,6 +2954,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const st
 			}
 			{
 				// Engine-side ASCII override (POB_ZH_FONT_ALL), read when POB starts.
+				if (_wcsicmp(cfg.fontFile.c_str(), L"MiSans-Regular.ttf") == 0 ||
+				    _wcsicmp(cfg.fontFile.c_str(), L"MiSansTC-Regular.ttf") == 0) {
+					ImGui::TextDisabled("MiSans / MiSans TC - Xiaomi (Fonts/MiSans/LICENSE.pdf)");
+				}
 				PobUi::RowBegin(S.fontApplyAllChk, S.fontApplyAllHint, PobUi::SwitchWidth(), 0.0f, S.fontApplyAllTip);
 				bool applyAll = cfg.fontApplyAll;
 				if (PobUi::Switch("##fontall", &applyAll)) {

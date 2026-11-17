@@ -33,7 +33,7 @@ the "localization breaks every time POB updates" problem this project set out to
 | Filter editor             | NeverSink tier-list style item filter editor, with Chinese display and icons                  |
 | Atlas strategy            | Atlas passive tree planner: multiple builds, export / share codes, **auto-update for new leagues** |
 | Timeless jewel calculator | Timeless jewel seed calculation, with Chinese search and trade-site links                     |
-| Switchable font           | Noto Sans TC (OFL) by default; swap in any `.ttf` at any time                                 |
+| Switchable font           | Noto Sans TC (OFL) by default; bundled Pico monospace and MiSans / MiSans TC; swap in any `.ttf` |
 
 Usage details are in **[docs/USAGE.en.md](docs/USAGE.en.md)**.
 

@@ -168,9 +168,9 @@
 	/* font: apply the selected TTF to ASCII in the POB window too */                      \
 	X(fontApplyAllChk,   u8"POB 視窗的英文與數字也用此字型",                                          \
 	                     u8"Use this font for letters & digits in POB too")                          \
-	X(fontApplyAllTip,   u8"開啟後 POB 視窗內中英數共用同一個字型。等寬欄位（主控台、物品原文編輯）一律維持原生等寬字型。切換後需重新啟動 POB 視窗才會生效。", \
-	                     u8"When on, Chinese, letters and digits in the POB window share the selected font. Monospaced fields (console, raw item editing) keep the native fixed-width font. Takes effect the next time the POB window starts.") \
-	/* launcher-only zoom + remembered window size. ASCII 'x' between the  \
+	X(fontApplyAllTip,   u8"開啟後 POB 視窗內中英數共用同一個字型。等寬欄位（主控台、物品原文編輯）維持原生等寬字型。Pico 本身為等寬字型，選用後不受此開關限制，所有文字欄位皆使用 Pico。切換後需重新啟動 POB 視窗才會生效。", \
+	                     u8"When on, Chinese, letters and digits in the POB window share the selected font. Monospaced fields (console, raw item editing) keep the native fixed-width font. Pico is monospaced and always applies to all text fields, regardless of this switch. Takes effect the next time the POB window starts.") \
+	/* launcher-only zoom + remembered window size (v1.3.0). ASCII 'x' between the  \
 	   width and height fields on purpose: U+00D7 is not in every shipped font. */    \
 	X(fontSizeLabel,     u8"字體大小",                       u8"Font size")                              \
 	X(fontSizeHint,      u8"整個啟動器與工具視窗一起縮放，POB 不受影響",                                    \

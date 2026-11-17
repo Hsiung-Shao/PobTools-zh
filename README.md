@@ -29,7 +29,7 @@ PobTools 以官方客戶端資料為準,產出約 10 萬組英文→中文對照
 | 過濾器編輯器      | NeverSink tier-list 式物品過濾器編輯,含中文顯示與圖示            |
 | 輿圖策略          | 地圖天賦樹規劃,支援多方案、匯出/分享碼、**新賽季自動更新**      |
 | 軍團珠寶計算器    | 永恆軍團珠寶種子計算,支援中文搜尋與交易連結                      |
-| 可切換字型        | 預設 Noto Sans TC(OFL),可即時換任何`.ttf`                      |
+| 可切換字型        | 預設 Noto Sans TC(OFL)，內建 Pico 等寬字型及 MiSans／MiSans TC，可即時換任何`.ttf` |
 
 功能操作細節見 **[docs/USAGE.md](docs/USAGE.md)**。
 

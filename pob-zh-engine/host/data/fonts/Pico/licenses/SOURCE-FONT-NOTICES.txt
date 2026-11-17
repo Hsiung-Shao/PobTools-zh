@@ -1,0 +1,207 @@
+File: JetBrainsMonoNLNerdFontMono-Bold.ttf
+
+SHA-256: f799fc4b215c7b7254bf6cee51c0bce122ac684b53b46fd3cb83d408a0ccf385
+
+Copyright:
+Copyright 2020 The JetBrains Mono NL Project Authors (https://github.com/JetBrains/JetBrainsMonoNL)
+
+Version:
+Version 2.304; ttfautohint (v1.8.4.7-5d5b);Nerd Fonts 3.5.1
+
+Trademark:
+JetBrains Mono is a trademark of JetBrains s.r.o.
+
+Manufacturer:
+JetBrains
+
+Designer:
+Philipp Nurullin, Konstantin Bulenkov
+
+License:
+This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL
+
+License URL:
+https://scripts.sil.org/OFL
+
+========================================================================
+
+File: JetBrainsMonoNLNerdFontMono-BoldItalic.ttf
+
+SHA-256: 28ce03bcaf808f7fa64dcce6facb00319083bdb04cc4f61d41b9f6ad8f20c3e8
+
+Copyright:
+Copyright 2020 The JetBrains Mono NL Project Authors (https://github.com/JetBrains/JetBrainsMonoNL)
+
+Version:
+Version 2.304; ttfautohint (v1.8.4.7-5d5b);Nerd Fonts 3.5.1
+
+Trademark:
+JetBrains Mono is a trademark of JetBrains s.r.o.
+
+Manufacturer:
+JetBrains
+
+Designer:
+Philipp Nurullin, Konstantin Bulenkov
+
+License:
+This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL
+
+License URL:
+https://scripts.sil.org/OFL
+
+========================================================================
+
+File: JetBrainsMonoNLNerdFontMono-Italic.ttf
+
+SHA-256: 336a3cef8770dab01c0fc9c6bb0c0473bfa82f90a4033fde2cc52d8aa410528c
+
+Copyright:
+Copyright 2020 The JetBrains Mono NL Project Authors (https://github.com/JetBrains/JetBrainsMonoNL)
+
+Version:
+Version 2.304; ttfautohint (v1.8.4.7-5d5b);Nerd Fonts 3.5.1
+
+Trademark:
+JetBrains Mono is a trademark of JetBrains s.r.o.
+
+Manufacturer:
+JetBrains
+
+Designer:
+Philipp Nurullin, Konstantin Bulenkov
+
+License:
+This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL
+
+License URL:
+https://scripts.sil.org/OFL
+
+========================================================================
+
+File: JetBrainsMonoNLNerdFontMono-Medium.ttf
+
+SHA-256: 609259fa79a9e08721a2af1e71f7fa3009d374f890372c9d2816994cef683283
+
+Copyright:
+Copyright 2020 The JetBrains Mono NL Project Authors (https://github.com/JetBrains/JetBrainsMonoNL)
+
+Version:
+Version 2.304; ttfautohint (v1.8.4.7-5d5b);Nerd Fonts 3.5.1
+
+Trademark:
+JetBrains Mono is a trademark of JetBrains s.r.o.
+
+Manufacturer:
+JetBrains
+
+Designer:
+Philipp Nurullin, Konstantin Bulenkov
+
+License:
+This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL
+
+License URL:
+https://scripts.sil.org/OFL
+
+========================================================================
+
+File: JetBrainsMonoNLNerdFontMono-MediumItalic.ttf
+
+SHA-256: 7bc728ba1152a5f420055fc44ae286b51c39c89d74f96dfb017b00f46952979f
+
+Copyright:
+Copyright 2020 The JetBrains Mono NL Project Authors (https://github.com/JetBrains/JetBrainsMonoNL)
+
+Version:
+Version 2.304; ttfautohint (v1.8.4.7-5d5b);Nerd Fonts 3.5.1
+
+Trademark:
+JetBrains Mono is a trademark of JetBrains s.r.o.
+
+Manufacturer:
+JetBrains
+
+Designer:
+Philipp Nurullin, Konstantin Bulenkov
+
+License:
+This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL
+
+License URL:
+https://scripts.sil.org/OFL
+
+========================================================================
+
+File: JetBrainsMonoNLNerdFontMono-Regular.ttf
+
+SHA-256: d9a80146bbf2ff23b187316a3e82ee2a2ceab8220267fe09ac150ca46ab2c3bd
+
+Copyright:
+Copyright 2020 The JetBrains Mono NL Project Authors (https://github.com/JetBrains/JetBrainsMonoNL)
+
+Version:
+Version 2.304; ttfautohint (v1.8.4.7-5d5b);Nerd Fonts 3.5.1
+
+Trademark:
+JetBrains Mono is a trademark of JetBrains s.r.o.
+
+Manufacturer:
+JetBrains
+
+Designer:
+Philipp Nurullin, Konstantin Bulenkov
+
+License:
+This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL
+
+License URL:
+https://scripts.sil.org/OFL
+
+========================================================================
+
+File: LXGWWenKaiMonoGBScreen.ttf
+
+SHA-256: 2cda8fb9db28d5b3f8928e464e4a7be9d137fab6e93acd04441b0358ce0c3b26
+
+Copyright:
+Copyright 2021-2026 LXGW (https://github.com/lxgw/LxgwWenKai-Screen)
+Copyright 2022-2026 LXGW (https://github.com/lxgw/LxgwWenKaiGB), with Reserved Font Name '霞鹜', '霞鶩', '落霞孤鹜', '落霞孤鶩' and 'LXGW'. [ADDITIONAL PERMISSION] The Reserved Font Names '霞鹜', '霞鶩', '落霞孤鹜', '落霞孤鶩' and 'LXGW' may continue to be used in Modified Versions recompiled from the Original Version, without modifications to the font source code; or in Modified Versions subsetted or converted to other formats (e.g., WOFF/WOFF2) solely for web font delivery, provided such Modified Versions are not made available as installable desktop fonts (e.g., on mainstream platforms like Google Fonts, or third-party non-commercial platforms recognized by the author @lxgw; other web font platforms please contact the author @lxgw for confirmation).
+Copyright 2020 The Klee Project Authors (https://github.com/fontworks-fonts/Klee)
+
+Version:
+Version 1.530;October 19,2026
+
+Manufacturer:
+LXGW / Fontworks Inc.
+
+Designer:
+LXGW / Fontworks Inc.
+
+License:
+This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL
+
+License URL:
+https://scripts.sil.org/OFL
+
+========================================================================
+
+File: LXGWZhenKaiGB-Regular.ttf
+
+SHA-256: 40876902a7ce25268ab710ad8fe6e2b63bc002aa4b68d22fd45fc1243726ced5
+
+Copyright:
+Copyright 2022, 2024-2026 LXGW (https://github.com/lxgw/LxgwZhenKai)
+Copyright 2020 The Klee Project Authors (https://github.com/fontworks-fonts/Klee)
+
+Version:
+Version 0.825;March 17, 2026
+
+Manufacturer:
+LXGW / Fontworks Inc.
+
+Designer:
+LXGW / Fontworks Inc.
+
+License:
+This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { normAccent, normFontFile, normTheme, onColor, normBgFile, normLook, lookVars, LOOK_DEFAULT, isVideoFile } from "./prefs.svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { normAccent, normFontFile, normTheme, onColor, normBgFile, normLook, lookVars, LOOK_DEFAULT, isVideoFile, prefs } from "./prefs.svelte";
 import { ACCENTS as ACCENTS1 } from "../theme1/accents";
 import { ACCENTS } from "../theme2/accents";
 
@@ -83,5 +83,54 @@ describe("ACCENTS", () => {
   it("強調色預設值是新的靛藍", () => {
     expect(ACCENTS[0]).toBe("#6366f1");
     for (const c of ACCENTS) expect(c).toMatch(/^#[0-9a-f]{6}$/);
+  });
+});
+
+// Exercise the effective selection, not just a filename predicate: following the
+// launcher and switching away must update the same root that owns the CSS tokens.
+describe("Pico throughout the interface", () => {
+  let root: { style: { setProperty: ReturnType<typeof vi.fn>; removeProperty: ReturnType<typeof vi.fn> }; dataset: Record<string, string> };
+  const face = { textContent: "", id: "" };
+  beforeEach(() => {
+    root = { style: { setProperty: vi.fn(), removeProperty: vi.fn() }, dataset: {} };
+    vi.stubGlobal("document", { documentElement: root, createElement: () => face, head: { appendChild: vi.fn() } });
+    prefs.font = "";
+    prefs.launcherFont = "NotoSansTC-Regular.ttf";
+    prefs.apply();
+  });
+  afterEach(() => {
+    prefs.font = "";
+    prefs.launcherFont = "";
+    prefs.apply();
+    vi.unstubAllGlobals();
+  });
+  it("explicit Pico selection enables the shared normal and monospace family", async () => {
+    await prefs.set({ font: "Pico-Regular.ttf" });
+    expect(root.dataset.font).toBe("pico");
+    expect(face.textContent).toContain("Pico-Regular.ttf");
+  });
+  it("following the launcher also enables Pico, case insensitively", async () => {
+    prefs.launcherFont = "PICO-REGULAR.TTF";
+    await prefs.set({ font: "" });
+    expect(root.dataset.font).toBe("pico");
+  });
+  it("an explicit other font overrides launcher Pico and restores the usual mono stack", async () => {
+    prefs.launcherFont = "Pico-Regular.ttf";
+    prefs.apply();
+    expect(root.dataset.font).toBe("pico");
+    await prefs.set({ font: "NotoSansTC-Regular.ttf" });
+    expect(root.dataset.font).toBe("");
+    expect(face.textContent).toContain("NotoSansTC-Regular.ttf");
+    await prefs.set({ font: "" });
+    expect(root.dataset.font).toBe("pico");
+    prefs.launcherFont = "NotoSansTC-Regular.ttf";
+    prefs.apply();
+    expect(root.dataset.font).toBe("");
+  });
+  it("reset follows the launcher rather than leaving a stale Pico override", async () => {
+    await prefs.set({ font: "Pico-Regular.ttf" });
+    await prefs.reset();
+    expect(prefs.effectiveFont).toBe("NotoSansTC-Regular.ttf");
+    expect(root.dataset.font).toBe("");
   });
 });

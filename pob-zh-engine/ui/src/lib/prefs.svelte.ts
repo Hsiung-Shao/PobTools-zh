@@ -165,6 +165,8 @@ class UiPrefsState {
       root.style.removeProperty("--accent-user");
       root.style.removeProperty("--on-accent-user");
     }
+    // Pico is itself monospaced, so tables, numbers and editors use it too.
+    root.dataset.font = this.effectiveFont.toLowerCase() === "pico-regular.ttf" ? "pico" : "";
     applyFontFace(this.effectiveFont);
     const l = this.effectiveLook;
     const url = (f: string) => hostUrl("bg", encodeURIComponent(f));

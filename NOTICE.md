@@ -37,9 +37,11 @@ Path of Exile 及其所有遊戲內容、名稱、素材之著作權屬 **Grindi
 |---|---|---|
 | `Fonts/NotoSansTC-Regular.ttf`(**預設** CJK 顯示字型) | **SIL OFL 1.1** | 由 Google/Adobe 思源黑體衍生的 Noto Sans TC,自官方變數字型固定成 Regular(wght 400)靜態 TTF。可自由隨附散布。 |
 | `Fonts/NotoSansKR-Regular.ttf`(韓文 ko-KR 顯示用後援字型) | **SIL OFL 1.1** | Google Noto Sans KR,自官方變數字型 `NotoSansKR[wght].ttf`(google/fonts 儲存庫 `ofl/notosanskr/`,Version 2.004)以 fontTools instancer 固定成 Regular(wght 400)靜態 TTF。預設字型 Noto Sans TC 沒有任何韓文字形,引擎與啟動器在主字型缺字時改用這一顆。可自由隨附散布,授權全文見該儲存庫的 `OFL.txt`。 |
+| `Fonts/Pico-Regular.ttf`(內建可選的等寬字型) | **SIL OFL 1.1** | Pcodcsja 維護的 Pico，源自 JetBrains Mono NL、Nerd Fonts、LXGW 文楷／臻楷及 JetBrainsLxgwNerdMono。選用後一般文字、數值及等寬欄位共用 Pico；完整授權與來源聲明隨附於 `Fonts/Pico/`。 |
+| `Fonts/MiSans-Regular.ttf`、`Fonts/MiSansTC-Regular.ttf`(內建可選的簡／繁中文字型) | **小米 MiSans 字體知識產權許可協議** | 本軟體使用 MiSans / MiSans TC，由小米科技有限責任公司許可。隨應用程式提供使用者取得的原始靜態 Regular TTF，未修改字形或內容；原始繁體檔名為 `MisansTC-Regular.ttf`。完整官方協議見 `Fonts/MiSans/LICENSE.pdf`，來源與雜湊見該目錄的 `NOTICE.md`。此為獨立字型授權，非 MIT／OFL。 |
 | `Fonts/FZ_ZY.ttf`(可選的替代 CJK 字型) | **商業字型,授權未取得** | 方正系列字型,著作權屬方正集團。本專案**沒有**取得散布授權,隨附純屬歷史沿革(v0.1.0 起就在包裡);程式碼的 MIT 授權**不涵蓋這個檔案**。若權利人要求,將自出貨包移除。使用者可自行刪除 `Fonts\FZ_ZY.ttf`,不影響其他功能(預設字型是上面那一顆)。 |
 
-> 使用者可在啟動器底部的「字型」下拉切換任一放在 `Fonts\` 的 `.ttf`。
+> 使用者可在啟動器底部的「字型」下拉切換任一放在 `Fonts\` 的 `.ttf`。Pico 為內建可選字型；選用 `Pico-Regular.ttf` 時，新舊 UI 的英文、數字與等寬欄位也使用 Pico。新 UI 的字型設為「跟隨啟動器」即可沿用，亦可在新 UI 設定頁單獨選擇。缺字仍由後援字型補齊；舊 UI 需重新開啟 POB 視窗。
 
 ### 圖示
 
@@ -99,6 +101,7 @@ SOFTWARE.
 - **圖示**:Lucide 子集字型(ISC,部分衍生自 Feather 的圖示為 MIT),編進 `pob-zh.exe`。
 - **POB 本體**:MIT,但**不隨附**,使用者自備。
 - **翻譯 / 遊戲資料**:取材自 GGG 版權內容,以粉絲工具用途提供,非以 MIT 授權釋出。
-- **字型**:預設 Noto Sans TC(SIL OFL 1.1,可自由隨附散布);韓文後援 Noto Sans KR(同為 SIL OFL 1.1)。
+- **字型**:預設 Noto Sans TC(SIL OFL 1.1,可自由隨附散布);韓文後援 Noto Sans KR、可選的 Pico 等寬字型(同為 SIL OFL 1.1)。
+  可選的 MiSans／MiSans TC 使用獨立的小米字體許可協議，詳見 `Fonts/MiSans/LICENSE.pdf`。
   ⚠ 另隨附一顆 `Fonts/FZ_ZY.ttf`(方正系列),**授權未取得**、不在 MIT 涵蓋範圍內,
   詳見上表;它只是可選的替代字型,刪掉不影響任何功能。
