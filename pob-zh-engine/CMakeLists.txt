@@ -314,6 +314,8 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/bridge.lua"
 # user who updated POB in place lacks them. package.path prefers the POB
 # folder's own copy (engine/lua is appended last in ui_api.cpp InitAPI).
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runtime_lua/sha2.lua" DESTINATION "engine/lua")
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/github_mirror.lua" DESTINATION "engine/lua")
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runtime_lua/lcurl/safe.lua" DESTINATION "engine/lua/lcurl")
 
 # Microsoft's redistributable HLSL compiler, vendored in host/data/redist/.
 # ANGLE loads d3dcompiler_47.dll by name to compile the HLSL it generates. POB

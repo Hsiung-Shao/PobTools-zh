@@ -124,6 +124,14 @@
 	                     u8"not stamped (installed before v0.19.0)")                                  \
 	/* 大陸使用者連 GitHub 常需代理;空值＝自動跟隨系統代理 */                                \
 	X(proxyLabel,        u8"HTTP 代理",                    u8"HTTP proxy")                            \
+	X(githubMirrorLabel, u8"啟用 GitHub 加速",             u8"Enable GitHub acceleration")            \
+	X(githubMirrorHint, u8"軟體及 PoB 更新經鏡像下載；失敗時切換其他站點或直連", u8"Use mirrors for app and PoB updates; fall back to another site or a direct connection") \
+	X(githubMirrorStation, u8"鏡像站",                     u8"Mirror site")                           \
+	X(githubMirrorStationHint, u8"選擇 GitHub 反向代理；延遲僅供參考", u8"Choose a GitHub reverse proxy; latency is approximate") \
+	X(githubMirrorAuto, u8"自動",                          u8"Automatic")                            \
+	X(githubMirrorRefresh, u8"測試站點",                    u8"Test sites")                           \
+	X(githubMirrorTesting, u8"測試中…",                    u8"Testing...")                           \
+	X(githubMirrorUnavailable, u8"無法連線",               u8"Unavailable")                          \
 	X(proxyEmptyHint,    u8"留空＝自動跟隨系統代理",       u8"empty = follow the system proxy")       \
 	/* 選填 GitHub Token,繞開未登入 API 每小時 60 次的限制 */                         \
 	X(githubTokenLabel,  u8"GitHub Token",                u8"GitHub Token")                          \

@@ -16,6 +16,12 @@
 // pob-zh.ini and when the setting changes; sessions created afterwards pick it up.
 void HttpSetManualProxy(const std::wstring& proxy);
 
+// Separate from HTTP forward proxies: 0 auto, 1 gh-proxy.com, 2 gh-proxy.org.
+void HttpSetGitHubMirror(bool enabled, int station);
+void HttpResetGitHubMirror();
+// Worker-thread probe, milliseconds per station; -1 means unavailable.
+std::vector<int> HttpProbeGitHubMirrors();
+
 // WinHttpOpen honouring the proxy policy above (HINTERNET as void*, null on failure). Every host-side WinHTTP
 // session must come from here, or it silently bypasses the proxy setting.
 void* HttpOpenSession(const wchar_t* userAgent);
@@ -49,7 +55,7 @@ void HttpSetTestSource(HttpTestSource src);
 
 class HttpsClient {
 public:
-	explicit HttpsClient(const std::wstring& host);
+	explicit HttpsClient(const std::wstring& host, int timeoutMs = 0);
 	~HttpsClient();
 	HttpsClient(const HttpsClient&) = delete;
 	HttpsClient& operator=(const HttpsClient&) = delete;

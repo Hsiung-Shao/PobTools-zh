@@ -260,6 +260,9 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	c.pobProtocol = read_ini_int(iniPath, L"PobProtocol", 0) != 0;
 
 	c.proxy = read_ini_path(iniPath, L"Proxy");
+	c.githubMirror = read_ini_int(iniPath, L"GitHubMirror", 0) != 0;
+	c.githubMirrorStation = read_ini_int(iniPath, L"GitHubMirrorStation", 0);
+	if (c.githubMirrorStation < 0 || c.githubMirrorStation > 2) c.githubMirrorStation = 0;
 
 	if (c.game != L"poe1" && c.game != L"poe2") c.game = L"poe1";
 	// Deliberately NOT clamped to known language codes: this function only sees an
@@ -422,6 +425,9 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 		cfg.betaChannel ? L"1" : L"0", iniPath.c_str());
 
 	WritePrivateProfileStringW(kSection, L"Proxy", cfg.proxy.c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"GitHubMirror", cfg.githubMirror ? L"1" : L"0", iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"GitHubMirrorStation",
+		std::to_wstring(cfg.githubMirrorStation >= 0 && cfg.githubMirrorStation <= 2 ? cfg.githubMirrorStation : 0).c_str(), iniPath.c_str());
 }
 
 // external translation-data root
@@ -1589,6 +1595,18 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 	DeleteFileW(ini.c_str());
 	write(L"PobTools", { { L"Game", L"poe1" } });
 	check("T17d Proxy defaults to empty", LoadLauncherConfig(ini).proxy.empty());
+	check("GitHub mirrors default off with automatic selection", !LoadLauncherConfig(ini).githubMirror &&
+	      LoadLauncherConfig(ini).githubMirrorStation == 0);
+	{
+		LauncherConfig c;
+		c.githubMirror = true;
+		c.githubMirrorStation = 2;
+		SaveLauncherConfig(ini, c);
+		const auto r = LoadLauncherConfig(ini);
+		check("GitHub mirror toggle and station round-trip", r.githubMirror && r.githubMirrorStation == 2);
+		write(L"PobTools", { { L"GitHubMirrorStation", L"999" } });
+		check("Unknown GitHub mirror station falls back to auto", LoadLauncherConfig(ini).githubMirrorStation == 0);
+	}
 	{
 		DeleteFileW(ini.c_str());
 		LauncherConfig c;

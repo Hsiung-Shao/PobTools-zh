@@ -200,6 +200,8 @@ struct LauncherConfig {
 	// HTTP proxy for the launcher's own downloads, "host:port". Empty = follow the system proxy.
 	// Applied via HttpSetManualProxy (http_client.h).
 	std::wstring   proxy;
+	bool           githubMirror = false;
+	int            githubMirrorStation = 0; // 0 auto, 1 gh-proxy.com, 2 gh-proxy.org
 	// The hang/crash watchdog (hang_watch.h), passed to POB as POB_ZH_HANGWATCH. On by default and
 	// deliberately not in the UI; the ini key lets a machine where suspending threads is a problem opt out.
 	bool           hangWatch = true;

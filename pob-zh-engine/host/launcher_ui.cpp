@@ -1431,6 +1431,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const st
 		GitHubToken::Wipe(saved);
 	}
 	bool githubTokenVisible = false;
+	std::future<std::vector<int>> mirrorProbe;
+	std::vector<int> mirrorTimings;
 	std::string fontMsg;       // result of the last "install a font" attempt
 	double savedUntil = 0.0;   // "saved" confirmation deadline
 	// "restart to apply" notice for the window-mode switch; a deadline rather than
@@ -3101,6 +3103,35 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const st
 			// 3. network and updates -----------------------------------------------
 			section(2);
 			PobUi::CardBegin("##s3", navIcons[2], navLabels[2], nullptr, false, cardW);
+			{
+				if (mirrorProbe.valid() && mirrorProbe.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+					mirrorTimings = mirrorProbe.get();
+				auto applyMirror = [&]() {
+					saveNow();
+					HttpSetGitHubMirror(cfg.githubMirror, cfg.githubMirrorStation);
+				};
+				PobUi::RowBegin(S.githubMirrorLabel, S.githubMirrorHint, PobUi::SwitchWidth());
+				if (PobUi::Switch("##githubmirror", &cfg.githubMirror)) applyMirror();
+				PobUi::RowEnd();
+				const char* refresh = mirrorProbe.valid() ? S.githubMirrorTesting : S.githubMirrorRefresh;
+				const float fw = std::floor(D(220.0f));
+				PobUi::RowBegin(S.githubMirrorStation, S.githubMirrorStationHint,
+				                fw + gapRow + PobUi::ButtonWidth(refresh, PobUi::BtnSize::Md, PobIcon::Refresh));
+				std::string names[3] = { S.githubMirrorAuto, "gh-proxy.com", "gh-proxy.org" };
+				for (size_t i = 0; i < mirrorTimings.size(); ++i)
+					names[i + 1] += mirrorTimings[i] < 0 ? std::string(" (") + S.githubMirrorUnavailable + ")"
+					                                  : " (" + std::to_string(mirrorTimings[i]) + " ms)";
+				const char* options[] = { names[0].c_str(), names[1].c_str(), names[2].c_str() };
+				if (PobUi::Select("##githubmirrorstation", &cfg.githubMirrorStation, options, nullptr, 3, fw, cfg.githubMirror))
+					applyMirror();
+				ImGui::SameLine(0, gapRow);
+				if (PobUi::Button(refresh, PobUi::BtnKind::Ghost, PobUi::BtnSize::Md, PobIcon::Refresh, 0.0f,
+				                  cfg.githubMirror && !mirrorProbe.valid())) {
+					HttpResetGitHubMirror();
+					mirrorProbe = std::async(std::launch::async, HttpProbeGitHubMirrors);
+				}
+				PobUi::RowEnd();
+			}
 			{
 				// Explicit Save: a half-pasted credential must not replace the working
 				// one. Persist first; only a successful write changes worker requests.

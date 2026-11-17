@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
+#include <map>
 #include <string>
 #include <thread>
 #include <utility>
@@ -31,6 +32,7 @@ void Check(bool ok, const char* name)
 // Every WinHttpOpenRequest starts a new request; the later WinHttpSetOption /
 // WinHttpSendRequest / reads act on the most recently opened one.
 struct Req {
+	std::wstring host, path;
 	DWORD status = 200;
 	std::string body = "{}";
 	std::wstring sentHeaders;
@@ -46,6 +48,7 @@ struct Config {
 	std::deque<std::pair<DWORD, std::string>> script; // per-request status/body, in order
 } cfg;
 std::vector<Req> reqs;
+std::map<HINTERNET, std::wstring> connections;
 std::vector<std::pair<std::string, std::string>> logLines; // PobLog::Error (category, message)
 
 void Reset(DWORD status = 200, const std::string& body = "{}")
@@ -87,10 +90,17 @@ namespace PobLog { void Error(const char* cat, const std::string& msg) { logLine
 
 extern "C" {
 HINTERNET WINAPI WinHttpOpen(LPCWSTR, DWORD, LPCWSTR, LPCWSTR, DWORD) { return (HINTERNET)1; }
-HINTERNET WINAPI WinHttpConnect(HINTERNET, LPCWSTR, INTERNET_PORT, DWORD) { return (HINTERNET)2; }
-HINTERNET WINAPI WinHttpOpenRequest(HINTERNET, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR*, DWORD)
+HINTERNET WINAPI WinHttpConnect(HINTERNET, LPCWSTR host, INTERNET_PORT, DWORD)
+{
+	const auto handle = (HINTERNET)(uintptr_t)(connections.size() + 100);
+	connections[handle] = host;
+	return handle;
+}
+HINTERNET WINAPI WinHttpOpenRequest(HINTERNET connection, LPCWSTR, LPCWSTR path, LPCWSTR, LPCWSTR, LPCWSTR*, DWORD)
 {
 	Req r;
+	r.host = connections.at(connection);
+	r.path = path;
 	if (!cfg.script.empty()) {
 		r.status = cfg.script.front().first;
 		r.body = cfg.script.front().second;
@@ -392,6 +402,68 @@ int main()
 	std::atomic<bool> cancel{true};
 	api.GetString(releases, body, &err, &cancel);
 	Check(Last().offset == 0, "關閉中不再讀取錯誤內文");
+
+	// ---- GitHub mirror routing, including the upstream token retry contract ----
+	Set(fake);
+	HttpSetGitHubMirror(true, 2);
+	Reset();
+	Check(api.GetString(releases, body, &err) && body == "{}", "Mirror API request succeeds");
+	Check(reqs.size() == 1 && Last().host == L"gh-proxy.org" &&
+	      Last().path == L"/https://api.github.com" + releases, "Selected mirror receives the original GitHub URL");
+	Check(Last().sentHeaders.empty(), "Mirror never receives GitHub token");
+	Reset(); cfg.script = {{502, "bad"}, {200, "{\"ok\":true}"}};
+	Check(api.GetString(releases, body, &err) && reqs.size() == 2 &&
+	      Last().host == L"gh-proxy.com" && body == "{\"ok\":true}", "Failed selected mirror retries the other station");
+	HttpSetGitHubMirror(true, 0);
+	Reset(); cfg.script = {{502, "bad"}, {200, "{}"}};
+	Check(api.GetString(releases, body, &err) && Last().host == L"gh-proxy.org", "Auto mode learns a working station");
+	Reset();
+	Check(api.GetString(releases, body, &err) && Last().host == L"gh-proxy.org", "Auto mode reuses the working station");
+	HttpResetGitHubMirror(); Reset();
+	Check(api.GetString(releases, body, &err) && Last().host == L"gh-proxy.com", "Reset clears remembered station");
+	for (const std::string& invalid : {std::string("<html>error</html>"), std::string("<!DOCTYPE html>"), std::string("not JSON"), std::string(" ")}) {
+		Reset(); cfg.script = {{200, invalid}, {200, "{}"}};
+		Check(api.GetString(releases, body, &err) && reqs.size() == 2 && body == "{}", "Invalid mirror API body falls back without stale bytes");
+	}
+	Reset(); cfg.script = {{502, ""}, {503, ""}, {200, "{\"direct\":true}"}};
+	err = "stale";
+	Check(api.GetString(releases, body, &err) && reqs.size() == 3 &&
+	      Last().host == L"api.github.com" && body == "{\"direct\":true}" && err.empty(), "Both failed mirrors fall back to direct GitHub");
+	Check(reqs.size() == 3 && reqs[0].sentHeaders.empty() && reqs[1].sentHeaders.empty() &&
+	      HasText(Last().sentHeaders, L"Bearer"), "Only direct GitHub receives the token");
+	Reset(); cfg.script = {{502, ""}, {503, ""}, {401, ""}, {200, "{}"}};
+	Check(api.GetString(releases, body, &err) && reqs.size() == 4 && err.empty() &&
+	      Last().sentHeaders.empty(), "Direct fallback preserves upstream anonymous retry on rejected token");
+	Set(fake);
+	Reset(); cfg.script = {{502, ""}, {503, ""}, {301, ""}, {200, "{}"}};
+	Check(api.GetString(releases, body, &err) && reqs.size() == 4 && Last().sentHeaders.empty(),
+	      "Direct fallback preserves upstream anonymous retry on redirect");
+	Reset(503); body = "stale";
+	Check(!api.GetString(releases, body, &err) && reqs.size() == 3 && body.empty() && !err.empty(), "All routes fail with no stale output");
+	Reset(); std::atomic<bool> mirrorCancel{true};
+	Check(!api.GetString(releases, body, &err, &mirrorCancel) && reqs.empty(), "Cancellation prevents mirror and direct requests");
+	Reset(); mirrorCancel = false;
+	std::vector<unsigned char> cancelledBytes;
+	Check(!api.Get(releases, cancelledBytes, &err, &mirrorCancel,
+	      [&](unsigned long long done, unsigned long long) { if (done) mirrorCancel = true; }) && reqs.size() == 1,
+	      "Cancellation during a mirror download prevents fallback");
+	for (const wchar_t* host : {L"api.github.com.evil.example", L"poe.ninja"}) {
+		HttpsClient other(host); Reset();
+		Check(other.GetString(L"/data", body, &err) && reqs.size() == 1 && Last().host == host,
+		      "Non-GitHub hosts bypass mirrors");
+	}
+	for (const wchar_t* host : {L"github.com", L"raw.githubusercontent.com", L"codeload.github.com",
+	                           L"objects.githubusercontent.com", L"release-assets.githubusercontent.com"}) {
+		HttpsClient asset(host); Reset(200, "asset-bytes");
+		Check(asset.GetString(L"/asset.zip", body, &err) && reqs.size() == 1 &&
+		      Last().path == std::wstring(L"/https://") + host + L"/asset.zip" && body == "asset-bytes",
+		      "GitHub release and PoB content hosts use mirrors");
+	}
+	Reset();
+	Check(api.GetEx(releases, extra, result, &err) && reqs.size() == 1 && Last().host == L"api.github.com",
+	      "Requests with explicit headers retain direct transport");
+	HttpSetGitHubMirror(false, 0); Reset();
+	Check(api.GetString(releases, body, &err) && Last().host == L"api.github.com", "Disabling mirrors restores direct updates");
 
 	// ---- 加密儲存 ----
 	wchar_t temp[MAX_PATH];
