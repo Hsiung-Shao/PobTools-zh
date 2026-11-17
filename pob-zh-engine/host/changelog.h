@@ -18,6 +18,10 @@
 #pragma once
 
 inline constexpr const char* kChangelogText =
+	u8"v1.8.12（2026-11-18）\n"
+	u8"修正\n"
+	u8"　·POB 交易：「Search for」產生的交易站網址打不開。\n"
+	u8"\n"
 	u8"v1.8.11（2026-11-17）\n"
 	u8"修正\n"
 	u8"　·POB 提示：中文長句不會自動換行，整句超出提示框。\n"

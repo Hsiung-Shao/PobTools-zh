@@ -1810,12 +1810,15 @@ static int l_Deflate(lua_State* L)
 {
 	ui_main_c* ui = GetUIPtr(L);
 	int n = lua_gettop(L);
-	ui->LAssert(L, n >= 1, "Usage: Deflate(string)");
+	ui->LAssert(L, n >= 1, "Usage: Deflate(string[, gzip])");
 	ui->LAssert(L, lua_isstring(L, 1), "Deflate() argument 1: expected string, got %s", luaL_typename(L, 1));
 	z_stream_s z;
 	z.zalloc = NULL;
 	z.zfree = NULL;
-	deflateInit(&z, 9);
+	z.opaque = NULL;
+	// gzip=true: the trade site's ?q= links (POB's B64GzipEncode); otherwise zlib, as build codes use.
+	const bool gzip = n >= 2 && lua_toboolean(L, 2);
+	deflateInit2(&z, 9, Z_DEFLATED, gzip ? 15 + 16 : 15, 8, Z_DEFAULT_STRATEGY);
 	size_t inLen;
 	byte* in = (byte*)lua_tolstring(L, 1, &inLen);
 	// Prevent deflation of input data larger than 128 MiB.
@@ -1867,9 +1870,10 @@ static int l_Inflate(lua_State* L)
 	z.avail_in = (uInt)inLen;
 	z.zalloc = NULL;
 	z.zfree = NULL;
+	z.opaque = NULL;
 	z.next_out = out.data();
 	z.avail_out = outSz;
-	inflateInit(&z);
+	inflateInit2(&z, 15 + 32); // zlib or gzip, detected from the header
 	int err;
 	while ((err = inflate(&z, Z_NO_FLUSH)) == Z_OK) {
 		// Output buffer filled, try to embiggen it.

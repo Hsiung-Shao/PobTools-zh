@@ -18,6 +18,10 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.8.12 (2026-11-18)\n"
+	u8"Fixed\n"
+	u8"　·PoB trade: the trade site link from \"Search for\" would not open.\n"
+	u8"\n"
 	u8"v1.8.11 (2026-11-17)\n"
 	u8"Fixed\n"
 	u8"　·PoB tooltips: long Chinese sentences did not wrap and ran past the tooltip.\n"
