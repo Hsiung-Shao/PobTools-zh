@@ -897,12 +897,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	std::wstring pendingLua = pending.launchLua;
 	if (pending.modern && !launch_lua_from(pendingLua).empty()) {
 		// POB self-updated under the new interface: reopen that window on the
-		// same install (its game is in the folder name), then carry on as the
-		// launcher. Only the updater ever writes this marker, so no UI first.
+		// same install, then carry on as the launcher. Only the updater ever
+		// writes this marker, so no UI first.
 		LauncherConfig c = LoadLauncherConfig(ini);
-		std::wstring lowered = pendingLua;
-		for (auto& ch : lowered) ch = (wchar_t)towlower(ch);
-		std::wstring game = lowered.find(L"poe2") != std::wstring::npos ? L"poe2" : L"poe1";
+		const size_t cut = pendingLua.find_last_of(L"\\/");
+		std::wstring game = PobDirIsPoe2(cut == std::wstring::npos ? pendingLua : pendingLua.substr(0, cut)) ? L"poe2" : L"poe1";
 		ShowModernUi(dir, game, c.locale, c, L"");
 		pendingLua.clear();
 	}

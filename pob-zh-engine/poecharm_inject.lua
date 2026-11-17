@@ -3256,6 +3256,110 @@ local function isGemTooltipName(name)
 	return n == "Classes/GemTooltip" or n:sub(-#"/Classes/GemTooltip") == "/Classes/GemTooltip"
 end
 
+-- POB breaks a line only at whitespace, which Chinese rarely has, so a
+-- translated sentence came back as one piece (or a few uneven ones) and the
+-- tooltip grew wider than the screen. A line with CJK text is wrapped here
+-- instead: between CJK characters and at blanks, never inside a number / Latin
+-- word / colour code, and never leaving closing punctuation at a line start.
+-- Lines without CJK (English, also with accents or curly quotes) go to POB.
+local CJK_CHAR = "[\227-\233\239][\128-\191][\128-\191]"	-- U+3000-9FFF + full-width forms; Hangul stays word-wrapped
+local UTF8_CHAR = "^[%z\1-\127\194-\244][\128-\191]*"
+local NO_LINE_START = {}
+for _, p in ipairs({ "，", "。", "、", "；", "：", "！", "？", "）", "」", "』", "】", "》", "…", "’", "”",
+	"%", ")", "]", ":", ",", ".", ";", "!", "?" }) do NO_LINE_START[p] = true end
+local function isColourCode(u)
+	return u:find("^%^x%x%x%x%x%x%x$") ~= nil or u:find("^%^%d$") ~= nil
+end
+local function isBlankUnit(u)
+	return isColourCode(u) or u:find("^%s") ~= nil
+end
+local unitWidths = {}	-- [height][unit]; [height][1] = the width of "一" they were measured against
+local function wrapCJK(out, str, height, width)
+	-- DrawStringWidth translates its text first, so a lone "DPS" would be measured
+	-- as its translation: measure every unit between two "一" (never a dictionary key)
+	local base = DrawStringWidth(height, "VAR", "一")
+	local widths = unitWidths[height]
+	if not widths or widths[1] ~= base then widths = { base } unitWidths[height] = widths end	-- DPI scale changed
+	local function widthOf(u)
+		local w = widths[u]
+		if not w then w = DrawStringWidth(height, "VAR", "一" .. u .. "一") - 2 * base widths[u] = w end
+		return w
+	end
+	local line, lineW, visible = {}, 0, 0
+	local function flush(carry)
+		for k = #line, 1, -1 do
+			if not isBlankUnit(line[k]) then break end
+			if not isColourCode(line[k]) then table.remove(line, k) end
+		end
+		out[#out + 1] = table.concat(line)
+		line, lineW, visible = carry or {}, 0, 0
+		for _, u in ipairs(line) do
+			if not isColourCode(u) then lineW = lineW + widthOf(u) end
+			if not isBlankUnit(u) then visible = visible + 1 end
+		end
+	end
+	local i, n = 1, #str
+	while i <= n do
+		local u = str:match("^%^x%x%x%x%x%x%x", i) or str:match("^%^%d", i)
+		if u then
+			line[#line + 1] = u
+		else
+			u = str:match("^%s+", i)
+			if u then
+				local _, newlines = u:gsub("\n", "")
+				if newlines > 0 then
+					for _ = 1, newlines do flush() end
+				elseif visible > 0 then
+					line[#line + 1] = u
+					lineW = lineW + widthOf(u)
+				end
+			else
+				u = str:match("^" .. CJK_CHAR, i)
+				if not u then
+					-- a word: up to the next blank, colour code or CJK character
+					local j = i
+					repeat
+						j = j + #(str:match(UTF8_CHAR, j) or str:sub(j, j))
+					until j > n or str:find("^%s", j) or str:find("^" .. CJK_CHAR, j)
+						or str:find("^%^x%x%x%x%x%x%x", j) or str:find("^%^%d", j)
+					u = str:sub(i, j - 1)
+				end
+				local w = widthOf(u)
+				if visible > 0 and lineW + w > width then
+					local carry, hang
+					if NO_LINE_START[u:match(UTF8_CHAR)] then
+						-- take the last unit that may start a line down with it; if the
+						-- line has nothing else to keep, let the punctuation hang instead
+						local k = #line
+						while k >= 1 and (isBlankUnit(line[k]) or NO_LINE_START[line[k]:match(UTF8_CHAR)]) do k = k - 1 end
+						hang = true
+						for m = 1, k - 1 do
+							if not isBlankUnit(line[m]) then hang = false break end
+						end
+						if not hang then
+							while k > 1 and isColourCode(line[k - 1]) do k = k - 1 end	-- its colour goes with it
+							carry = {}
+							for m = k, #line do carry[#carry + 1] = line[m] end
+							for m = #line, k, -1 do line[m] = nil end
+						end
+					end
+					if not hang then flush(carry) end
+				end
+				line[#line + 1] = u
+				lineW = lineW + w
+				visible = visible + 1
+			end
+		end
+		i = i + #u
+	end
+	if visible == 0 and #out > 0 then
+		out[#out] = out[#out] .. table.concat(line)	-- only colour codes left: no extra blank line
+	else
+		flush()
+	end
+	return out
+end
+
 -- main:WrapString: while labelGroups is set (the tattoo popup building its
 -- description labels), a line that belongs to a grouped GGPK description is
 -- wrapped as its share of the whole translation ("" = a blank label). Outside
@@ -3266,6 +3370,7 @@ local function patchMainWrapString()
 	applied.__wrapString = true
 	local orig = main.WrapString
 	main.WrapString = keepArity(orig, function(self, str, ...)
+		local height, width = ...
 		if (labelGroups or labelStatIds) and type(str) == "string" then
 			-- the previous line + this one first (labelSeq), then this line alone,
 			-- then a line the tattoo data knows by its stat ids
@@ -3282,6 +3387,18 @@ local function patchMainWrapString()
 			if not z then z = zhByStatIds(str, labelStatIds) end
 			labelPrev = line
 			if z then str = z end
+		end
+		if type(str) == "string" and type(height) == "number" and type(width) == "number"
+			and type(DrawStringWidth) == "function" then
+			-- the engine translates inside orig; do it here to see what will be drawn
+			local shown = type(PobToolsTranslateDisplay) == "function" and PobToolsTranslateDisplay(str) or str
+			if type(shown) == "string" and shown:find(CJK_CHAR) then
+				local pieces = orig(self, "", ...)	-- POB hands back one shared table; keep that identity
+				if type(pieces) == "table" then
+					for k = #pieces, 1, -1 do pieces[k] = nil end
+					return wrapCJK(pieces, shown, height, width)
+				end
+			end
 		end
 		return orig(self, str, ...)
 	end)

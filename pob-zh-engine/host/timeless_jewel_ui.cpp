@@ -1889,7 +1889,7 @@ public:
 	void drawNodeTooltip(int nodeIdx)
 	{
 		const PtNode& n = ptData.nodes[nodeIdx];
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16 * scale, 12 * scale));
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(std::floor(16 * scale), std::floor(12 * scale))); // whole px, see AtlasView::drawTooltip
 		ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(440 * scale, FLT_MAX));
 		ImGui::BeginTooltip();
 		ImGui::PushTextWrapPos(400 * scale);

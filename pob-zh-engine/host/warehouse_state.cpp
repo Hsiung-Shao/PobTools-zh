@@ -321,13 +321,24 @@ WarehouseGuard WarehouseGuardLoad(const std::wstring& exeDir)
 	return g;
 }
 
-bool WarehouseClaimSnapshot(const std::wstring& exeDir, long long nowUtc, long long* nextUtc)
+void WarehouseReleaseSnapshot(const std::wstring& exeDir, long long claimedUtc, long long prevStartUtc)
+{
+	GuardLock lock;
+	WarehouseGuard g = WarehouseGuardLoad(exeDir);
+	if (g.lastSnapshotStartUtc != claimedUtc) return; // another panel claimed since: its cooldown stays
+	g.lastSnapshotStartUtc = prevStartUtc;
+	SaveGuard(exeDir, g);
+}
+
+bool WarehouseClaimSnapshot(const std::wstring& exeDir, long long nowUtc, long long* nextUtc,
+                            long long* prevStartUtc)
 {
 	GuardLock lock;
 	WarehouseGuard g = WarehouseGuardLoad(exeDir);
 	// A start stamped in the future is a clock that was set back: measure the
 	// cooldown from now, not from a moment that has not happened yet.
 	if (g.lastSnapshotStartUtc > nowUtc) g.lastSnapshotStartUtc = nowUtc;
+	if (prevStartUtc) *prevStartUtc = g.lastSnapshotStartUtc;
 	const long long next = WarehouseNextSnapshotUtc(g);
 	if (nowUtc < next) {
 		if (nextUtc) *nextUtc = next;

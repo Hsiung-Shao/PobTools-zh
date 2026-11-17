@@ -1185,6 +1185,45 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		rep.check("T17d the pause outranks the cooldown",
 		          WarehouseNextSnapshotUtc(g) == t + 2000 &&
 		              !WarehouseClaimSnapshot(scratch, t + 1300, &next) && next == t + 2000);
+
+		// A failed snapshot gives its cooldown back.
+		{
+			DeleteFileW(guardFile.c_str());
+			long long prev = -1;
+			const bool claimed = WarehouseClaimSnapshot(scratch, t, &next, &prev);
+			WarehouseReleaseSnapshot(scratch, t, prev);
+			rep.check("T18a 快照失敗歸還冷卻後可立即再取得",
+			          claimed && WarehouseClaimSnapshot(scratch, t + 60, &next));
+		}
+		{
+			DeleteFileW(guardFile.c_str());
+			long long prev = -1;
+			const bool first = WarehouseClaimSnapshot(scratch, t, &next);
+			const bool second = WarehouseClaimSnapshot(scratch, t + 700, &next, &prev);
+			WarehouseReleaseSnapshot(scratch, t + 700, prev);
+			rep.check("T18b 歸還後回到前一次成功快照的開始時間",
+			          first && second && prev == t &&
+			              WarehouseGuardLoad(scratch).lastSnapshotStartUtc == t);
+		}
+		{
+			DeleteFileW(guardFile.c_str());
+			long long prev0 = -1;
+			const bool first = WarehouseClaimSnapshot(scratch, t, &next, &prev0);
+			const bool other = WarehouseClaimSnapshot(scratch, t + 700, &next); // 另一面板
+			WarehouseReleaseSnapshot(scratch, t, prev0);                         // 舊的那次失敗
+			rep.check("T18c 別的面板已重新取得時歸還不回復其冷卻",
+			          first && other && !WarehouseClaimSnapshot(scratch, t + 800, &next) &&
+			              next == t + 1300);
+		}
+		{
+			DeleteFileW(guardFile.c_str());
+			long long prev = -1;
+			const bool claimed = WarehouseClaimSnapshot(scratch, t, &next, &prev);
+			WarehouseNoteBlocked(scratch, t + 500);
+			WarehouseReleaseSnapshot(scratch, t, prev);
+			rep.check("T18d 歸還冷卻不影響伺服器暫停",
+			          claimed && !WarehouseClaimSnapshot(scratch, t + 60, &next) && next == t + 500);
+		}
 		DeleteFileW(guardFile.c_str());
 
 		// Auto: counts from the later of opening and the newest snapshot since.

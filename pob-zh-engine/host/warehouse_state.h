@@ -77,7 +77,14 @@ WarehouseGuard WarehouseGuardLoad(const std::wstring& exeDir);
 // Claims the right to start a snapshot now: re-reads the file under a
 // cross-process mutex and, only when the cooldown and any pause have passed,
 // records nowUtc as the last start. False -> *nextUtc says when it may.
-bool WarehouseClaimSnapshot(const std::wstring& exeDir, long long nowUtc, long long* nextUtc);
+// *prevStartUtc (optional) gets the last start it replaced, for WarehouseReleaseSnapshot.
+bool WarehouseClaimSnapshot(const std::wstring& exeDir, long long nowUtc, long long* nextUtc,
+                            long long* prevStartUtc = nullptr);
+
+// A claimed snapshot that failed gives its cooldown back: the last start returns to prevStartUtc,
+// but only while the file still holds claimedUtc (a later claim by another panel stays). The
+// server-requested pause is untouched.
+void WarehouseReleaseSnapshot(const std::wstring& exeDir, long long claimedUtc, long long prevStartUtc);
 
 // Records a server-requested pause; an existing one that ends later stays.
 void WarehouseNoteBlocked(const std::wstring& exeDir, long long untilUtc);

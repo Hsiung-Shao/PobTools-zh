@@ -860,12 +860,10 @@ std::wstring ResolveConfiguredFontPath(const std::wstring& exeDir)
 	return ResolveFontPath(exeDir, f);
 }
 
-// Best-effort POB version from <install dir>\manifest.xml. The attribute order
-// differs between installs (platform can precede or follow number), so find the
-// <Version tag first, then number="..." inside it.
-static std::string read_pob_version(const std::wstring& installDir)
+// <install dir>\<file> as bytes; empty when missing, unreadable or over 4 MB.
+static std::string read_install_file(const std::wstring& installDir, const wchar_t* file)
 {
-	HANDLE h = CreateFileW((installDir + L"\\manifest.xml").c_str(), GENERIC_READ, FILE_SHARE_READ,
+	HANDLE h = CreateFileW((installDir + L"\\" + file).c_str(), GENERIC_READ, FILE_SHARE_READ,
 	                       nullptr, OPEN_EXISTING, 0, nullptr);
 	if (h == INVALID_HANDLE_VALUE) return std::string();
 	std::string xml;
@@ -876,6 +874,15 @@ static std::string read_pob_version(const std::wstring& installDir)
 		if (!ReadFile(h, &xml[0], (DWORD)xml.size(), &read, nullptr) || read != xml.size()) xml.clear();
 	}
 	CloseHandle(h);
+	return xml;
+}
+
+// Best-effort POB version from <install dir>\manifest.xml. The attribute order
+// differs between installs (platform can precede or follow number), so find the
+// <Version tag first, then number="..." inside it.
+static std::string read_pob_version(const std::wstring& installDir)
+{
+	const std::string xml = read_install_file(installDir, L"manifest.xml");
 	if (xml.empty()) return std::string();
 
 	size_t tag = xml.find("<Version");
@@ -915,20 +922,53 @@ static bool name_looks_poe2(const std::wstring& name)
 	return low.find(L"poe2") != std::wstring::npos;
 }
 
+// 1 / 2 from POB's own files, so renamed folders still classify; 0 = undecided.
+// Launch.lua: APP_NAME = "Path of Building" / "Path of Building (PoE2)".
+static int launch_lua_game(const std::wstring& dir)
+{
+	const std::string lua = read_install_file(dir, L"Launch.lua");
+	const size_t at = lua.find("APP_NAME");
+	if (at == std::string::npos) return 0;
+	const std::string line = lua.substr(at, lua.find('\n', at) - at);
+	if (line.find("PoE2") != std::string::npos) return 2;
+	if (line.find("\"Path of Building\"") != std::string::npos) return 1; // exact value; anything new falls to the manifest
+	return 0;
+}
+
+// manifest.xml: the update URLs name the PathOfBuilding or PathOfBuilding-PoE2 repo.
+static int manifest_game(const std::wstring& dir)
+{
+	const std::string xml = read_install_file(dir, L"manifest.xml");
+	if (xml.find("/PathOfBuilding-PoE2/") != std::string::npos) return 2;
+	if (xml.find("/PathOfBuilding/") != std::string::npos) return 1;
+	return 0;
+}
+
+bool PobDirIsPoe2(const std::wstring& dir)
+{
+	std::wstring d = dir;
+	while (!d.empty() && (d.back() == L'\\' || d.back() == L'/')) d.pop_back();
+	int g = launch_lua_game(d);
+	if (!g) g = manifest_game(d);
+	if (g) return g == 2;
+	const size_t slash = d.find_last_of(L"\\/");
+	return name_looks_poe2(slash == std::wstring::npos ? d : d.substr(slash + 1));
+}
+
 InstallInfo DetectInstalls(const std::wstring& exeDir)
 {
 	InstallInfo info;
 
-	// 1) canonical names: existing installs keep resolving exactly as before.
+	// 1) canonical names first, unless the manifest says the folder is the other game.
 	static const wchar_t* kPoe1Names[] = { L"PathOfBuildingCommunity", L"PathOfBuildingCommunity-Portable" };
 	static const wchar_t* kPoe2Names[] = { L"PathOfBuildingCommunity-PoE2-Portable" };
 	for (const wchar_t* n : kPoe1Names)
-		if (info.poe1Dir.empty() && dir_has_launch_lua(exeDir + n)) info.poe1Dir = exeDir + n;
+		if (info.poe1Dir.empty() && dir_has_launch_lua(exeDir + n) && !PobDirIsPoe2(exeDir + n)) info.poe1Dir = exeDir + n;
 	for (const wchar_t* n : kPoe2Names)
-		if (info.poe2Dir.empty() && dir_has_launch_lua(exeDir + n)) info.poe2Dir = exeDir + n;
+		if (info.poe2Dir.empty() && dir_has_launch_lua(exeDir + n) && PobDirIsPoe2(exeDir + n)) info.poe2Dir = exeDir + n;
 
-	// 2) any other first-level subfolder holding Launch.lua; the folder name
-	//    decides the game slot. Sorted so a multi-candidate pick is deterministic.
+	// 2) any other first-level subfolder holding Launch.lua; manifest, then the
+	//    folder name, decides the game slot. Sorted so a multi-candidate pick is deterministic.
 	if (info.poe1Dir.empty() || info.poe2Dir.empty()) {
 		std::vector<std::wstring> subs;
 		WIN32_FIND_DATAW fd{};
@@ -946,19 +986,17 @@ InstallInfo DetectInstalls(const std::wstring& exeDir)
 			std::wstring full = exeDir + name;
 			if (full == info.poe1Dir || full == info.poe2Dir) continue;
 			if (!dir_has_launch_lua(full)) continue;
-			std::wstring& slot = name_looks_poe2(name) ? info.poe2Dir : info.poe1Dir;
+			std::wstring& slot = PobDirIsPoe2(full) ? info.poe2Dir : info.poe1Dir;
 			if (slot.empty()) slot = full;
 		}
 	}
 
 	// 3) pob-zh.exe dropped inside a POB folder (or POB unpacked beside the exe):
-	//    Launch.lua right next to the exe, classified by the folder's own name.
+	//    Launch.lua right next to the exe, classified like the others (PobDirIsPoe2).
 	if (file_exists(exeDir + L"Launch.lua")) {
 		std::wstring trimmed = exeDir;
 		while (!trimmed.empty() && (trimmed.back() == L'\\' || trimmed.back() == L'/')) trimmed.pop_back();
-		size_t slash = trimmed.find_last_of(L"\\/");
-		std::wstring leaf = (slash == std::wstring::npos) ? trimmed : trimmed.substr(slash + 1);
-		std::wstring& slot = name_looks_poe2(leaf) ? info.poe2Dir : info.poe1Dir;
+		std::wstring& slot = PobDirIsPoe2(trimmed) ? info.poe2Dir : info.poe1Dir;
 		if (slot.empty() && !trimmed.empty()) slot = trimmed;
 	}
 
@@ -1099,6 +1137,91 @@ int RunDetectInstallsSelfTest(const std::wstring& exeDir)
 		std::wstring d = FindPoe1Dir(r);
 		std::wstring none = FindPoe1Dir(root + L"\\case6\\");
 		check("T7 FindPoe1Dir", d == r + L"MyPob\\" && none.empty(), ascii_narrow(d));
+	}
+
+	// 寫入 manifest.xml(內容為 ASCII)
+	auto writeManifest = [&](const std::wstring& dir, bool poe2) {
+		const char* body = poe2
+			? "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<PoBVersion>\n"
+			  "\t<Version branch=\"beta\" platform=\"win32\" number=\"0.23.1\"/>\n"
+			  "\t<Source part=\"program\" url=\"https://raw.githubusercontent.com/PathOfBuildingCommunity/PathOfBuilding-PoE2/{branch}/src/\"/>\n"
+			  "</PoBVersion>\n"
+			: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<PoBVersion>\n"
+			  "\t<Version branch=\"master\" number=\"2.67.2\" platform=\"win32\"/>\n"
+			  "\t<Source part=\"default\" url=\"https://raw.githubusercontent.com/PathOfBuildingCommunity/PathOfBuilding/{branch}/\"/>\n"
+			  "\t<Source part=\"program\" url=\"https://raw.githubusercontent.com/PathOfBuildingCommunity/PathOfBuilding/{branch}/src/\"/>\n"
+			  "</PoBVersion>\n";
+		HANDLE fh = CreateFileW((dir + L"\\manifest.xml").c_str(), GENERIC_WRITE, 0, nullptr,
+		                        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (fh == INVALID_HANDLE_VALUE) return;
+		DWORD w = 0;
+		WriteFile(fh, body, (DWORD)strlen(body), &w, nullptr);
+		CloseHandle(fh);
+	};
+
+	{ // T8: 改名的 2 代資料夾依 manifest 內容歸 2 代
+		std::wstring r = makeRoot({ L"MyPob" }, false, L"case8");
+		writeManifest(r + L"MyPob", true);
+		InstallInfo i = DetectInstalls(r);
+		check("T8 renamed poe2 by manifest",
+		      i.poe2Dir == r + L"MyPob" && i.poe1Dir.empty(),
+		      ascii_narrow(i.poe1Dir + L" | " + i.poe2Dir));
+	}
+	{ // T9: 名稱含 poe2 但 manifest 是 1 代,依內容歸 1 代
+		std::wstring r = makeRoot({ L"poe2_backup" }, false, L"case9");
+		writeManifest(r + L"poe2_backup", false);
+		InstallInfo i = DetectInstalls(r);
+		check("T9 poe2 name but poe1 manifest",
+		      i.poe1Dir == r + L"poe2_backup" && i.poe2Dir.empty(),
+		      ascii_narrow(i.poe1Dir + L" | " + i.poe2Dir));
+	}
+	{ // T10: 官方 1 代名稱但 manifest 是 2 代,內容優先於名稱
+		std::wstring r = makeRoot({ L"PathOfBuildingCommunity", L"Other" }, false, L"case10");
+		writeManifest(r + L"PathOfBuildingCommunity", true);
+		writeManifest(r + L"Other", false);
+		InstallInfo i = DetectInstalls(r);
+		check("T10 canonical name but poe2 manifest",
+		      i.poe2Dir == r + L"PathOfBuildingCommunity" && i.poe1Dir == r + L"Other",
+		      ascii_narrow(i.poe1Dir + L" | " + i.poe2Dir));
+	}
+	{ // T11: exe 同層的 POB,資料夾名無 poe2 仍依 manifest 歸 2 代
+		std::wstring r = makeRoot({}, true, L"case11_plain");
+		writeManifest(root + L"\\case11_plain", true);
+		InstallInfo i = DetectInstalls(r);
+		check("T11 root-level poe2 by manifest",
+		      i.poe2Dir + L"\\" == r && i.poe1Dir.empty(),
+		      ascii_narrow(i.poe1Dir + L" | " + i.poe2Dir));
+	}
+
+	// 覆寫 Launch.lua:前面放雜行,模擬真檔 APP_NAME 不在第一行
+	auto writeLaunch = [&](const std::wstring& dir, bool poe2) {
+		std::string body = "#@\n-- Path of Building\n--\n-- Module: Launch\n\nlocal x = 1\n";
+		body += poe2 ? "APP_NAME = \"Path of Building (PoE2)\"\n" : "APP_NAME = \"Path of Building\"\n";
+		body += "\nlocal y = 2\n";
+		HANDLE fh = CreateFileW((dir + L"\\Launch.lua").c_str(), GENERIC_WRITE, 0, nullptr,
+		                        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (fh == INVALID_HANDLE_VALUE) return;
+		DWORD w = 0;
+		WriteFile(fh, body.data(), (DWORD)body.size(), &w, nullptr);
+		CloseHandle(fh);
+	};
+
+	{ // T12: 名稱不含 poe2、無 manifest,只靠 Launch.lua 的 APP_NAME 歸 2 代
+		std::wstring r = makeRoot({ L"MyPob2x" }, false, L"case12");
+		writeLaunch(r + L"MyPob2x", true);
+		InstallInfo i = DetectInstalls(r);
+		check("T12 poe2 by Launch.lua only",
+		      i.poe2Dir == r + L"MyPob2x" && i.poe1Dir.empty(),
+		      ascii_narrow(i.poe1Dir + L" | " + i.poe2Dir));
+	}
+	{ // T13: Launch.lua 優先於 manifest 與資料夾名稱
+		std::wstring r = makeRoot({ L"poe2_old" }, false, L"case13");
+		writeLaunch(r + L"poe2_old", false);
+		writeManifest(r + L"poe2_old", true);
+		InstallInfo i = DetectInstalls(r);
+		check("T13 Launch.lua beats manifest and name",
+		      i.poe1Dir == r + L"poe2_old" && i.poe2Dir.empty(),
+		      ascii_narrow(i.poe1Dir + L" | " + i.poe2Dir));
 	}
 
 	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";

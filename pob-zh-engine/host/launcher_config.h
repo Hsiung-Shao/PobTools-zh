@@ -285,9 +285,9 @@ bool DictionariesPresentAt(const std::wstring& dest);
 
 // Detected POB installs; empty string = not found. Detection order per slot:
 // canonical folder names first (PathOfBuildingCommunity[-Portable] / -PoE2-Portable),
-// then any first-level subfolder holding Launch.lua (name containing "poe2" =>
-// the PoE2 fork, sorted for a deterministic pick), then the exe directory itself
-// (pob-zh.exe dropped inside a POB folder), classified by its own folder name.
+// then any first-level subfolder holding Launch.lua (sorted for a deterministic
+// pick), then the exe directory itself (pob-zh.exe dropped inside a POB folder).
+// Every candidate's game comes from PobDirIsPoe2 (Launch.lua, manifest, name).
 struct InstallInfo {
 	std::wstring poe1Dir;     // install folder, no trailing backslash
 	std::wstring poe2Dir;
@@ -306,6 +306,10 @@ void SaveLauncherConfigKeepModern(const std::wstring& iniPath, LauncherConfig& c
 // kOptionalDicts row ("=0" = skip that file). SetEngineEnv always writes it.
 std::wstring DictSwitchesEnv(const LauncherConfig& cfg);
 InstallInfo DetectInstalls(const std::wstring& exeDir);
+
+// True when the POB install at `dir` is the PoE2 one: Launch.lua's APP_NAME
+// decides, then manifest.xml's update URL, then a folder name containing "poe2".
+bool PobDirIsPoe2(const std::wstring& dir);
 
 // Detected PoE1 POB install dir with a trailing backslash; L"" when none.
 // For components that read files out of the PoE1 install (TreeData, jewels).

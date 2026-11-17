@@ -635,6 +635,30 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okNi && ni["lines"].size() >= 2 && !ni.value("nameZh", "").empty(),
 			      okNi ? ni.dump().substr(0, 200) : ni.dump().substr(0, 300));
 
+			// a regular notable's tooltip carries its 3-oil anoint recipe right after the name
+			{
+				json nr;
+				bool okNr = false;
+				int tried = 0;
+				if (okTd) {
+					for (auto& [k, n] : td["nodes"].items()) {
+						if (n.value("type", "") != "Notable" || n.contains("asc")) continue;
+						if (++tried > 30) break;
+						// not every notable can be anointed: stop at the first that has a recipe
+						if (child.Call("node_info", json{{"id", n.value("id", -1LL)}}, nr, 30000) && nr.contains("recipe")) { okNr = true; break; }
+					}
+				}
+				bool recipeOk = okNr && nr.contains("recipe") && nr["recipe"].is_array() && nr["recipe"].size() == 3;
+				if (recipeOk) for (auto& r : nr["recipe"]) if (!r.is_string() || r.get<std::string>().empty()) recipeOk = false;
+				bool lineOk = recipeOk && nr.contains("lines") && nr["lines"].is_array() && nr["lines"].size() > 1
+				              && nr["lines"][1].is_object() && nr["lines"][1].contains("text") && nr["lines"][1]["text"].is_string();
+				if (lineOk) {
+					const std::string t = nr["lines"][1]["text"].get<std::string>();
+					for (auto& r : nr["recipe"]) if (t.find(r.get<std::string>()) == std::string::npos) lineOk = false;
+				}
+				check("node_info: a notable's anoint recipe follows its name", recipeOk && lineOk, nr.dump().substr(0, 300));
+			}
+
 			// click on, click off: state and stats must return to where they were
 			json before;
 			child.Call("get_stats", json::object(), before, 30000);

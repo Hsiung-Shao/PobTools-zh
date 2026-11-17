@@ -1281,6 +1281,22 @@ function M.node_info(p)
 			lines[#lines + 1] = { sep = l.size or 0 }
 		end
 	end
+	-- POB draws the anoint recipe as oil icons beside the title (Tooltip:SetRecipe), not as a
+	-- line: hand it out as the line after the name. tt.recipe, not node.recipe: only when
+	-- POB set it for this tooltip. PoE1 "GoldenOil"; PoE2 { name = "Paranoia" } (a distilled emotion).
+	local recipe = nil
+	if type(tt.recipe) == "table" and #tt.recipe > 0 and lines[1] then
+		recipe = {}
+		local raw = {}
+		for i, r in ipairs(tt.recipe) do
+			local name = type(r) == "table" and r.name or r
+			raw[i] = name
+			local item = GAME == "poe2" and "Distilled " .. name or (name:gsub("Oil$", " Oil"))
+			local zh = tr(item)
+			recipe[i] = (zh == item and GAME == "poe2") and tr(name) or zh
+		end
+		table.insert(lines, 2, { size = 14, text = table.concat(recipe, " + "), raw = table.concat(raw, " + "), center = true })
+	end
 	local effects = nil
 	if node.type == "Mastery" and node.masteryEffects then
 		effects = {}
@@ -1297,6 +1313,7 @@ function M.node_info(p)
 		allocated = node.alloc and true or false,
 		header = tt.tooltipHeader or nil,
 		lines = lines,
+		recipe = recipe,
 		stats = stats, statsZh = statsZh,
 		masteryEffects = effects,
 		masterySelected = b.spec.masterySelections and b.spec.masterySelections[id] or nil,

@@ -376,7 +376,7 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 		const std::string& lbl = (hoverMastery_ < (int)masteryLabel_.size() &&
 		                          !masteryLabel_[hoverMastery_].empty())
 			? masteryLabel_[hoverMastery_] : m.name;
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f * uiScale, 12.0f * uiScale));
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(std::floor(16.0f * uiScale), std::floor(12.0f * uiScale)));
 		ImGui::BeginTooltip();
 		ImGui::TextColored(PobUi::TokV4(Tok::TreeHit), "%s", lbl.empty() ? "?" : lbl.c_str());
 		ImGui::TextDisabled(mechMasteries_.count(hoverMastery_)

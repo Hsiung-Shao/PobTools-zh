@@ -172,6 +172,14 @@ public:
 		if (frame == pumpedFrame_) return;
 		pumpedFrame_ = frame;
 		st_ = svc_.Poll();
+		// Only a snapshot that succeeded keeps the 10-minute cooldown; a failed one (dead session...) gives it back.
+		if (claimUtc_ && st_.phase == WarehousePhase::Error) {
+			WarehouseReleaseSnapshot(exeDir_, claimUtc_, claimPrevUtc_);
+			claimUtc_ = 0;
+			guard_ = WarehouseGuardLoad(exeDir_);
+		} else if (claimUtc_ && (st_.phase == WarehousePhase::Done || st_.snapshotReady)) {
+			claimUtc_ = 0;
+		}
 		// History is per league: picking another league shows that league's file.
 		if (state_.sel().league != historyLeague_) switchHistoryLeague();
 		reloadIfChanged();
@@ -317,10 +325,13 @@ private:
 	// processes, none while the server asked for a pause. False = refused.
 	bool requestSnapshot()
 	{
-		long long next = 0;
-		const bool granted = WarehouseClaimSnapshot(exeDir_, NowUtc(), &next);
+		long long next = 0, prev = 0;
+		const long long now = NowUtc();
+		const bool granted = WarehouseClaimSnapshot(exeDir_, now, &next, &prev);
 		guard_ = WarehouseGuardLoad(exeDir_);
 		if (!granted) return false;
+		claimUtc_ = now;
+		claimPrevUtc_ = prev;
 		StashAuth a;
 		a.accountName = state_.accountName;
 		a.secret = state_.sessid;
@@ -1767,6 +1778,8 @@ private:
 	std::string historyLeague_; // the league whose file history_ holds
 	WarehouseGuard guard_;      // the shared request guard, refreshed every 2 s
 	int pumpedFrame_ = -1;      // pump() runs once per frame
+	long long claimUtc_ = 0;     // guard claim of the snapshot in flight (0 = none)
+	long long claimPrevUtc_ = 0; // the last start that claim replaced
 	long long autoArmedUtc_ = 0;       // panel opened / auto switched on
 	long long autoLastAttemptUtc_ = 0; // last auto start this panel made
 	long long autoDueUtc_ = 0;         // for the hint; 0 = not scheduled

@@ -1175,6 +1175,7 @@ bool CollapsingSection(const char* label, const char* id, const char* icon, cons
 		dl->PushClipRect(ImVec2(lx, p.y), ImVec2(p.x + w - D(4.0f), p.y + h), true);
 		DrawText(dl, SmallFont(), SmallPx(), ImVec2(nx, p.y + std::floor((h - ns.y) * 0.5f)), Tok::TextMuted, note);
 		dl->PopClipRect();
+		if (hov && nx == lx) Tooltip(note);   // clipped: the row has no room for all of it
 	}
 	if (hov) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
 	return open;

@@ -18,6 +18,15 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.8.11 (2026-11-17)\n"
+	u8"Fixed\n"
+	u8"　·PoB tooltips: long Chinese sentences did not wrap and ran past the tooltip.\n"
+	u8"　·Timeless jewel and atlas planner: the rightmost characters of a tooltip were hidden under the scrollbar.\n"
+	u8"　·Atlas planner: small hint text in the sidebar was clipped at the edge.\n"
+	u8"　·New interface: passive node tooltips did not show the anoint recipe.\n"
+	u8"　·Launcher: importing builds could sort a renamed PoB folder into the wrong game.\n"
+	u8"　·Stash revenue: a failed snapshot still started the 10-minute cooldown. (Retry right after fixing your POESESSID)\n"
+	u8"\n"
 	u8"v1.8.10 (2026-11-16)\n"
 	u8"Added\n"
 	u8"　·Launcher: import builds from an older localisation tool. (A build with the same name is saved as a copy, never overwritten)\n"

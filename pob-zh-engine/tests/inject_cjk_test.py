@@ -5741,6 +5741,190 @@ def test_gs2p_poe2_segment_translation_follows_game(fork):
           "asked=%r" % asked1)
 
 
+# POB 的 main:WrapString 只在空白處斷行;中文長句整句不換行 -> 提示框比螢幕還寬。
+# 這裡用上游同一份實作當底(必須在 inject 套用前就存在,inject 才包得到它)。
+WRAP_UPSTREAM = rb"""
+do
+	local wrapTable = { }
+	function main:WrapString(str, height, width)
+		wipeTable(wrapTable)
+		local lineStart = 1
+		local lastSpace, lastBreak
+		while true do
+			local s, e = str:find("%s+", lastSpace)
+			if not s then
+				s = #str + 1
+				e = #str + 1
+			end
+			if s > #str then
+				table.insert(wrapTable, str:sub(lineStart, -1))
+				break
+			end
+			lastBreak = s - 1
+			lastSpace = e + 1
+			if DrawStringWidth(height, "VAR", str:sub(lineStart, s - 1)) > width then
+				table.insert(wrapTable, str:sub(lineStart, lastBreak))
+				lineStart = lastSpace
+			end
+		end
+		return wrapTable
+	end
+end
+-- width: strip colour codes, non-ASCII UTF-8 char = height, ASCII = height/2
+function DrawStringWidth(height, font, s)
+	s = s:gsub("%^x%x%x%x%x%x%x", "")
+	s = s:gsub("%^%d", "")
+	local w = 0
+	for i = 1, #s do
+		local b = s:byte(i)
+		if b < 128 then w = w + height / 2 elseif b >= 192 then w = w + height end
+	end
+	return w
+end
+-- pieces as "hex:width;..." (wrapTable is shared so copy now; hex avoids lupa decoding half a UTF-8 char)
+function __wrap(s, height, width)
+	local out = {}
+	for _, f in ipairs(main:WrapString(s, height, width)) do
+		out[#out + 1] = (f:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+			.. ":" .. DrawStringWidth(height, "VAR", f)
+	end
+	return table.concat(out, ";")
+end
+"""
+
+
+def wrap_pieces(h, s, height=16, width=600):
+    """回傳 [(bytes 片段, 寬度)]"""
+    raw = h.eval("__wrap")(s, height, width)
+    return [(bytes.fromhex(p.split(":")[0]), float(p.split(":")[1])) for p in raw.split(";")]
+
+
+def test_ww_wrap_cjk(fork):
+    def harness(with_inject):
+        h = Harness(fork, with_inject=False)
+        h.run(WRAP_UPSTREAM)
+        if with_inject:
+            h.apply_inject()
+        return h
+
+    # 全形標點刻意放在第 38、75 字(0-based 37、74):照寬度硬切會讓它們落在片段開頭
+    base = ("此輔助技能寶石會使被輔助的技能在命中敵人時有機會附加額外的元素傷害並且提高暴擊率"
+            "與暴擊傷害降低敵人的元素抗性同時使你獲得持續五秒的移動速度加成效果結束後會進入冷卻"
+            "期間無法再次觸發而且與其他同類輔助寶石的效果不會疊加")
+    zh = base[:37] + "，" + base[37:73] + "、" + base[73:] + "。"
+    zh_col = "^x7070FF" + zh[:35] + "^xFF0000" + zh[35:]
+    check("%s W0 測試句夠長(>=80 字、無空白)" % fork, len(zh) >= 80 and not re.search(r"\s", zh), len(zh))
+    short = "此輔助寶石增加你的暴擊率。"
+    en = ("lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut "
+          "labore et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco "
+          "laboris nisi ut aliquip ex ea commodo consequat duis aute irure dolor in reprehenderit")
+
+    off, on = harness(False), harness(True)
+    p_off = wrap_pieces(off, zh)
+    check("%s W1 inject 關閉時長中文句只有 1 個片段" % fork, len(p_off) == 1, len(p_off))
+
+    p = wrap_pieces(on, zh)
+    over = [w for _, w in p if w > 600]
+    check("%s W2 inject 開啟後片段數>=2 且每片寬度<=600" % fork, len(p) >= 2 and not over,
+          "片段數=%d 超寬=%s" % (len(p), over))
+    check("%s W3 串接後與原字串相同" % fork, b"".join(b for b, _ in p) == zh.encode("utf-8"))
+    try:
+        texts = [b.decode("utf-8") for b, _ in p]
+        valid = True
+    except UnicodeDecodeError as e:
+        texts, valid = [b.decode("utf-8", "replace") for b, _ in p], False
+    check("%s W4 每片都是合法 UTF-8" % fork, valid)
+    bad = [t[:3] for t in texts[1:] if t[:1] in "，。、；：！？）」』"]
+    check("%s W5 後續片段不以標點開頭" % fork, not bad, bad)
+
+    pc = wrap_pieces(on, zh_col)
+    partial = [b[-9:] for b, _ in pc if re.search(rb"\^(x[0-9A-Fa-f]{0,5})?$", b)]
+    check("%s W6 帶色碼:串接相同且色碼不被切開" % fork,
+          b"".join(b for b, _ in pc) == zh_col.encode("utf-8") and not partial, partial)
+
+    ps = wrap_pieces(on, short)
+    check("%s W7 不超寬的短中文句維持 1 片且不變" % fork, ps == [(short.encode("utf-8"), ps[0][1])] and len(ps) == 1, ps)
+
+    e_off, e_on = wrap_pieces(off, en), wrap_pieces(on, en)
+    check("%s W8 超寬純英文句與 inject 關閉時逐片相同" % fork, len(e_off) >= 2 and e_on == e_off,
+          "off=%d on=%d" % (len(e_off), len(e_on)))
+
+    # ---- W9–W13:含空白 / 數字 / 禁則 / 非 ASCII 英文 ----
+    def strip_col(t):
+        return re.sub(r"\^x[0-9A-Fa-f]{6}|\^\d", "", t)
+
+    def txt(pieces):
+        return [b.decode("utf-8", "replace") for b, _ in pieces]
+
+    sp_a = "^7每 1 點力量 使近戰物理傷害提高 1%，並且 每 10 點力量 使生命上限 +5，同時 每 5 點敏捷 使閃避值提高 2%"
+    cuts, i, sp_b = [6, 8, 10, 7, 9, 6, 10, 8], 0, []
+    for n in cuts * 2:
+        if i >= 60:
+            break
+        sp_b.append(base[i:i + n])
+        i += n
+    sp_b = " ".join(sp_b)
+    # W9:含空白的中文句不出現碎行(每片<=width,且非末片>=60% width)
+    w9_bad = []
+    w9_pieces = []
+    for label, s, width in (("a", sp_a, 200), ("b", sp_b, 400)):
+        ps = wrap_pieces(on, s, 16, width)
+        w9_pieces.append((label, ps))
+        ws = [w for _, w in ps]
+        if any(w > width for w in ws):
+            w9_bad.append("%s 超寬 %s" % (label, ws))
+        if any(w < width * 0.6 for w in ws[:-1]):
+            w9_bad.append("%s 碎行 %s" % (label, ws))
+    check("%s W9 含空白中文句不碎行且不超寬" % fork, not w9_bad, w9_bad)
+
+    # W10:數字與符號(10%、+5、12.5、1234)不被切開
+    unit = "傷害提高 10%，生命上限 +5，持續 12.5 秒，共 1234 點"
+    w10 = "，".join([unit] * 3)
+    toks = set(re.findall(r"[\x21-\x7e]+", w10))
+    w10_bad = []
+    for width in (90, 100, 110, 130):
+        joined = "\n".join(txt(wrap_pieces(on, w10, 16, width)))
+        for t in toks:
+            if joined.count(t) != w10.count(t):
+                w10_bad.append("w=%d %r %d/%d" % (width, t, joined.count(t), w10.count(t)))
+    check("%s W10 數字與符號不被切開" % fork, not w10_bad, w10_bad[:4])
+
+    # W11:帶非 ASCII 字元的純英文行與上游逐片相同
+    en2 = ("Raise a Spectre’s corpse — Maelström of Chaos deals 50% more Damage "
+           "with Hits and Ailments against enemies")
+    r_off, r_on = wrap_pieces(off, en2, 16, 200), wrap_pieces(on, en2, 16, 200)
+    check("%s W11 帶非 ASCII 的英文行與上游逐片相同" % fork, len(r_off) >= 2 and r_on == r_off,
+          "off=%s on=%s" % (txt(r_off), txt(r_on)))
+
+    # W12:行首禁用標點;每片可見寬 <= width + 2 個全形字
+    banned = "，。、；：！？）」』】》"
+    w12_in = [
+        ("a", "這個輔助寶石會使你的技能在命中敵人之後大幅提高^x7F7F7F，^7並且增加暴擊率與暴擊傷害^x7F7F7F，^7"
+              "同時使你獲得持續五秒的移動速度加成^x7F7F7F，^7效果結束後會進入冷卻"),
+        ("b", "他說「提高暴擊率」，並且「降低敵人抗性」。同時（增加移動速度）。再來「獲得護盾」，"
+              "最後「結束」。接著（回復生命）。然後「完成」。"),
+    ]
+    w12_bad = []
+    for label, s in w12_in:
+        for width in range(96, 321, 16):
+            for t_raw, (_, w) in zip(txt(wrap_pieces(on, s, 16, width)), wrap_pieces(on, s, 16, width)):
+                t = strip_col(t_raw)
+                if t and t[0] in banned:
+                    w12_bad.append("%s w=%d 行首 %r" % (label, width, t[:3]))
+                if w > width + 32:
+                    w12_bad.append("%s w=%d 超寬 %s" % (label, width, w))
+    check("%s W12 行首不是禁用標點且不過度超寬" % fork, not w12_bad, w12_bad[:4])
+
+    # W13:片頭片尾無空白
+    w13_bad = []
+    for label, ps in w9_pieces:
+        for t in txt(ps):
+            v = strip_col(t)
+            if v != v.strip():
+                w13_bad.append("%s %r" % (label, v))
+    check("%s W13 片頭片尾無空白" % fork, not w13_bad, w13_bad[:4])
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -5844,6 +6028,7 @@ def main():
         test_preview_no_rebuild_when_unchanged(fork)
         test_preview_no_item(fork)
         test_preview_upstream_shape(fork)
+        test_ww_wrap_cjk(fork)
     print("== C++ source patches ==")
     test_source_patch_anchors()
     test_source_patch_compiles()

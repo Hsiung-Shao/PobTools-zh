@@ -250,6 +250,7 @@ public:
 				                               { "Metadata/Items/Threads/ThreadAbyss", 8 } };
 				buildFile.Active().ritualVessels = 2;
 			}
+			else if (page == L"mech") { mechSel = "Synthesis"; testOpenMech_ = true; }
 			else if (page == L"delete") askDelete_ = true;
 			else if (page == L"reset") askReset_ = true;
 			else if (page == L"new") { nameBuf = u8"新專案"; askNew_ = true; }
@@ -1290,6 +1291,7 @@ private:
 
 	// --- persisted UI state (panel width + last viewed season) ---
 	AtlasUiState uiState;
+	bool testOpenMech_ = false;
 	float panelW = -1.0f; // sentinel: initialized on the first frame (needs DisplaySize)
 
 	// --- version registry: which seasons are installed, which one is shown ---
@@ -2441,7 +2443,7 @@ private:
 					ImGui::CloseCurrentPopup();
 				}
 				if (ImGui::IsItemHovered()) {
-					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PobUi::D(14.0f), PobUi::D(10.0f)));
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(std::floor(PobUi::D(14.0f)), std::floor(PobUi::D(10.0f)))); // whole px, see AtlasView::drawTooltip
 					ImGui::BeginTooltip();
 					ImGui::TextColored(PobUi::TokV4(Tok::AccentText), "%s", astroName(d).c_str());
 					ImGui::PushTextWrapPos(360.0f * scale);
@@ -2589,7 +2591,7 @@ private:
 		int removeIdx = -1;
 		if (!editable) PobUi::Hint(planningMode ? u8"規劃模式中不能編輯綢帶" : u8"舊賽季預覽中不能編輯綢帶");
 		if (!fixNote.empty()) {
-			PobUi::Hint((u8"目前配置不符規則" + fixNote).c_str(), 0.0f, Tok::Warning);
+			PobUi::Hint((u8"目前配置不符規則" + fixNote).c_str(), ImGui::GetContentRegionAvail().x, Tok::Warning);
 			if (PobUi::Button(u8"依規則修正##fix", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm)) {
 				b.threads = fixed;
 				changed = true;
@@ -2833,6 +2835,7 @@ private:
 	{
 		const AtlasMechanicDef* selDef = mechSel.empty() ? nullptr : AtlasMechanicById(mechSel);
 		const std::string note = selDef ? (showZh && zhLoaded ? selDef->zh : selDef->en) : std::string();
+		if (testOpenMech_) ImGui::GetStateStorage()->SetInt(ImGui::GetID("###mechhdr"), 1);   // POBTOOLS_ATLAS_PAGE=mech
 		if (!PobUi::CollapsingSection(u8"機制", "###mechhdr", PobIcon::Crosshair, note.empty() ? nullptr : note.c_str(),
 		                              false))
 			return;
@@ -2844,7 +2847,7 @@ private:
 		if (!mechDb.BorrowedFrom().empty())
 			PobUi::Hint((u8"（分類沿用 " + mechDb.BorrowedFrom() + u8"，本賽季新增的節點可能未歸類）").c_str(),
 			            ImGui::GetContentRegionAvail().x);
-		PobUi::Hint(u8"點一列標出全輿圖同機制的位置；再點一次取消");
+		PobUi::Hint(u8"點一列標出全輿圖同機制的位置；再點一次取消", ImGui::GetContentRegionAvail().x);
 		for (const auto& kv : mechNodeIdx) {
 			const AtlasMechanicDef* d = AtlasMechanicById(kv.first);
 			if (!d) continue;
@@ -2878,7 +2881,8 @@ private:
 			}
 		}
 		if (mechDb.Unassigned() > 0)
-			PobUi::Hint((u8"另有 " + std::to_string(mechDb.Unassigned()) + u8" 個節點不屬於任何機制叢集").c_str());
+			PobUi::Hint((u8"另有 " + std::to_string(mechDb.Unassigned()) + u8" 個節點不屬於任何機制叢集").c_str(),
+			            ImGui::GetContentRegionAvail().x);
 		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
 	}
 
