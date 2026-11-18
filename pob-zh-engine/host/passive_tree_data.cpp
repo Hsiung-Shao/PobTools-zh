@@ -150,6 +150,7 @@ bool PassiveTreeData::Load(const std::wstring& exeDir, std::string* err)
 			for (const auto& jc : ja.value("classes", ordered_json::array())) {
 				AscClass c;
 				c.id = jc.value("id", std::string());
+				c.name = jc.value("name", c.id);
 				c.x = jc.value("x", 0.0f); c.y = jc.value("y", 0.0f);
 				if (jc.contains("bg")) parse_sprite(jc["bg"], c.bg);
 				ascClasses.push_back(std::move(c));
@@ -224,11 +225,14 @@ int PassiveTreeData::IndexOfId(int id) const
 	return -1;
 }
 
-int PassiveTreeData::AscIndexOfId(int id) const
+std::string PtAscIdOfName(const PassiveTreeData& t, const std::string& name)
 {
-	for (int i = 0; i < (int)ascNodes.size(); i++)
-		if (ascNodes[i].id == id) return i;
-	return -1;
+	if (name.empty()) return {};
+	for (const PassiveTreeData::AscClass& c : t.ascClasses) // display name first: "Warden" is also a bloodline's id
+		if (c.name == name) return c.id;
+	for (const PassiveTreeData::AscClass& c : t.ascClasses)
+		if (c.id == name) return c.id;
+	return {};
 }
 
 // PoB PassiveSpec:GetShortestPathToClassStart: BFS from the socket through allocated nodes only, ending on
@@ -598,6 +602,11 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 	for (const PassiveTreeData::AscClass& c : d.ascClasses) if (c.id == "Necromancer") necro = &c;
 	check(d.ascClasses.size() == 21 && necro != nullptr, "A1 出貨樹有 21 個昇華(含 Necromancer)",
 	      std::to_string(d.ascClasses.size()) + " 個");
+	// A7 POB 流派檔存昇華顯示名:Warden 要對到 id 為 Raider 的盤
+	check(PtAscIdOfName(d, "Warden") == "Raider" && PtAscIdOfName(d, "Necromancer") == "Necromancer" &&
+	          PtAscIdOfName(d, "").empty(),
+	      "A7 流派昇華名 Warden 對到 Raider 盤、Necromancer 照舊、空名不對任何盤",
+	      PtAscIdOfName(d, "Warden") + " / " + PtAscIdOfName(d, "Necromancer"));
 	// A2 Necromancer 位置 (1500,-9850)
 	check(necro && std::fabs(necro->x - 1500.0f) <= 1.0f && std::fabs(necro->y + 9850.0f) <= 1.0f,
 	      "A2 Necromancer 昇華盤位置為 (1500,-9850)",

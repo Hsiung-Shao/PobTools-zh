@@ -1891,7 +1891,7 @@ public:
 		tin.protectedMark = (canProtect() && !ptProtected.empty()) ? &ptProtected : nullptr;
 		tin.emphasize = emphNode;
 		tin.showAsc = treeAbyss;
-		tin.ascName = ascClass();
+		tin.ascName = PtAscIdOfName(ptData, ascClass());
 		tin.ascLit = buildOk_ ? &build_.nodes : nullptr;   // the view only looks up ascendancy ids in it
 		tin.ascHit = &ascHit_;
 		const bool pickable = treeRadius;
@@ -2063,7 +2063,7 @@ public:
 		const bool hit = ascHit_.count(n.id) != 0;
 		const std::string& nm = n.nameZh.empty() ? n.name : n.nameZh;
 		ImGui::TextColored(PobUi::TokV4(hit ? Tok::TreeHit : PobUi::TreeKindColor(kindOf(n.kind))), "%s", nm.c_str());
-		if (hit) PobUi::Hint(u8"（這個種子會改掉這個昇華天賦，詳見右側種子明細）");
+		if (hit) PobUi::Hint(u8"（這個種子會改掉這個昇華天賦，詳見右側「昇華天賦選擇」）");
 		const std::vector<std::string> lines = PtDisplayStats(n);
 		if (!lines.empty()) ImGui::Separator();
 		for (const std::string& s : lines) ImGui::TextColored(PobUi::TokV4(Tok::Text), "%s", s.c_str());
@@ -2132,13 +2132,11 @@ public:
 					abyssMods[idx] = it->second;
 				}
 				cand.swap(kept);
-				// the Ascendancy passive the seed takes: same scorer the seed detail panel reads
-				std::vector<TJAbyssScored> det;
-				TJSeedHit hit;
-				if (abyssBlocker().empty())
-					TJAbyssScoreSeed(*ds, *blob, *abyssLut, makeQuery(), ptData.nodes[selSocket].id, detailSeed, &ptKind, hit, &det);
-				for (const TJAbyssScored& d : det)
-					if (d.ascendancy && d.t.ok) ascHit_.insert(d.nodeId);
+				// every Ascendancy passive the seed takes: the same read as the 昇華天賦選擇 section (no query, so
+				// protection / required picks never hide one)
+				std::map<std::string, std::vector<int>> picks;
+				if (TJAbyssReadAscendancies(*blob, *abyssLut, detailSeed, picks))
+					for (const auto& kv : picks) ascHit_.insert(kv.second.begin(), kv.second.end());
 			}
 		}
 
@@ -2886,9 +2884,7 @@ public:
 						}
 					}
 					ImGui::EndChild();
-					// PobTools' tree leaves Ascendancy nodes out; what the notable
-					// becomes is the part being chosen, so that is what is shown.
-					PobUi::Hint(u8"本工具的樹資料不含昇華節點，只顯示它會變成什麼。", innerW);
+					PobUi::Hint(u8"被改掉的昇華天賦在天賦樹的昇華盤上以金圈標出。", innerW);
 				}
 			}
 		}

@@ -92,12 +92,11 @@ public:
 
 	// Ascendancy discs, drawn where the game puts them (outside the main tree). Kept apart from `nodes` so
 	// socket/path/LUT code never sees them. Empty for trees written before this field.
-	struct AscClass { std::string id; float x = 0, y = 0; PtSprite bg; };
+	struct AscClass { std::string id, name; float x = 0, y = 0; PtSprite bg; }; // name: display name (POB builds store it)
 	std::vector<AscClass> ascClasses;
 	std::vector<PtNode> ascNodes;        // kind: normal / notable / kPtAscStart; adj = ascNodes indices
 	std::vector<PtEdge> ascEdges;        // a/b index ascNodes
 	PtFrame ascFrames[2];                // small / large: off + on (path unused)
-	int AscIndexOfId(int id) const;
 
 private:
 	std::string treeVersion_;            // e.g. "3_28" (sheet subfolder)
@@ -116,6 +115,10 @@ std::set<int> PtShortestPathToClassStart(const PassiveTreeData& t, const std::se
 // `maxDist`. Nodes farther away are absent.
 std::map<int, int> PtDistanceFromAllocated(const PassiveTreeData& t, const std::set<int>& allocIds,
                                            int maxDist);
+
+// The disc id for an Ascendancy as a PoB build names it (ascendClassName is the display name: Warden -> Raider).
+// Returns "" when no disc matches.
+std::string PtAscIdOfName(const PassiveTreeData& t, const std::string& name);
 
 // Headless check driven by "pob-zh.exe --passive-tree-selftest".
 int RunPassiveTreeSelfTest(const std::wstring& exeDir);

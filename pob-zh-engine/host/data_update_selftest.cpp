@@ -441,11 +441,11 @@ const Flavor& pt_flavor()
 		x.newSha = "";
 		x.tagsPath = "/repos/grindinggear/skilltree-export/tags?per_page=100";
 		x.rawPrefix = "/grindinggear/skilltree-export/";
-		x.dataGood = pt_data_good();
+		x.dataGood = pt_data_asc(); // with an ascendancy: the updater must fetch its sheet too
 		x.treeFile = L"Data\\passive_tree_poe1.json";
 		x.guard = { L"Data\\passive_tree_poe1.json", L"Data\\passive_update.json" };
 		x.absent = { L"Data\\tree\\a-3.png", L"Data\\tree\\b-3.png" };
-		x.neededAssets = { "a-3.png", "b-3.png", "f-3.png", "g-3.png" };
+		x.neededAssets = { "a-3.png", "asc-3.png", "b-3.png", "f-3.png", "g-3.png" };
 		x.breakKey = "classes";
 		x.seed = seed_pt;
 		return x;
@@ -913,6 +913,19 @@ void test_pt_ascendancy(Rep& R)
 	R.chk_id("A6d", base["nodes"].size() == asc["nodes"].size() && asc["nodes"].size() == 2,
 	         u8"主樹 nodes 數與不含昇華時相同（昇華節點不進主樹）",
 	         std::to_string(base["nodes"].size()) + " vs " + std::to_string(asc["nodes"].size()));
+	const ordered_json& cls = hasAsc ? asc["asc"]["classes"] : ordered_json();
+	R.chk_id("A6e", cls.is_array() && cls.size() == 1 && cls[0].value("name", "") == "Ascendant",
+	         u8"asc.classes 帶昇華顯示名 name（POB 流派檔存的是 name）", cls.dump());
+	// 昇華框 sprite 缺失：昇華區段整段捨棄，主樹照常匯入，也不帶出昇華圖集
+	ordered_json broken = ordered_json::parse(pt_data_asc());
+	broken["sprites"]["ascendancy"]["0.3835"]["coords"].erase("AscendancyFrameLargeAllocated");
+	std::string e2;
+	const ordered_json noAsc = import_tree(broken.dump(), &e2);
+	bool ascSheet = false;
+	if (noAsc.is_object())
+		for (const auto& sh : noAsc["sheets"]) ascSheet = ascSheet || sh.value("file", "") == "asc-3.png";
+	R.chk_id("A6f", noAsc.is_object() && !noAsc.contains("asc") && !ascSheet && noAsc["nodes"].size() == 2,
+	         u8"昇華 sprite 缺失時只捨棄昇華區段，主樹仍匯入成功", e2);
 }
 
 int run(const std::wstring& exeDir, const Flavor& fl, const wchar_t* reportName)
