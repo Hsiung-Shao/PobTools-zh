@@ -2398,8 +2398,13 @@ public:
 		}
 		unsigned h = 2166136261u;
 		for (size_t i = 0; i < ptSelected.size(); i++) h = (h ^ (ptSelected[i] ? 1u : 0u) ^ (unsigned)i) * 16777619u;
-		return s + std::to_string(h) + "|" + std::to_string(abyssVer_) + "|" + std::to_string(reqAscSel_) + "|" +
-		       std::to_string(protectAsc_.size()) + "|" + std::to_string(minTotalWeight) + std::to_string(requireAll);
+		s += std::to_string(h);
+		// abyss-only inputs: keep the eternal (1-6) key exactly as it was
+		if (TJIsAbyss(jewelType)) {
+			s += "|" + std::to_string(abyssVer_) + "|" + std::to_string(reqAscSel_) + "|";
+			for (int id : protectAsc_) s += std::to_string(id) + ",";
+		}
+		return s;
 	}
 
 	SeedSummary buildSummary(int seed)
@@ -3268,7 +3273,7 @@ private:
 				const nlohmann::json d = nlohmann::json::parse(content);
 				for (const auto& [k, v] : d.at("entries").items())
 					if (v.is_string()) passiveZh_[atoi(k.c_str())] = v.get<std::string>();
-			} catch (...) {}
+			} catch (...) {}   // names are cosmetic: a bad file just shows ids
 		}
 	}
 

@@ -164,8 +164,8 @@ std::vector<int> TJAbyssAscendancyTargets(const std::string& blob, TJAbyssLUT& l
                                           const std::string& ascClass);
 
 // scope -> does this passive count? Shared so the UI marks exactly what the
-// search counted. scope 1 keeps notables AND keystones (both are "the big ones"
-// to anyone reading the tree); scope 2 keeps only small passives.
+// search counted. scope 1 keeps notables (keystones never score in Abyss mode,
+// per PoB scoreNode); scope 2 keeps only small passives.
 bool TJAbyssInScope(int scope, int nodeId, const TJDataset& ds,
                     const std::map<int, int>* nodeKind);
 

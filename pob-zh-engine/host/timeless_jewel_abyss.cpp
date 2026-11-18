@@ -398,10 +398,28 @@ struct AbyssScoreCtx {
 	TJWantMatcher matcher;
 	std::vector<int> allowed;   // sorted
 	std::vector<int> protect;   // sorted
-	explicit AbyssScoreCtx(const TJSearchQuery& q) : matcher(q.wants), allowed(q.allowedIds), protect(q.protectAscIds)
+	// q.ascClass's pick per seed index, walked once (per-seed TJAbyssReadAscendancies re-skips si records: O(n^2))
+	std::vector<std::vector<int> > ascPicks;
+	bool ascOk = true;
+	AbyssScoreCtx(const TJSearchQuery& q, const std::string& blob, const TJAbyssLUT& lut)
+		: matcher(q.wants), allowed(q.allowedIds), protect(q.protectAscIds)
 	{
 		std::sort(allowed.begin(), allowed.end());
 		std::sort(protect.begin(), protect.end());
+		if (!lut.ok || lut.fmt != "ABYN" || q.ascClass.empty()) return;
+		std::map<std::string, size_t>::const_iterator it = lut.ascOffsets.find(q.ascClass);
+		if (it == lut.ascOffsets.end()) return;   // class absent: no pick (as before)
+		size_t o = it->second;
+		ascPicks.resize(lut.seedCount > 0 ? lut.seedCount : 0);
+		for (std::vector<int>& ids : ascPicks) {
+			int selected = 0;
+			if (!rd_u8(blob, o, selected)) { ascOk = false; return; }
+			for (int k = 0; k < selected; k++) {
+				int nid = 0;
+				if (!rd_u16(blob, o, nid)) { ascOk = false; return; }
+				ids.push_back(nid);
+			}
+		}
 	}
 };
 
@@ -425,11 +443,11 @@ bool abyss_score_seed(const AbyssScoreCtx& ctx, const TJDataset& ds, const std::
 	// Zorath also takes one passive of the build's Ascendancy (PoB readAbyssJewelLUT with curAscendClassName).
 	std::set<int> ascIds;
 	if (byNode && !q.ascClass.empty()) {
-		std::map<std::string, std::vector<int> > asc;
-		if (!TJAbyssReadAscendancies(blob, lut, seed, asc)) return false;
-		std::map<std::string, std::vector<int> >::const_iterator it = asc.find(q.ascClass);
-		if (it != asc.end())
-			for (int id : it->second) {
+		if (!ctx.ascOk) return false;
+		const int si = TJAbyssSeedIndex(lut, seed);
+		if (si < 0) return false;
+		if (si < (int)ctx.ascPicks.size())
+			for (int id : ctx.ascPicks[si]) {
 				// PoB: a protected Ascendancy passive being conquered invalidates the seed
 				if (std::binary_search(ctx.protect.begin(), ctx.protect.end(), id)) return false;
 				TJAbyssMod m;
@@ -503,7 +521,7 @@ bool TJAbyssScoreSeed(const TJDataset& ds, const std::string& blob, TJAbyssLUT& 
                       std::vector<TJAbyssScored>* detail)
 {
 	if (!lut.ok) return false;
-	const AbyssScoreCtx ctx(q);
+	const AbyssScoreCtx ctx(q, blob, lut);
 	std::map<int, TJAbyssMod> affected;
 	return abyss_score_seed(ctx, ds, blob, lut, q, socketId, seed, nodeKind, affected, hit, detail);
 }
@@ -542,7 +560,7 @@ std::vector<TJSeedHit> TJAbyssSearch(const TJDataset& ds, const std::string& blo
 		return hits;
 	}
 
-	const AbyssScoreCtx ctx(q);
+	const AbyssScoreCtx ctx(q, blob, lut);
 	std::map<int, TJAbyssMod> affected;
 	TJSeedHit h;
 	for (int seed = lut.seedMin; seed <= lut.seedMax; seed += lut.seedInc) {
@@ -945,6 +963,10 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 			      "without them it drops every one — which is why the map is passed in",
 			      std::to_string(keystonesBigWithoutTree) + "/" + std::to_string(keystones));
 			check(TJAbyssInScope(0, 999999, ds, &nodeKind), "scope 0 keeps everything");
+			// 附加傷害拆成兩行「X 至 0」「0 至 Y」,第二行的數值是 Y(POB roll2),不是開頭的 0
+			check(TJStatValue("Adds 0 to 26 Lightning Damage to Attacks") == 26.0 &&
+			      TJStatValue("Adds 2 to 0 Lightning Damage to Attacks") == 2.0,
+			      "「0 至 N」行的數值取 N", std::to_string(TJStatValue("Adds 0 to 26 Lightning Damage to Attacks")));
 		}
 
 		// A5 seed addressing rejects what it cannot answer instead of guessing.

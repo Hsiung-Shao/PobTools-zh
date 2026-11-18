@@ -658,8 +658,17 @@ std::string TJNormalizeStat(const std::string& s)
 
 double TJStatValue(const std::string& s)
 {
-	for (size_t i = 0; i < s.size(); i++)
-		if (isdigit((unsigned char)s[i])) return strtod(s.c_str() + i, nullptr);
+	// First non-zero number: Abyss added damage splits into "Adds X to 0" / "Adds 0 to Y", and the
+	// second line's roll is Y. No eternal line starts with a bare 0, so 1-6 are unaffected.
+	for (size_t i = 0; i < s.size(); i++) {
+		if (!isdigit((unsigned char)s[i])) continue;
+		char* end = nullptr;
+		const double v = strtod(s.c_str() + i, &end);
+		if (v != 0.0) return v;
+		i = (size_t)(end - s.c_str());
+		if (i == 0 || i > s.size()) break;
+		i--;
+	}
 	return 0.0;
 }
 
