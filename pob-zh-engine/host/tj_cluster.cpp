@@ -10,6 +10,7 @@
 #include <cmath>
 #include <map>
 #include <memory>
+#include <mutex>
 
 using json = nlohmann::json;
 
@@ -144,17 +145,19 @@ bool ParseClusterGraph(const json& treeState, const json& treeAssets, const Pass
 }
 
 bool TJClusterFetchSync(const std::wstring& exeDir, const std::wstring& pobDir, const std::wstring& buildPath,
-                        json& treeState, json& treeAssets, std::string* err)
+                        json& treeState, json& treeAssets, std::string* err, const std::string& assetsTreeVersion)
 {
 	std::string e;
 	auto fail = [&](const std::string& m) { if (err) *err = m; return false; };
 	if (pobDir.empty() || !PobSandbox::IsDir(pobDir)) return fail("Path of Building folder not found");
 	if (GetFileAttributesW(buildPath.c_str()) == INVALID_FILE_ATTRIBUTES) return fail("build file not found");
 
-	// one folder per fetch: the UI may start a new one before the last child is gone
-	static std::atomic<int> seq{ 0 };
+	// one sandbox per process, reused (no Builds copy: the build is read from its own path); fetches take turns
+	static std::mutex mu;
+	std::lock_guard<std::mutex> lock(mu);
+	static std::wstring lastPob;
 	const std::wstring root = exeDir + L"PobTools\\tj_sandbox";
-	const std::wstring own = root + L"\\" + std::to_wstring(GetCurrentProcessId()) + L"_" + std::to_wstring(++seq);
+	const std::wstring own = root + L"\\" + std::to_wstring(GetCurrentProcessId());
 	PobSandbox::MkdirP(root);
 	// leftovers of processes that are gone (folder name starts with their pid)
 	{
@@ -168,7 +171,8 @@ bool TJClusterFetchSync(const std::wstring& exeDir, const std::wstring& pobDir, 
 				const DWORD pid = (DWORD)_wtoi(n.c_str());
 				if (pid == GetCurrentProcessId()) continue;
 				HANDLE p = pid ? OpenProcess(SYNCHRONIZE, FALSE, pid) : nullptr;
-				const bool alive = p && WaitForSingleObject(p, 0) == WAIT_TIMEOUT;
+				// access denied = alive (an elevated PobTools)
+				const bool alive = p ? WaitForSingleObject(p, 0) == WAIT_TIMEOUT : (pid && GetLastError() == ERROR_ACCESS_DENIED);
 				if (p) CloseHandle(p);
 				if (!alive) stale.push_back(n);
 			} while (FindNextFileW(h, &fd));
@@ -177,8 +181,9 @@ bool TJClusterFetchSync(const std::wstring& exeDir, const std::wstring& pobDir, 
 		}
 	}
 
+	const bool rebuild = lastPob != pobDir; // first fetch of this process, or another POB folder
 	std::unique_ptr<HeadlessProc::Child> child;
-	bool ok = HeadlessProc::BootSandboxed(exeDir, pobDir, own + L"\\PathOfBuildingCommunity", true, L"", child, e);
+	bool ok = HeadlessProc::BootSandboxed(exeDir, pobDir, own + L"\\PathOfBuildingCommunity", rebuild, L"", child, e, false);
 	if (ok) {
 		std::string path;
 		{
@@ -186,13 +191,16 @@ bool TJClusterFetchSync(const std::wstring& exeDir, const std::wstring& pobDir, 
 			path.resize((size_t)n);
 			WideCharToMultiByte(CP_UTF8, 0, buildPath.c_str(), (int)buildPath.size(), path.data(), n, nullptr, nullptr);
 		}
+		// sprite rects of the tree whose sheets we draw with (the build may be on another tree version)
+		const json assetsArgs = assetsTreeVersion.empty() ? json::object() : json{ { "version", assetsTreeVersion } };
 		json r;
 		if (!child->Call("load_build_file", json{ { "path", path } }, r, 120000)) { ok = false; e = "load_build_file: " + r.dump().substr(0, 300); }
 		else if (!child->Call("get_tree_state", json::object(), treeState, 60000)) { ok = false; e = "get_tree_state: " + treeState.dump().substr(0, 300); }
-		else if (!child->Call("tree_assets", json::object(), treeAssets, 60000)) { ok = false; e = "tree_assets: " + treeAssets.dump().substr(0, 300); }
+		else if (!child->Call("tree_assets", assetsArgs, treeAssets, 60000)) { ok = false; e = "tree_assets: " + treeAssets.dump().substr(0, 300); }
 	}
 	if (child) child->Stop(1000);
 	child.reset();
-	PobSandbox::Rmtree(own);
+	if (ok) lastPob = pobDir;
+	else { lastPob.clear(); PobSandbox::Rmtree(own); } // next try starts from a fresh sandbox
 	return ok ? true : fail(e);
 }

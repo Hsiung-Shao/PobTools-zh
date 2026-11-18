@@ -314,7 +314,7 @@ void Child::SetExitSink(std::function<void()> sink)
 }
 
 bool BootSandboxed(const std::wstring& exeDir, const std::wstring& pobDirIn, const std::wstring& sandboxDir, bool rebuild,
-                   const std::wstring& bridgeOverride, std::unique_ptr<Child>& child, std::string& err)
+                   const std::wstring& bridgeOverride, std::unique_ptr<Child>& child, std::string& err, bool withBuilds)
 {
 	using namespace PobSandbox;
 	// FindPoe1Dir ends in a backslash; junctions built from "dir\\name" point nowhere
@@ -325,10 +325,10 @@ bool BootSandboxed(const std::wstring& exeDir, const std::wstring& pobDirIn, con
 		Rmtree(sandboxDir);
 		MkdirP(sandboxDir);
 		CopyStats st;
-		LinkTree(pobDir, sandboxDir, st);
+		LinkTree(pobDir, sandboxDir, st, withBuilds);
 		// An installed POB (installed.cfg, left out of the sandbox) keeps its
 		// builds under Documents\Path of Building\Builds: bring those along.
-		if (GetFileAttributesW((pobDir + L"\\installed.cfg").c_str()) != INVALID_FILE_ATTRIBUTES) {
+		if (withBuilds && GetFileAttributesW((pobDir + L"\\installed.cfg").c_str()) != INVALID_FILE_ATTRIBUTES) {
 			PWSTR docs = nullptr;
 			if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &docs))) {
 				const std::wstring userBuilds = std::wstring(docs) + L"\\Path of Building\\Builds";

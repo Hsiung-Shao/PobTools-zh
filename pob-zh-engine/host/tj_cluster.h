@@ -44,9 +44,10 @@ bool ParseClusterGraph(const nlohmann::json& treeState, const nlohmann::json& tr
                        TJClusterGraph& out, std::string* err);
 
 // Boots a headless POB on a sandbox of pobDir (the MCP server's sandbox rules), loads buildPath, reads
-// get_tree_state + tree_assets and stops the child. Blocking (seconds): call it off the UI thread.
+// get_tree_state + tree_assets (sprites of assetsTreeVersion when given, else the build's tree) and stops the child. Blocking (seconds): call it off the UI thread.
 bool TJClusterFetchSync(const std::wstring& exeDir, const std::wstring& pobDir, const std::wstring& buildPath,
-                        nlohmann::json& treeState, nlohmann::json& treeAssets, std::string* err);
+                        nlohmann::json& treeState, nlohmann::json& treeAssets, std::string* err,
+                        const std::string& assetsTreeVersion = {});
 
 // --tj-cluster-selftest [pobDir]: report at <exeDir>tj_cluster_selftest.txt; returns the failed-check count.
 int RunTJClusterSelfTest(const std::wstring& exeDir, const std::wstring& pobDirArg);

@@ -1895,6 +1895,7 @@ public:
 		tin.ascName = PtAscIdOfName(ptData, ascClass());
 		tin.ascLit = buildOk_ ? &build_.nodes : nullptr;   // the view only looks up ascendancy ids in it
 		tin.ascHit = &ascHit_;
+		clusterStatus_.clear();
 		tin.cluster = treeAbyss ? clusterGraph() : nullptr;
 		const bool pickable = treeRadius;
 		tin.overlay = [this, pickable](ImDrawList* dl, ImVec2 mn, ImVec2 mx) { drawLegend(dl, mn, mx, pickable); };
@@ -2087,23 +2088,27 @@ public:
 	};
 	const TJClusterGraph* clusterGraph()
 	{
-		clusterStatus_.clear();
 		if (!buildOk_ || buildSel_ < 0 || buildSel_ >= (int)buildPaths_.size()) return nullptr;
 		const std::wstring path = buildPaths_[buildSel_];
 		std::wstring key = path;
 		WIN32_FILE_ATTRIBUTE_DATA fa{};
 		if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
 			key += L"|" + std::to_wstring(((unsigned long long)fa.ftLastWriteTime.dwHighDateTime << 32) | fa.ftLastWriteTime.dwLowDateTime);
-		std::shared_ptr<ClusterJob>& job = clusterJobs_[key];
-		if (!job) {
-			job = std::make_shared<ClusterJob>();
-			std::thread([j = job, exe = exeDir, pob = FindPoe1Dir(exeDir), path]() {
+		auto found = clusterJobs_.find(key);
+		if (found == clusterJobs_.end()) {
+			// one POB at a time: while another build is loading, the one now selected waits its turn
+			if (clusterRunning_ && !clusterRunning_->done) { clusterStatus_ = u8"星團珠寶展開載入中…"; return nullptr; }
+			auto job = std::make_shared<ClusterJob>();
+			found = clusterJobs_.emplace(key, job).first;
+			clusterRunning_ = job;
+			std::thread([j = job, exe = exeDir, pob = FindPoe1Dir(exeDir), path, tv = ptData.TreeVersion()]() {
 				std::string e;
-				j->ok = TJClusterFetchSync(exe, pob, path, j->state, j->assets, &e);
+				j->ok = TJClusterFetchSync(exe, pob, path, j->state, j->assets, &e, tv);
 				j->err = e;
 				j->done = true;
 			}).detach();
 		}
+		const std::shared_ptr<ClusterJob>& job = found->second;
 		if (!job->done) { clusterStatus_ = u8"星團珠寶展開載入中…"; return nullptr; }
 		if (!job->ok) {
 			clusterStatus_ = u8"星團珠寶無法展開：" + job->err;
@@ -3341,6 +3346,9 @@ private:
 	// ---- Abyss mode helpers ----
 	void refreshBuilds()
 	{
+		// a failed star-cluster fetch is retried on refresh
+		for (auto it = clusterJobs_.begin(); it != clusterJobs_.end();)
+			it = it->second->done && !it->second->ok ? clusterJobs_.erase(it) : std::next(it);
 		const std::wstring keep = buildSel_ >= 0 && buildSel_ < (int)buildPaths_.size() ? buildPaths_[buildSel_]
 		                          : widen(tjUi.build);
 		buildPaths_.clear(); buildNames_.clear();
@@ -3656,6 +3664,7 @@ private:
 	// ---- Abyss mode: the POB build the allocation comes from (PoB 2.68 searchSingleSocket) ----
 	std::vector<std::wstring> buildPaths_;
 	std::map<std::wstring, std::shared_ptr<ClusterJob>> clusterJobs_; // build path|mtime -> fetch (kept: switching back is instant)
+	std::shared_ptr<ClusterJob> clusterRunning_;                       // the fetch in flight (at most one)
 	TJClusterGraph clusterGraph_;
 	std::wstring clusterParsedKey_;
 	std::string clusterParseErr_, clusterStatus_;

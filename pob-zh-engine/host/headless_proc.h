@@ -86,7 +86,7 @@ private:
 // gate, set_translate and mcp_setup (POB must stop caching timeless-jewel tables into the user's folder; a POB that
 // cannot is refused). On success *child is the running engine; on failure it is stopped and err says why.
 bool BootSandboxed(const std::wstring& exeDir, const std::wstring& pobDir, const std::wstring& sandboxDir, bool rebuild,
-                   const std::wstring& bridgeOverride, std::unique_ptr<Child>& child, std::string& err);
+                   const std::wstring& bridgeOverride, std::unique_ptr<Child>& child, std::string& err, bool withBuilds = true);
 
 } // namespace HeadlessProc
 
