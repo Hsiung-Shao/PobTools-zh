@@ -61,6 +61,7 @@
 #include "timeless_jewel_abyss.h"
 #include "timeless_jewel_ui.h"
 #include "passive_tree_data.h"
+#include "tj_cluster.h"
 #include "pob_build_spec.h"
 #include "passive_import.h"
 #include "passive_tree_update.h"
@@ -432,6 +433,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// Headless passive-tree data check (node/socket/radius counts; report file).
 	if (arg1 == L"--pob-build-selftest") { // build-file parsing for the Abyss jewel mode
 		return RunPobBuildSelfTest(dir);
+	}
+	if (arg1 == L"--tj-cluster-selftest") {
+		return RunTJClusterSelfTest(dir, arg2);
 	}
 	if (arg1 == L"--passive-tree-selftest") {
 		return RunPassiveTreeSelfTest(dir);

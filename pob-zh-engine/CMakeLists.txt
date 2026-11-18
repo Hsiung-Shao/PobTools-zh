@@ -508,6 +508,8 @@ if (WIN32)
         host/timeless_jewel_abyss.cpp
         host/timeless_jewel_ui.cpp
         host/passive_tree_data.cpp
+        host/tj_cluster.cpp
+        host/tj_cluster_selftest.cpp
         host/passive_tree_view.cpp
         host/passive_import.cpp
         host/pob_build_spec.cpp

@@ -12,6 +12,7 @@
 #include "timeless_jewel.h"
 #include "error_log.h"
 #include "timeless_jewel_abyss.h"
+#include "tj_cluster.h"
 #include "ui_theme.h"
 #include "ui_widgets.h"
 #include "ui_icons.h"
@@ -1894,6 +1895,7 @@ public:
 		tin.ascName = PtAscIdOfName(ptData, ascClass());
 		tin.ascLit = buildOk_ ? &build_.nodes : nullptr;   // the view only looks up ascendancy ids in it
 		tin.ascHit = &ascHit_;
+		tin.cluster = treeAbyss ? clusterGraph() : nullptr;
 		const bool pickable = treeRadius;
 		tin.overlay = [this, pickable](ImDrawList* dl, ImVec2 mn, ImVec2 mx) { drawLegend(dl, mn, mx, pickable); };
 		// Test aid (POBTOOLS_TJ_STATE=protectclick): pin a notable under the canvas
@@ -1950,6 +1952,7 @@ public:
 			}
 		}
 		if (tout.hoveredNode >= 0) drawNodeTooltip(tout.hoveredNode);
+		else if (tout.hoveredCluster >= 0 && tin.cluster) drawClusterTooltip(tin.cluster->nodes[tout.hoveredCluster]);
 		else if (tout.hoveredAsc >= 0) drawAscTooltip(tout.hoveredAsc);
 		else if (testHoverNode_ >= 0) drawNodeTooltip(testHoverNode_); // POBTOOLS_TJ_STATE=keystone
 	}
@@ -1993,6 +1996,8 @@ public:
 		dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, clL);
 		x += f->CalcTextSizeA(px, FLT_MAX, 0, clL).x + gap;
 		if (pickable) dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, pickL);
+		if (!clusterStatus_.empty())
+			dl->AddText(f, px, ImVec2(p.x + padX, p.y - px - PobUi::D(6.0f)), Tok::TextMuted, clusterStatus_.c_str());
 	}
 
 	static PobUi::TreeKind kindOf(int ptKindV)
@@ -2051,6 +2056,72 @@ public:
 		ImGui::PopTextWrapPos();
 		ImGui::EndTooltip();
 		ImGui::PopStyleVar();
+	}
+
+	void drawClusterTooltip(const TJClusterNode& n)
+	{
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(std::floor(16 * scale), std::floor(12 * scale)));
+		ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(440 * scale, FLT_MAX));
+		ImGui::BeginTooltip();
+		ImGui::PushTextWrapPos(400 * scale);
+		const std::string& nm = n.nameZh.empty() ? n.name : n.nameZh;
+		ImGui::TextColored(PobUi::TokV4(PobUi::TreeKindColor(kindOf(n.kind))), "%s", nm.empty() ? "?" : nm.c_str());
+		PobUi::Hint(n.alloc ? u8"（星團珠寶天賦，流派已配點）" : u8"（星團珠寶天賦）");
+		if (!n.stats.empty()) ImGui::Separator();
+		for (size_t i = 0; i < n.stats.size(); i++) {
+			const std::string& s = (i < n.statsZh.size() && !n.statsZh[i].empty()) ? n.statsZh[i] : n.stats[i];
+			ImGui::TextColored(PobUi::TokV4(Tok::Text), "%s", s.c_str());
+		}
+		ImGui::PopTextWrapPos();
+		ImGui::EndTooltip();
+		ImGui::PopStyleVar();
+	}
+
+	// The build's cluster jewels as POB expands them: a one-shot headless POB per build file version, fetched off the
+	// UI thread (seconds) and parsed here against the current tree. nullptr while loading / on failure / none socketed.
+	struct ClusterJob {
+		std::atomic<bool> done{ false };
+		bool ok = false;
+		std::string err;
+		nlohmann::json state, assets;
+	};
+	const TJClusterGraph* clusterGraph()
+	{
+		clusterStatus_.clear();
+		if (!buildOk_ || buildSel_ < 0 || buildSel_ >= (int)buildPaths_.size()) return nullptr;
+		const std::wstring path = buildPaths_[buildSel_];
+		std::wstring key = path;
+		WIN32_FILE_ATTRIBUTE_DATA fa{};
+		if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
+			key += L"|" + std::to_wstring(((unsigned long long)fa.ftLastWriteTime.dwHighDateTime << 32) | fa.ftLastWriteTime.dwLowDateTime);
+		std::shared_ptr<ClusterJob>& job = clusterJobs_[key];
+		if (!job) {
+			job = std::make_shared<ClusterJob>();
+			std::thread([j = job, exe = exeDir, pob = FindPoe1Dir(exeDir), path]() {
+				std::string e;
+				j->ok = TJClusterFetchSync(exe, pob, path, j->state, j->assets, &e);
+				j->err = e;
+				j->done = true;
+			}).detach();
+		}
+		if (!job->done) { clusterStatus_ = u8"星團珠寶展開載入中…"; return nullptr; }
+		if (!job->ok) {
+			clusterStatus_ = u8"星團珠寶無法展開：" + job->err;
+			return nullptr;
+		}
+		const std::wstring parsedKey = key + L"|" + widen(ptData.Version());
+		if (clusterParsedKey_ != parsedKey) {
+			clusterParsedKey_ = parsedKey;
+			std::string e;
+			if (!ParseClusterGraph(job->state, job->assets, ptData, clusterGraph_, &e)) {
+				clusterGraph_ = {};
+				clusterParseErr_ = e;
+			} else {
+				clusterParseErr_.clear();
+			}
+		}
+		if (!clusterParseErr_.empty()) { clusterStatus_ = u8"星團珠寶無法展開：" + clusterParseErr_; return nullptr; }
+		return clusterGraph_.nodes.empty() ? nullptr : &clusterGraph_;
 	}
 
 	void drawAscTooltip(int ascIdx)
@@ -2136,7 +2207,9 @@ public:
 				// protection / required picks never hide one)
 				std::map<std::string, std::vector<int>> picks;
 				if (TJAbyssReadAscendancies(*blob, *abyssLut, detailSeed, picks))
-					for (const auto& kv : picks) ascHit_.insert(kv.second.begin(), kv.second.end());
+					for (const auto& kv : picks)
+						// the build's own Ascendancy only (all of them when no build Ascendancy is known); both are display names
+						if (ascClass().empty() || kv.first == ascClass()) ascHit_.insert(kv.second.begin(), kv.second.end());
 			}
 		}
 
@@ -3582,6 +3655,10 @@ private:
 
 	// ---- Abyss mode: the POB build the allocation comes from (PoB 2.68 searchSingleSocket) ----
 	std::vector<std::wstring> buildPaths_;
+	std::map<std::wstring, std::shared_ptr<ClusterJob>> clusterJobs_; // build path|mtime -> fetch (kept: switching back is instant)
+	TJClusterGraph clusterGraph_;
+	std::wstring clusterParsedKey_;
+	std::string clusterParseErr_, clusterStatus_;
 	std::vector<std::string> buildNames_;
 	int buildSel_ = -1;
 	PobBuildSpec build_;

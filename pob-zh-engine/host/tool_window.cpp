@@ -129,7 +129,8 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	std::wstring shotPath = ShotEnv(L"POBTOOLS_TOOL_SHOT");
 	const bool shotMode = !shotPath.empty();
 	const double shotSince = glfwGetTime();
-	const double kShotSettle = 3.0;   // icon downloads and the first layout passes
+	// icon downloads and the first layout passes; POBTOOLS_TOOL_SHOT_SETTLE=<seconds> for slower panels (background fetches)
+	const double kShotSettle = ShotEnv(L"POBTOOLS_TOOL_SHOT_SETTLE").empty() ? 3.0 : _wtof(ShotEnv(L"POBTOOLS_TOOL_SHOT_SETTLE").c_str());
 	auto showIfDue = [&](bool presented) {
 		if (firstShow.Due(presented, glfwGetTime())) {
 			glfwShowWindow(win);

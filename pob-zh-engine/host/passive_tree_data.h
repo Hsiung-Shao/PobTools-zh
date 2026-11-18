@@ -84,6 +84,7 @@ public:
 	PtFrame frames[3];                   // indexed by kind (normal/notable/keystone)
 	std::vector<PtDeco> masteries, groupbg;
 	float minX = 0, minY = 0, maxX = 0, maxY = 0;
+	float worldPerPx = 2.66f;               // world units per sprite-sheet pixel (art drawn outside the JSON)
 
 	// Class start nodes are not drawn (not in `nodes`); kept only so Zorath's path
 	// to the class start can be walked. Empty for trees written before this field.

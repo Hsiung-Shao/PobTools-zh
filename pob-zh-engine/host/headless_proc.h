@@ -11,6 +11,7 @@
 #include <json.hpp>
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -79,6 +80,13 @@ private:
 	struct Impl;
 	Impl* impl_;
 };
+
+// The MCP server's boot sequence, shared: (when rebuild or the folder is missing) a fresh sandbox of pobDir at
+// sandboxDir (junctions + copied builds + an UpdateCheck.lua that answers "none"), then the child, hello, the bridge
+// gate, set_translate and mcp_setup (POB must stop caching timeless-jewel tables into the user's folder; a POB that
+// cannot is refused). On success *child is the running engine; on failure it is stopped and err says why.
+bool BootSandboxed(const std::wstring& exeDir, const std::wstring& pobDir, const std::wstring& sandboxDir, bool rebuild,
+                   const std::wstring& bridgeOverride, std::unique_ptr<Child>& child, std::string& err);
 
 } // namespace HeadlessProc
 

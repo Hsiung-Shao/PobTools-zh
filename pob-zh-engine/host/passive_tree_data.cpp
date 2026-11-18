@@ -56,6 +56,7 @@ bool PassiveTreeData::Load(const std::wstring& exeDir, std::string* err)
 
 		version_ = doc.value("version", std::string());
 		treeVersion_ = doc.value("treeVersion", std::string());
+		worldPerPx = doc.value("worldPerPx", 2.66f);
 		const ordered_json& b = doc.at("bounds");
 		minX = b.value("minX", 0.0f); minY = b.value("minY", 0.0f);
 		maxX = b.value("maxX", 0.0f); maxY = b.value("maxY", 0.0f);

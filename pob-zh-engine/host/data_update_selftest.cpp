@@ -626,7 +626,7 @@ void verify_pt_installed(Ctx& c, Rep& R)
 	bool sheetsOk = true;
 	for (const std::string& a : c.fl.neededAssets)
 		if (slurp(d + L"Data\\tree\\" + widen(a)) != "ASSET:" + a) sheetsOk = false;
-	R.chk(0, sheetsOk, u8"4 張圖集都複製進 Data\\tree\\（內容與下載相同）");
+	R.chk(0, sheetsOk, u8"5 張圖集都複製進 Data\\tree\\（內容與下載相同）");
 	ordered_json rec = parse_file(d + L"Data\\passive_update.json");
 	R.chk(0, rec.is_object() && rec.value("lastCheckUtc", 0ll) > 0, u8"節流紀錄 passive_update.json 寫入檢查時間",
 	      slurp(d + L"Data\\passive_update.json"));

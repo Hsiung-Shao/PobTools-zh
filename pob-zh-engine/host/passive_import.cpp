@@ -614,6 +614,7 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 		const size_t sheetsBefore = sheets.baseNames.size();
 		const std::string errBefore = sheets.err;
 		const bool ascOk = [&]() -> bool {
+			try {
 			std::map<std::string, std::string> ascStart; // ascendancy id -> its start node key
 			std::set<std::string> official;
 			for (const auto& c : d["classes"])
@@ -744,8 +745,12 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 				outAsc["frames"] = std::move(fr);
 			}
 			return true;
+			} catch (...) {
+				return false;
+			}
 		}();
 		if (!ascOk) {
+			PobLog::Error("tree", "ascendancy discs dropped: the tree data's ascendancy section did not convert");
 			outAsc = nullptr;
 			for (size_t k = sheetsBefore; k < sheets.baseNames.size(); k++) sheets.byBase.erase(sheets.baseNames[k]);
 			sheets.baseNames.resize(sheetsBefore);
