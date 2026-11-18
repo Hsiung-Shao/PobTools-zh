@@ -20,6 +20,7 @@ namespace Tok = PobUi::Tok;
 static ImU32 WithAlpha(ImU32 c, unsigned a) { return (c & 0x00FFFFFFu) | ((ImU32)a << 24); }
 static const ImU32 kColEdge       = WithAlpha(Tok::TreeLink, 150);
 static const ImU32 kColEdgeInRad  = WithAlpha(Tok::TreeHit, 150);
+static const ImU32 kColEdgeLit    = WithAlpha(Tok::Text, 210);
 static const ImU32 kColHoverRing  = WithAlpha(Tok::Text, 110);
 static const ImU32 kColAffected   = Tok::TreeHit;                    // changed by the seed
 static const ImU32 kColReplaced   = Tok::TreeHit;                    // replaced: same hue, double ring
@@ -253,8 +254,10 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 		    (na.y > wmax.y + emargin && nb.y > wmax.y + emargin))
 			continue;
 		bool inRad = hiOf(e.a) && hiOf(e.b);
-		ImU32 col = inRad ? kColEdgeInRad : kColEdge;
-		float t = inRad ? thick * 1.2f : thick;
+		auto picked = [&](int i) { return in.selected && i < (int)in.selected->size() && (*in.selected)[i]; };
+		const bool lit = picked(e.a) && picked(e.b);   // allocated path, like the game's lit links
+		ImU32 col = inRad ? kColEdgeInRad : lit ? kColEdgeLit : kColEdge;
+		float t = (inRad || lit) ? thick * 1.4f : thick;
 		if (e.hasArc) {
 			ImVec2 c = worldToScreen(ImVec2(e.cx, e.cy));
 			int segs = std::clamp((int)(e.sweep * 16.0f) + 4, 6, 48);

@@ -1803,7 +1803,8 @@ public:
 			else {
 				const PtNode& sn = ptData.nodes[selSocket];
 				st = u8"插槽：" + (sn.nameZh.empty() ? sn.name : sn.nameZh);
-				if (detailSeed < 0) st += u8"｜選一個種子即可預覽轉換";
+				if (detailSeed < 0) st += (treeAbyss && !zorath && buildOk_) ? u8"｜亮起的是流派已配點；搜尋後點右側種子預覽轉換"
+				                                                            : u8"｜選一個種子即可預覽轉換";
 				// The circle is where we are looking for Zorath, not what the jewel
 				// hits; the 7-10 passives come from the jewel's own file and are not
 				// in a circle at all. Saying "radius" there would describe the wrong
@@ -1885,7 +1886,7 @@ public:
 		// start, shown in the "selected" style instead of a ring.
 		tin.radiusWorld = treeRadius ? 1800.0f : 0.0f;
 		tin.hi = &dispHi;
-		tin.selected = zorath ? (pathMask_.size() == ptData.nodes.size() ? &pathMask_ : nullptr)
+		tin.selected = treeAbyss ? (pathMask_.size() == ptData.nodes.size() ? &pathMask_ : nullptr)
 		                      : ptSelected.empty() ? nullptr : &ptSelected;
 		tin.protectedMark = (canProtect() && !ptProtected.empty()) ? &ptProtected : nullptr;
 		tin.emphasize = emphNode;
@@ -1958,6 +1959,10 @@ public:
 		const char* hitL = u8"種子改變的節點";
 		const char* sockL = u8"珠寶插槽";
 		const char* pickL = canProtect() ? u8"左鍵點節點可單獨查看｜右鍵大點＝保護不被替換" : u8"點一般節點可單獨查看";
+		if (TJIsAbyss(jewelType) && buildOk_) {   // the lit nodes/links are the build (Zorath: its path)
+			pickable = true;
+			pickL = TJIsZorath(jewelType) ? u8"亮起＝插槽到職業起點的已配點路徑" : u8"亮起＝流派已配點";
+		}
 		float w = padX * 2.0f + sw + PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, hitL).x + gap + sw +
 		          PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, sockL).x;
 		if (pickable) w += gap + f->CalcTextSizeA(px, FLT_MAX, 0, pickL).x;
@@ -2984,6 +2989,10 @@ public:
 			ImDrawList* dl = ImGui::GetWindowDrawList();
 			if (r.prio) DrawStar(dl, ImVec2(p.x + starW * 0.45f, p.y + lineH * 0.5f), lineH * 0.42f, Tok::TreeHit);
 			dl->AddText(ImVec2(p.x + starW, p.y), nc, nm.c_str());
+			if (t.replaced) {   // show what the seed took away, not just what it gives
+				const std::string was = u8"（原：" + (n.nameZh.empty() ? n.name : n.nameZh) + u8"）";
+				dl->AddText(ImVec2(p.x + starW + ImGui::CalcTextSize(nm.c_str()).x + PobUi::D(6.0f), p.y), Tok::TextMuted, was.c_str());
+			}
 			if (sel) { panToNode = r.idx; emphNode = r.idx; }
 			ImGui::Indent(PobUi::D(20.0f));
 			for (size_t i = 0; i < t.lines.size(); i++) {
@@ -3305,7 +3314,14 @@ private:
 					if (build_.nodes.count(id)) ascTargets_.push_back(id);
 			for (auto it = protectAsc_.begin(); it != protectAsc_.end();)
 				it = std::find(ascTargets_.begin(), ascTargets_.end(), *it) == ascTargets_.end() ? protectAsc_.erase(it) : ++it;
-		} else if (allocOnly_) {
+		} else {
+			// 7-10: light the build's allocation so the user sees where the jewel sits in it
+			for (int id : build_.nodes) {
+				const int idx = ptData.IndexOfId(id);
+				if (idx >= 0) pathMask_[idx] = 1;
+			}
+		}
+		if (!TJIsZorath(jewelType) && allocOnly_) {
 			for (const auto& kv : PtDistanceFromAllocated(ptData, build_.nodes, allocDist_)) allowedIds_.push_back(kv.first);
 			if (allowedIds_.empty()) allowedIds_.push_back(-1); // filter on, nothing qualifies
 		}
@@ -3539,7 +3555,7 @@ private:
 	std::string abyssKey_;
 	int abyssVer_ = 0;
 	std::set<int> zorathPath_;    // ids, socket and class start included
-	std::vector<char> pathMask_;  // node index -> on Zorath's path (tree highlight)
+	std::vector<char> pathMask_;  // node index -> lit on the tree: Zorath's path, or the build's allocation (7-10)
 	std::vector<int> allowedIds_; // 7-10 with allocOnly_; {-1} = nothing qualifies
 	std::vector<int> ascTargets_; // Zorath: the build's allocated Ascendancy passives the jewel can take
 	std::map<int, std::string> passiveZh_; // passives_by_id.json, for Ascendancy names
