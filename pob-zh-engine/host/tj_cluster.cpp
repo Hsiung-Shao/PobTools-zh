@@ -182,6 +182,8 @@ bool TJClusterFetchSync(const std::wstring& exeDir, const std::wstring& pobDir, 
 	}
 
 	const bool rebuild = lastPob != pobDir; // first fetch of this process, or another POB folder
+	// POB reopens the build named in its Settings.xml at start: drop the last fetch's so boot does not load it again
+	DeleteFileW((own + L"\\PathOfBuildingCommunity\\Settings.xml").c_str());
 	std::unique_ptr<HeadlessProc::Child> child;
 	bool ok = HeadlessProc::BootSandboxed(exeDir, pobDir, own + L"\\PathOfBuildingCommunity", rebuild, L"", child, e, false);
 	if (ok) {
@@ -196,7 +198,9 @@ bool TJClusterFetchSync(const std::wstring& exeDir, const std::wstring& pobDir, 
 		json r;
 		if (!child->Call("load_build_file", json{ { "path", path } }, r, 120000)) { ok = false; e = "load_build_file: " + r.dump().substr(0, 300); }
 		else if (!child->Call("get_tree_state", json::object(), treeState, 60000)) { ok = false; e = "get_tree_state: " + treeState.dump().substr(0, 300); }
-		else if (!child->Call("tree_assets", assetsArgs, treeAssets, 60000)) { ok = false; e = "tree_assets: " + treeAssets.dump().substr(0, 300); }
+		// POB without our tree version: fall back to the build's tree (icons may misplace, nodes still draw)
+		else if (!child->Call("tree_assets", assetsArgs, treeAssets, 60000) &&
+		         (assetsArgs.empty() || !child->Call("tree_assets", json::object(), treeAssets, 60000))) { ok = false; e = "tree_assets: " + treeAssets.dump().substr(0, 300); }
 	}
 	if (child) child->Stop(1000);
 	child.reset();

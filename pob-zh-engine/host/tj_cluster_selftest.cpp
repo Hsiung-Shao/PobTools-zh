@@ -283,6 +283,10 @@ int RunTJClusterSelfTest(const std::wstring& exeDir, const std::wstring& pobDirA
 				json ts2, ta2; std::string ferr2;
 				check(TJClusterFetchSync(exeDir, pobDir + L"\\", build, ts2, ta2, &ferr2) && ts2.contains("dynamicNodes"),
 				      "C7b POB 路徑結尾帶反斜線時照樣取得星團資料", ferr2);
+				// C7c 同一 POB 再抓一次(走重用沙盒),且 POB 沒有計算器的樹版本:節點照拿,不整次失敗
+				json ts3, ta3; std::string ferr3;
+				check(TJClusterFetchSync(exeDir, pobDir + L"\\", build, ts3, ta3, &ferr3, "9_99") && ts3.contains("dynamicNodes"),
+				      "C7c POB 缺計算器樹版本時照樣取得星團節點", ferr3);
 			}
 		}
 	}
