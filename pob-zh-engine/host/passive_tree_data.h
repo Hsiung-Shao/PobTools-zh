@@ -4,6 +4,8 @@
 // folder (PathOfBuildingCommunity/TreeData/<treeVersion>/); this file carries only geometry + normalized sprite uv.
 #pragma once
 
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -80,10 +82,28 @@ public:
 	std::vector<PtDeco> masteries, groupbg;
 	float minX = 0, minY = 0, maxX = 0, maxY = 0;
 
+	// Class start nodes are not drawn (not in `nodes`); kept only so Zorath's path
+	// to the class start can be walked. Empty for trees written before this field.
+	struct ClassStart { int classId = -1; int id = 0; std::vector<int> adj; }; // adj: node indices
+	std::vector<ClassStart> classStarts;
+
 private:
 	std::string treeVersion_;            // e.g. "3_28" (sheet subfolder)
 	std::string version_;
 };
+
+// Port of PoB PassiveSpec:GetShortestPathToClassStart: breadth-first through
+// ALLOCATED nodes only, from the socket to the start of `classId`. Returns the
+// GGG ids on the path, socket and class start included; empty when the socket
+// is not allocated, the class start is unknown, or no allocated path exists.
+std::set<int> PtShortestPathToClassStart(const PassiveTreeData& t, const std::set<int>& allocIds,
+                                         int socketId, int classId);
+
+// PoB's pathDist for the "Filter Nodes" option: id -> how many unallocated
+// nodes must be taken to reach it (allocated = 0), for every node within
+// `maxDist`. Nodes farther away are absent.
+std::map<int, int> PtDistanceFromAllocated(const PassiveTreeData& t, const std::set<int>& allocIds,
+                                           int maxDist);
 
 // Headless check driven by "pob-zh.exe --passive-tree-selftest".
 int RunPassiveTreeSelfTest(const std::wstring& exeDir);

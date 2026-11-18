@@ -7,6 +7,8 @@
 #include "passive_tree_data.h"
 #include "passive_tree_update.h"
 #include "passive_tree_view.h"
+#include "pob_build_spec.h"
+#include "pob_migrate.h" // PobBuildDir
 #include "timeless_jewel.h"
 #include "error_log.h"
 #include "timeless_jewel_abyss.h"
@@ -155,9 +157,13 @@ bool TjUiState::Load(const std::wstring& exeDir)
 		realm = doc.value("realm", 0);
 		platform = doc.value("platform", 0);
 		league = doc.value("league", std::string());
+		lastLegion = doc.value("lastLegion", 3);
+		lastAbyss = doc.value("lastAbyss", 8);
+		abyssMode = doc.value("abyssMode", false);
+		build = doc.value("build", std::string());
 		return true;
 	} catch (...) {
-		realm = 0; platform = 0; league.clear();
+		realm = 0; platform = 0; league.clear(); lastLegion = 3; lastAbyss = 8; abyssMode = false; build.clear();
 		return false;
 	}
 }
@@ -169,6 +175,10 @@ bool TjUiState::Save(const std::wstring& exeDir) const
 	doc["realm"] = realm;
 	doc["platform"] = platform;
 	if (!league.empty()) doc["league"] = league;
+	doc["lastLegion"] = lastLegion;
+	doc["lastAbyss"] = lastAbyss;
+	doc["abyssMode"] = abyssMode;
+	if (!build.empty()) doc["build"] = build;
 	std::string out = doc.dump();
 	HANDLE f = CreateFileW(tj_ui_path(exeDir).c_str(), GENERIC_WRITE, 0, nullptr,
 	                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -622,7 +632,10 @@ public:
 			tradeRealm = std::clamp(tjUi.realm, 0, kTradeRealmCount - 1);
 			tradePlatform = kTradeRealms[tradeRealm].consoles ? std::clamp(tjUi.platform, 0, 2) : 0;
 			if (!tjUi.league.empty()) { tradeLeague = tjUi.league; leagueUserSet = true; }
+			const int t = tjUi.abyssMode ? tjUi.lastAbyss : tjUi.lastLegion;
+			if (t >= 1 && t <= kMaxJewelType && TJIsAbyss(t) == tjUi.abyssMode) jewelType = t;
 		}
+		refreshBuilds();
 		leagues.SetHost(kTradeRealms[tradeRealm].hostW);
 
 		templates = TJStatTemplates(*ds, jewelType);
@@ -679,7 +692,11 @@ public:
 			templates = TJStatTemplates(*ds, jewelType);
 			templatesFor = jewelType;
 			wants.clear();          // previously-picked stats may not exist on this jewel
+			(TJIsAbyss(jewelType) ? tjUi.lastAbyss : tjUi.lastLegion) = jewelType;
+			tjUi.abyssMode = TJIsAbyss(jewelType);
+			saveTjUi();
 		}
+		updateAbyssDerived();
 
 		// conqueror (affects keystones + trade export)
 		const std::vector<TJConqueror>* conqs = conqListFor(jewelType);
@@ -820,8 +837,12 @@ public:
 		auto at = [&](float x, float h) { ImGui::SetCursorScreenPos(ImVec2(x, hp.y + std::floor((H - h) * 0.5f))); };
 
 		// what goes in each slot, measured before anything is drawn
+		// 永恆 (1-6) and 深淵 (7-11) search differently, so each mode lists only its own jewels
+		const bool abyssKind = TJIsAbyss(jewelType);
+		const int tLo = abyssKind ? 7 : 1, tHi = abyssKind ? kMaxJewelType : 6;
+		const char* kindLabels[2] = { u8"永恆珠寶", u8"深淵珠寶" };
 		std::vector<std::string> jewelLbl, jewelNote;
-		for (int t = 1; t <= kMaxJewelType; t++) { jewelLbl.push_back(JewelZhShort(t)); jewelNote.push_back(JewelEn(t)); }
+		for (int t = tLo; t <= tHi; t++) { jewelLbl.push_back(JewelZhShort(t)); jewelNote.push_back(JewelEn(t)); }
 		std::vector<const char*> jewelP, jewelN;
 		for (size_t i = 0; i < jewelLbl.size(); i++) { jewelP.push_back(jewelLbl[i].c_str()); jewelN.push_back(jewelNote[i].c_str()); }
 		std::vector<std::string> conqLbl, conqNote;
@@ -846,7 +867,7 @@ public:
 		const float conqW = std::floor(PobUi::D(190.0f));
 		const float pasteW = PobUi::ButtonWidth(pasteLbl, PobUi::BtnSize::Sm, PobIcon::Copy);
 		const float leftW = PobUi::IconWidth(PobIcon::Gem, iconPx) + (wf.icons ? PobUi::D(8.0f) : 0.0f) + headingW +
-		                    gap + pasteW + gap + jewelW + gap + conqW + gap + PobUi::SegmentedWidth(modeLabels, 2);
+		                    gap + pasteW + gap + PobUi::SegmentedWidth(kindLabels, 2) + gap + jewelW + gap + conqW + gap + PobUi::SegmentedWidth(modeLabels, 2);
 
 		// right: the tree's version and coverage, or the tree update in progress
 		const bool updBusy = ust.phase == PassiveUpdatePhase::Downloading ||
@@ -892,12 +913,25 @@ public:
 			PobUi::Tooltip(u8"在遊戲中對珠寶按 Ctrl+C，再按這裡：自動帶入珠寶、征服者與種子，並切到「查已知種子」。");
 		x += pasteW + gap;
 
-		// jewel
+		// kind, then the jewel within it; each kind comes back to its last jewel
 		at(x, H);
-		int jsel = jewelType - 1;
+		int ksel = abyssKind ? 1 : 0;
+		if (PobUi::Segmented("##kind", &ksel, kindLabels, 2) && ksel != (abyssKind ? 1 : 0)) {
+			jewelType = ksel ? tjUi.lastAbyss : tjUi.lastLegion;
+			if (TJIsAbyss(jewelType) != (ksel == 1)) jewelType = ksel ? 8 : 3;
+			conquerorSel = 0;
+			ensureBin(jewelType);
+		}
+		if (ImGui::IsItemHovered())
+			PobUi::Tooltip(u8"深淵珠寶的計算與查詢照 POB 2.68：讀你的 POB 流派配點，分數為權重 × 數值");
+		x += PobUi::SegmentedWidth(kindLabels, 2) + gap;
+
+		at(x, H);
+		int jsel = jewelType - tLo;
+		if (jsel < 0 || jsel >= (int)jewelP.size()) jsel = 0;
 		if (PobUi::Select("##jewel", &jsel, jewelP.data(), jewelN.data(), (int)jewelP.size(), jewelW) &&
-		    jsel + 1 != jewelType) {
-			jewelType = jsel + 1;
+		    jsel + tLo != jewelType) {
+			jewelType = jsel + tLo;
 			conquerorSel = 0;
 			ensureBin(jewelType);
 		}
@@ -1260,9 +1294,9 @@ public:
 	{
 		if (!TJIsAbyss(jewelType)) return;
 		const char* desc = TJIsZorath(jewelType)
-			? u8"目前可對照的實測樣本仍少，請以遊戲內實際結果為準。重奪惡意另外取決於你從插槽走到職業起點的已配點路徑，"
-			  u8"本工具沒有角色資料：請隨意點一個插槽，用它周邊的天賦判斷這顆種子。單一天賦會變成什麼、昇華天賦的選擇，這兩項是準確的。"
-			: u8"目前可對照的實測樣本仍少，結果無法像軍團珠寶那樣完整驗證，請以遊戲內實際結果為準。";
+			? u8"計算方式同原版POB。重奪惡意只改插槽到職業起點的已配點路徑，加上昇華的一個天賦；"
+			  u8"路徑取自下方選的流派，物品給的天賦（如希望之絲）不計入。"
+			: u8"計算方式同原版POB：分數為「權重×數值」，鑰石不計分。實測樣本仍少，請以遊戲內實際結果為準。";
 		PobUi::Banner("##abyss", PobUi::BannerTone::Warn, PobIcon::TriangleAlert, u8"深淵珠寶是 3.29 新增", desc,
 		              false, nullptr, false);
 		ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
@@ -1278,12 +1312,19 @@ public:
 			// to know which radius to walk, types 7-10 because the socket IS the key
 			// their file is indexed by, and Zorath because it is the place the user
 			// is asking us to look around.
-			return TJIsZorath(jewelType) ? u8"請先在天賦樹上點一個珠寶插槽（隨意一個即可，用來決定要看哪一帶的天賦）"
+			return TJIsZorath(jewelType) ? u8"請先在天賦樹上點一個珠寶插槽（要是流派中已配點的插槽）"
 			       : TJIsAbyss(jewelType) ? u8"請先在天賦樹上點一個珠寶插槽（深淵珠寶的結果由插槽決定，沒有半徑）"
 			                              : u8"請先在天賦樹上點一個珠寶插槽（搜尋只計算該插槽半徑內的節點）";
 		}
 		const PtNode& sn = ptData.nodes[selSocket];
 		std::string s = u8"插槽：" + (sn.nameZh.empty() ? sn.name : sn.nameZh);
+		if (TJIsAbyss(jewelType)) {
+			const std::string why = abyssBlocker();
+			if (!why.empty()) { *missing = true; return s + u8"｜" + why; }
+			if (TJIsZorath(jewelType)) s += u8"（路徑 " + std::to_string(zorathPath_.size()) + u8" 個天賦）";
+			else if (allocOnly_) s += u8"（只算已配點" + (allocDist_ > 0 ? u8"與距離 " + std::to_string(allocDist_) + u8" 內" : std::string()) + u8"）";
+			return s;
+		}
 		int picked = 0;
 		for (char c : ptSelected) if (c) picked++;
 		if (picked > 0) s += u8"（只看已選的 " + std::to_string(picked) + u8" 個節點）";
@@ -1345,6 +1386,84 @@ public:
 		if (!note.empty()) PobUi::Hint(note.c_str(), w, Tok::Warning);
 	}
 
+	// Abyss mode: which POB build the allocation comes from, and the filters
+	// PoB 2.68 applies with it (7-10: allocated only / distance; Zorath:
+	// required Ascendancy outcome, protected Ascendancy passives).
+	void drawBuildSection()
+	{
+		if (!TJIsAbyss(jewelType)) return;
+		const float w = ImGui::GetContentRegionAvail().x;
+		const float H = PobUi::ControlH();
+		PobUi::Heading(u8"POB 流派");
+		ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
+		const char* refLbl = u8"重新整理";
+		const float rw = PobUi::ButtonWidth(refLbl, PobUi::BtnSize::Sm, PobIcon::Refresh);
+		std::vector<const char*> names;
+		for (const auto& n : buildNames_) names.push_back(n.c_str());
+		int sel = buildSel_;
+		if (!names.empty()) {
+			if (PobUi::Select("##build", &sel, names.data(), nullptr, (int)names.size(), w - rw - PobUi::D(8.0f), true) &&
+			    sel != buildSel_)
+				selectBuild(sel, true);
+		} else {
+			PobUi::Hint(u8"找不到 POB 流派檔（Builds 資料夾）", w - rw - PobUi::D(8.0f), Tok::Warning);
+		}
+		ImGui::SameLine(0.0f, PobUi::D(8.0f));
+		if (PobUi::Button(refLbl, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::Refresh)) refreshBuilds();
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"在 POB 存檔後按這裡，重新讀取流派清單與配點");
+		if (buildSel_ < 0 && !names.empty()) PobUi::Hint(u8"選一個流派：讀它目前的天賦配點", w);
+		else if (buildSel_ >= 0 && !buildOk_) PobUi::Hint((u8"讀不到這個流派：" + buildErr_).c_str(), w, Tok::Warning);
+		else if (buildOk_) {
+			std::string info = build_.className;
+			if (!ascClass().empty()) info += u8"／" + ascClass();
+			info += u8"｜已配點 " + std::to_string(build_.nodes.size());
+			PobUi::Hint(info.c_str(), w);
+			if (!build_.treeVersion.empty() && build_.treeVersion != ptData.TreeVersion())
+				PobUi::Hint((u8"流派的天賦樹版本 " + build_.treeVersion + u8" 與計算器的 " + ptData.TreeVersion() +
+				             u8" 不同，部分天賦可能對不上").c_str(), w, Tok::Warning);
+		}
+		ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
+		if (!TJIsZorath(jewelType)) {
+			ImGui::BeginDisabled(!buildOk_);
+			labelRow(u8"只算已配點天賦", u8"同 POB 的 Filter Nodes：只有流派已配點的天賦計分；距離 > 0 時，再多算離已配點 N 格內的天賦。",
+			         PobUi::SwitchWidth(), H, [&]() { PobUi::Switch("##alloconly", &allocOnly_); });
+			ImGui::BeginDisabled(!allocOnly_);
+			labelRow(u8"節點距離", u8"0 = 只算已配點；1 = 再加上相鄰一格，依此類推（最多 10）",
+			         std::floor(PobUi::D(90.0f)), H, [&]() {
+				PobUi::PushControlFrame();
+				ImGui::SetNextItemWidth(std::floor(PobUi::D(90.0f)));
+				if (ImGui::InputInt("##allocdist", &allocDist_, 0, 0)) allocDist_ = std::clamp(allocDist_, 0, 10);
+				PobUi::PopControlFrame();
+			});
+			ImGui::EndDisabled();
+			ImGui::EndDisabled();
+		} else if (buildOk_) {
+			if (ascClass().empty()) {
+				PobUi::Hint(u8"這個流派沒有選昇華，昇華天賦的部分不計算。", w);
+			} else {
+				std::vector<std::string> lbl{ u8"不限" };
+				for (const auto& o : ascOutcomes_) lbl.push_back(o.second);
+				std::vector<const char*> lp;
+				for (const auto& l : lbl) lp.push_back(l.c_str());
+				const float sw = std::floor(PobUi::D(170.0f));
+				labelRow(u8"必要昇華結果", u8"同 POB：昇華天賦必須變成這一個，其餘種子不列出",
+				         sw, H, [&]() { PobUi::Select("##reqasc", &reqAscSel_, lp.data(), nullptr, (int)lp.size(), sw); });
+				if (!ascTargets_.empty()) {
+					PobUi::Hint(u8"保護昇華天賦（勾選的天賦被改掉的種子不列出）：", w);
+					for (int id : ascTargets_) {
+						bool on = protectAsc_.count(id) != 0;
+						ImGui::PushID(id);
+						if (ImGui::Checkbox(ascName(id).c_str(), &on)) {
+							if (on) protectAsc_.insert(id); else protectAsc_.erase(id);
+						}
+						ImGui::PopID();
+					}
+				}
+			}
+		}
+		ImGui::Dummy(ImVec2(0, PobUi::D(8.0f)));
+	}
+
 	// left: find seeds
 	void drawSearchForm()
 	{
@@ -1362,6 +1481,7 @@ public:
 		ImGui::BeginChild("##formscroll", ImVec2(0, formH), false);
 		const float formTop = ImGui::GetCursorScreenPos().y;
 		drawAbyssBanner();
+		drawBuildSection();
 		PobUi::Heading(u8"想要的詞綴");
 		ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
 
@@ -1473,7 +1593,8 @@ public:
 		// Abyss jewels conquer keystones too, and TJAbyssInScope counts them as
 		// "big" -- the label has to say so or the filter looks like it is dropping
 		// results.
-		const char* scopeLbl[2] = { TJIsAbyss(jewelType) ? u8"大天賦與鑰石" : u8"只看大點", u8"全部節點" };
+		// Abyss: keystones never score (PoB scoreNode), so "big" is notables (and Zorath's Ascendancy pick).
+		const char* scopeLbl[2] = { TJIsAbyss(jewelType) ? u8"只看大天賦" : u8"只看大點", u8"全部節點" };
 		int scopeSel = scope == 1 ? 0 : 1;
 		labelRow(u8"範圍", nullptr, PobUi::SegmentedWidth(scopeLbl, 2), H, [&]() {
 			if (PobUi::Segmented("##scope", &scopeSel, scopeLbl, 2)) scope = scopeSel == 0 ? 1 : 0;
@@ -1492,12 +1613,14 @@ public:
 		                                     ImGui::GetStyle().WindowPadding.y - bottomH));
 		drawHintBlock(hint, ksNote, w, noSocket);
 		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f) - ImGui::GetStyle().ItemSpacing.y));
-		const bool canSearch = !busy && !wants.empty() && selSocket >= 0;
+		const std::string abyssWhy = abyssBlocker();
+		const bool canSearch = !busy && !wants.empty() && selSocket >= 0 && abyssWhy.empty();
 		if (PobUi::Button(busy ? u8"搜尋中…" : u8"搜尋這個插槽", PobUi::BtnKind::Primary, PobUi::BtnSize::Lg, nullptr, w,
 		                  canSearch))
 			runSearch();
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !canSearch && !busy)
-			PobUi::Tooltip(wants.empty() ? u8"先加入至少一條想要的詞綴" : u8"先在天賦樹上點一個珠寶插槽");
+			PobUi::Tooltip(wants.empty() ? u8"先加入至少一條想要的詞綴"
+			               : selSocket < 0 ? u8"先在天賦樹上點一個珠寶插槽" : abyssWhy.c_str());
 	}
 
 	void runSearch()
@@ -1507,33 +1630,12 @@ public:
 			showError(u8"讀不到這顆珠寶的查表資料", binErr, false);
 			return;
 		}
+		updateAbyssDerived();
+		if (!abyssBlocker().empty()) return;
 		tradeNext_.clear();   // every search starts its groups at the first batch
 		const bool isAbyss = TJIsAbyss(jewelType);
-		const bool isZorath = TJIsZorath(jewelType);
-		TJSearchQuery q;
-		q.jewelType = jewelType;
-		q.scope = scope;
-		q.minTotalWeight = minTotalWeight;
-		q.requireAll = requireAll;
-		for (auto& w : wants) q.wants.push_back({ w.en, w.minValue, w.weight });
+		const TJSearchQuery q = makeQuery();
 		detailSeed = -1;
-		// Types 7-10 need no node list: their file names the conquered passives.
-		// Everything else is judged on the socket's neighbourhood, narrowed to the
-		// user's picks when there are any -- for Zorath that neighbourhood stands
-		// in for a path we cannot know, so letting the user pick the nodes IS the
-		// way to aim it at their own build.
-		if (!isAbyss || isZorath) {
-			std::vector<int> inRad = ptData.NodesInRadius(selSocket, 1800.0f);
-			bool anySel = false;
-			for (int idx : inRad)
-				if (idx < (int)ptSelected.size() && ptSelected[idx]) { anySel = true; break; }
-			for (int idx : inRad) {
-				if (ptData.nodes[idx].kind == kPtSocket) continue;
-				if (anySel && !(idx < (int)ptSelected.size() && ptSelected[idx])) continue;
-				q.nodeIds.push_back(ptData.nodes[idx].id);
-			}
-		}
-		q.protectIds = protectedIds();
 		searchProtected_ = !q.protectIds.empty();
 		jobReported_ = false;
 		if (isAbyss)
@@ -1546,6 +1648,7 @@ public:
 	void drawSeedForm()
 	{
 		drawAbyssBanner();
+		if (TJIsZorath(jewelType)) drawBuildSection(); // the path decides what the seed changes
 		PobUi::Heading(u8"查已知種子");
 		ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
 		const float w = ImGui::GetContentRegionAvail().x;
@@ -1688,7 +1791,7 @@ public:
 			ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + w, p.y + rowH), Tok::Bg);
 			ImGui::GetWindowDrawList()->AddLine(ImVec2(p.x, p.y + rowH - 0.5f), ImVec2(p.x + w, p.y + rowH - 0.5f),
 			                                    Tok::Border, 1.0f);
-			const bool canPick = selSocket >= 0 && (treeRadius || zorath);
+			const bool canPick = selSocket >= 0 && treeRadius;
 			const char* pickLbl[4] = { u8"全部", u8"大點", u8"一般", u8"清除" };
 			float pickW = 0.0f;
 			if (canPick) {
@@ -1705,7 +1808,7 @@ public:
 				// hits; the 7-10 passives come from the jewel's own file and are not
 				// in a circle at all. Saying "radius" there would describe the wrong
 				// mechanic.
-				else if (zorath) st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜圈內為判斷用，實際生效看你的配點";
+				else if (zorath) st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜亮起的是插槽到職業起點的已配點路徑";
 				else if (treeAbyss) st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜此插槽被征服的天賦以金框標示";
 				else st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜半徑內受影響節點以金框標示";
 			}
@@ -1743,7 +1846,7 @@ public:
 		// recompute highlight + per-node transforms when the input tuple changes
 		// (selVersion covers the picked-node set).
 		long long sig = ((long long)selSocket * 1000003 + detailSeed) * 97 +
-		                (long long)jewelType * 13 + conquerorSel * 131 + selVersion;
+		                (long long)jewelType * 13 + conquerorSel * 131 + selVersion + (long long)abyssVer_ * 7919;
 		if (sig != hiSig) {
 			hiSig = sig;
 			recomputeHighlights(treeRadius);
@@ -1778,15 +1881,15 @@ public:
 
 		PassiveTreeInput tin;
 		tin.selectedSocket = selSocket;
-		// Zorath has no radius either, but this ring marks the area being judged,
-		// not an area of effect -- the status row says which. Leaving it invisible
-		// would hide what the numbers were computed from.
-		tin.radiusWorld = (treeRadius || zorath) ? 1800.0f : 0.0f;
+		// Zorath has no radius: what it judges is the build's path to the class
+		// start, shown in the "selected" style instead of a ring.
+		tin.radiusWorld = treeRadius ? 1800.0f : 0.0f;
 		tin.hi = &dispHi;
-		tin.selected = ptSelected.empty() ? nullptr : &ptSelected;
+		tin.selected = zorath ? (pathMask_.size() == ptData.nodes.size() ? &pathMask_ : nullptr)
+		                      : ptSelected.empty() ? nullptr : &ptSelected;
 		tin.protectedMark = (canProtect() && !ptProtected.empty()) ? &ptProtected : nullptr;
 		tin.emphasize = emphNode;
-		const bool pickable = treeRadius || zorath;
+		const bool pickable = treeRadius;
 		tin.overlay = [this, pickable](ImDrawList* dl, ImVec2 mn, ImVec2 mx) { drawLegend(dl, mn, mx, pickable); };
 		// Test aid (POBTOOLS_TJ_STATE=protectclick): pin a notable under the canvas
 		// centre, right-click it through ImGui's own input queue (no OS input), then
@@ -1968,9 +2071,15 @@ public:
 				}
 			}
 		} else {
-			// Legion: the socket's neighbourhood IS the affected set; Zorath: only where we look
-			// (the real set follows the character's own allocation).
-			cand = ptData.NodesInRadius(selSocket, 1800.0f);
+			// Legion: the socket's neighbourhood IS the affected set; Zorath: the build's path to its class start.
+			if (zorathDetail) {
+				for (int id : zorathPath_) {
+					const int idx = ptData.IndexOfId(id);
+					if (idx >= 0 && ptData.nodes[idx].kind != kPtSocket) cand.push_back(idx);
+				}
+			} else {
+				cand = ptData.NodesInRadius(selSocket, 1800.0f);
+			}
 			if (zorathDetail && haveBin) {
 				std::vector<int> ids;
 				ids.reserve(cand.size());
@@ -1990,7 +2099,7 @@ public:
 
 		bool anySel = false;
 		for (int idx : cand)
-			if (idx < (int)ptSelected.size() && ptSelected[idx]) { anySel = true; break; }
+			if (!abyssDetail && idx < (int)ptSelected.size() && ptSelected[idx]) { anySel = true; break; }
 		auto included = [&](int idx) { return !anySel || (idx < (int)ptSelected.size() && ptSelected[idx]); };
 		for (int idx : cand) {
 			const PtNode& n = ptData.nodes[idx];
@@ -2263,7 +2372,7 @@ public:
 	std::vector<int> resultNodes() const
 	{
 		std::vector<int> inRad;
-		if (selSocket >= 0 && (!TJIsAbyss(jewelType) || TJIsZorath(jewelType))) {
+		if (selSocket >= 0 && !TJIsAbyss(jewelType)) {
 			std::vector<int> rad = ptData.NodesInRadius(selSocket, 1800.0f);
 			bool anySel = false;
 			for (int idx : rad)
@@ -2289,7 +2398,8 @@ public:
 		}
 		unsigned h = 2166136261u;
 		for (size_t i = 0; i < ptSelected.size(); i++) h = (h ^ (ptSelected[i] ? 1u : 0u) ^ (unsigned)i) * 16777619u;
-		return s + std::to_string(h);
+		return s + std::to_string(h) + "|" + std::to_string(abyssVer_) + "|" + std::to_string(reqAscSel_) + "|" +
+		       std::to_string(protectAsc_.size()) + "|" + std::to_string(minTotalWeight) + std::to_string(requireAll);
 	}
 
 	SeedSummary buildSummary(int seed)
@@ -2314,23 +2424,15 @@ public:
 		};
 		auto isBig = [](int kind) { return kind == kPtNotable || kind == kPtKeystone; };
 		if (TJIsAbyss(jewelType)) {
-			std::map<int, TJAbyssMod> rec;
-			bool got = false;
-			if (selSocket >= 0) {
-				if (TJIsZorath(jewelType)) {
-					std::vector<int> ids;
-					for (int idx : resultNodesCache_) ids.push_back(ptData.nodes[idx].id);
-					got = TJAbyssReadNodes(*ds, *blob, *abyssLut, ids, seed, rec);
-				} else {
-					got = TJAbyssReadSocket(*ds, *blob, *abyssLut, ptData.nodes[selSocket].id, seed, rec);
-				}
-			}
-			if (got)
-				for (const auto& m : rec) {
-					if (!TJAbyssInScope(scope, m.first, *ds, &ptKind)) continue;
-					TJTransform t = TJAbyssApply(*ds, m.second);
-					const auto k = ptKind.find(m.first);
-					if (t.ok) take(t, k != ptKind.end() && isBig(k->second));
+			// exactly what the search scored: same query, same per-seed scorer
+			std::vector<TJAbyssScored> det;
+			TJSeedHit hit;
+			if (selSocket >= 0 && abyssBlocker().empty() &&
+			    TJAbyssScoreSeed(*ds, *blob, *abyssLut, makeQuery(), ptData.nodes[selSocket].id, seed, &ptKind, hit, &det))
+				for (const TJAbyssScored& d : det) {
+					if (!d.scored || !d.t.ok) continue;
+					const auto k = ptKind.find(d.nodeId);
+					take(d.t, d.ascendancy || (k != ptKind.end() && isBig(k->second)));
 				}
 		} else {
 			for (int idx : resultNodesCache_) {
@@ -2661,7 +2763,7 @@ public:
 		// scatter them over the tree.
 		char title[96];
 		snprintf(title, sizeof(title),
-		         TJIsZorath(jewelType) ? u8"種子 %d 對這一帶天賦的效果"
+		         TJIsZorath(jewelType) ? u8"種子 %d 改變的路徑天賦"
 		         : TJIsAbyss(jewelType) ? u8"種子 %d 征服的天賦"
 		                                : u8"種子 %d 的變化",
 		         detailSeed);
@@ -2994,6 +3096,33 @@ public:
 			centerPending_ = true;
 			mode = 0;
 			wants.clear();
+		} else if (testState_ == "abyss" || testState_ == "zorath") {
+			// Abyss mode: Ulaman (or Zorath) on the first build's first allocated socket,
+			// one wanted stat, a search run and the first seed opened.
+			// POBTOOLS_TJ_BUILD = substring of the build name to use instead.
+			jewelType = testState_ == "zorath" ? 11 : 8;
+			templates = TJStatTemplates(*ds, jewelType);
+			templatesFor = jewelType;
+			ensureBin(jewelType);
+			wchar_t bn[128] = L"";
+			const std::string want = GetEnvironmentVariableW(L"POBTOOLS_TJ_BUILD", bn, 128) > 0 ? narrow(bn) : "";
+			int pick = buildPaths_.empty() ? -1 : 0;
+			for (int i = 0; i < (int)buildNames_.size(); i++)
+				if (!want.empty() && buildNames_[i].find(want) != std::string::npos) { pick = i; break; }
+			selectBuild(pick, false);
+			selSocket = -1;
+			for (int s : ptData.sockets)
+				if (selSocket < 0 && build_.nodes.count(ptData.nodes[s].id)) selSocket = s;
+			centerPending_ = true;
+			wants.clear();
+			const char* en = jewelType == 11 ? "+# to maximum Life" : "#% increased Impale Effect";
+			for (const auto& t : templates)
+				if (t.en == en) wants.push_back({ t.en, t.zh.empty() ? t.en : t.zh, 0.0f, 2.0f });
+			scope = 0;
+			mode = 0;
+			autoPick_ = true;
+			updateAbyssDerived();
+			runSearch();
 		} else if (testState_ == "protect") {
 			// Militant Faith on the socket already chosen above, two notables
 			// protected, searching for Devotion, the first seed opened.
@@ -3079,6 +3208,142 @@ private:
 				if (i < n.statsZh.size() && !n.statsZh[i].empty()) zh++;
 			}
 		zhPct = lines > 0 ? (int)(100.0 * zh / lines + 0.5) : -1;
+	}
+
+	// ---- Abyss mode helpers ----
+	void refreshBuilds()
+	{
+		const std::wstring keep = buildSel_ >= 0 && buildSel_ < (int)buildPaths_.size() ? buildPaths_[buildSel_]
+		                          : widen(tjUi.build);
+		buildPaths_.clear(); buildNames_.clear();
+		const std::wstring pob = FindPoe1Dir(exeDir);
+		if (!pob.empty()) {
+			const std::wstring dir = PobBuildDir(pob);
+			buildPaths_ = ListPobBuilds(dir);
+			for (const auto& p : buildPaths_) {
+				std::wstring n = p.size() > dir.size() + 1 ? p.substr(dir.size() + 1) : p;
+				if (n.size() > 4) n.resize(n.size() - 4); // ".xml"
+				buildNames_.push_back(narrow(n));
+			}
+		}
+		int sel = -1;
+		for (int i = 0; i < (int)buildPaths_.size(); i++) if (_wcsicmp(buildPaths_[i].c_str(), keep.c_str()) == 0) sel = i;
+		selectBuild(sel, false);
+	}
+
+	void selectBuild(int i, bool remember)
+	{
+		buildSel_ = i; buildOk_ = false; buildErr_.clear(); build_ = PobBuildSpec();
+		protectAsc_.clear(); reqAscSel_ = 0;
+		if (i >= 0 && i < (int)buildPaths_.size()) {
+			buildOk_ = LoadPobBuildSpec(buildPaths_[i], build_, &buildErr_);
+			if (remember) { tjUi.build = narrow(buildPaths_[i]); saveTjUi(); }
+		}
+		abyssKey_.clear();
+	}
+
+	// The build's Ascendancy as Zorath's file names it; "" = none chosen.
+	std::string ascClass() const
+	{
+		return buildOk_ && build_.ascendClassName != "None" ? build_.ascendClassName : std::string();
+	}
+
+	std::string ascName(int id) const
+	{
+		auto it = passiveZh_.find(id);
+		return it != passiveZh_.end() ? it->second : std::to_string(id);
+	}
+
+	void loadAbyssNames()
+	{
+		if (!ascOutcomes_.empty()) return;
+		for (const TJEntry& e : ds->nodes)
+			if (e.id.rfind("abyss_special_ascendancy_notable_", 0) == 0)
+				ascOutcomes_.push_back({ e.id, e.dnZh.empty() ? e.dn : e.dnZh });
+		std::sort(ascOutcomes_.begin(), ascOutcomes_.end(),
+		          [](const std::pair<std::string, std::string>& a, const std::pair<std::string, std::string>& b) { return a.second < b.second; });
+		std::string content;
+		if (read_file_utf8(exeDir + L"Data\\poe1\\zh-rTW\\passives_by_id.json", content)) {
+			try {
+				const nlohmann::json d = nlohmann::json::parse(content);
+				for (const auto& [k, v] : d.at("entries").items())
+					if (v.is_string()) passiveZh_[atoi(k.c_str())] = v.get<std::string>();
+			} catch (...) {}
+		}
+	}
+
+	// Rebuild Zorath's path / the 7-10 allowed set / the protect candidates when
+	// anything they depend on changes. Cheap: two BFS over ~2000 nodes, one ASCS walk.
+	void updateAbyssDerived()
+	{
+		if (!TJIsAbyss(jewelType)) return;
+		const std::string key = std::to_string(jewelType) + "|" + std::to_string(selSocket) + "|" +
+		                        std::to_string(buildSel_) + "|" + std::to_string(buildOk_) + "|" +
+		                        std::to_string(allocOnly_) + "|" + std::to_string(allocDist_) + "|" +
+		                        std::to_string(binOk && loadedBinType == jewelType) + "|" + ptData.Version();
+		if (key == abyssKey_) return;
+		abyssKey_ = key;
+		abyssVer_++;
+		zorathPath_.clear(); allowedIds_.clear(); ascTargets_.clear();
+		pathMask_.assign(ptData.nodes.size(), 0);
+		if (!buildOk_) return;
+		if (TJIsZorath(jewelType)) {
+			if (selSocket >= 0)
+				zorathPath_ = PtShortestPathToClassStart(ptData, build_.nodes, ptData.nodes[selSocket].id, build_.classId);
+			for (int id : zorathPath_) {
+				const int idx = ptData.IndexOfId(id);
+				if (idx >= 0) pathMask_[idx] = 1;
+			}
+			loadAbyssNames();
+			if (binOk && loadedBinType == jewelType && !ascClass().empty())
+				for (int id : TJAbyssAscendancyTargets(*blob, *abyssLut, ascClass()))
+					if (build_.nodes.count(id)) ascTargets_.push_back(id);
+			for (auto it = protectAsc_.begin(); it != protectAsc_.end();)
+				it = std::find(ascTargets_.begin(), ascTargets_.end(), *it) == ascTargets_.end() ? protectAsc_.erase(it) : ++it;
+		} else if (allocOnly_) {
+			for (const auto& kv : PtDistanceFromAllocated(ptData, build_.nodes, allocDist_)) allowedIds_.push_back(kv.first);
+			if (allowedIds_.empty()) allowedIds_.push_back(-1); // filter on, nothing qualifies
+		}
+	}
+
+	// Why an Abyss search cannot run yet; "" when it can.
+	std::string abyssBlocker() const
+	{
+		if (!TJIsAbyss(jewelType)) return {};
+		if (TJIsZorath(jewelType)) {
+			if (ptData.classStarts.empty()) return u8"天賦樹資料太舊（缺職業起點），請更新天賦樹";
+			if (!buildOk_) return u8"重奪惡意需要角色配點：請先在左側選一個 POB 流派";
+			if (selSocket >= 0 && zorathPath_.empty())
+				return u8"這個插槽在流派中沒有配點，或沒有已配點的路徑通到職業起點";
+		} else if (allocOnly_ && !buildOk_) {
+			return u8"「只算已配點天賦」需要先選一個 POB 流派";
+		}
+		return {};
+	}
+
+	// The query both the search and the result summaries use, so a listed score
+	// and its breakdown come from the same rules.
+	TJSearchQuery makeQuery() const
+	{
+		TJSearchQuery q;
+		q.jewelType = jewelType;
+		q.scope = scope;
+		q.minTotalWeight = minTotalWeight;
+		q.requireAll = requireAll;
+		for (auto& w : wants) q.wants.push_back({ w.en, w.minValue, w.weight });
+		if (!TJIsAbyss(jewelType)) {
+			// Legion: the socket's neighbourhood, narrowed to the user's picks when there are any.
+			for (int idx : resultNodes()) q.nodeIds.push_back(ptData.nodes[idx].id);
+			q.protectIds = protectedIds();
+		} else if (TJIsZorath(jewelType)) {
+			q.nodeIds.assign(zorathPath_.begin(), zorathPath_.end());
+			q.ascClass = ascClass();
+			if (reqAscSel_ > 0 && reqAscSel_ <= (int)ascOutcomes_.size()) q.requiredAscOutcome = ascOutcomes_[reqAscSel_ - 1].first;
+			q.protectAscIds.assign(protectAsc_.begin(), protectAsc_.end());
+		} else {
+			q.allowedIds = allowedIds_;
+		}
+		return q;
 	}
 
 	void saveTjUi()
@@ -3252,6 +3517,27 @@ private:
 
 	SearchJob job;
 	std::map<int, int> ptKind;
+
+	// ---- Abyss mode: the POB build the allocation comes from (PoB 2.68 searchSingleSocket) ----
+	std::vector<std::wstring> buildPaths_;
+	std::vector<std::string> buildNames_;
+	int buildSel_ = -1;
+	PobBuildSpec build_;
+	bool buildOk_ = false;
+	std::string buildErr_;
+	bool allocOnly_ = false;      // 7-10: POB "Filter Nodes"
+	int allocDist_ = 0;           // 7-10: POB socketFilterDistance
+	int reqAscSel_ = 0;           // Zorath: 0 = any, else 1 + index into ascOutcomes_
+	std::vector<std::pair<std::string, std::string>> ascOutcomes_; // legion id, display name
+	std::set<int> protectAsc_;    // Zorath: Ascendancy passives a seed must not conquer
+	// derived from the above + socket + jewel; rebuilt when abyssKey_ changes
+	std::string abyssKey_;
+	int abyssVer_ = 0;
+	std::set<int> zorathPath_;    // ids, socket and class start included
+	std::vector<char> pathMask_;  // node index -> on Zorath's path (tree highlight)
+	std::vector<int> allowedIds_; // 7-10 with allocOnly_; {-1} = nothing qualifies
+	std::vector<int> ascTargets_; // Zorath: the build's allocated Ascendancy passives the jewel can take
+	std::map<int, std::string> passiveZh_; // passives_by_id.json, for Ascendancy names
 };
 
 IToolPanel* CreateTimelessJewelPanel()

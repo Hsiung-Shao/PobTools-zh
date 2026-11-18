@@ -11,9 +11,9 @@
 //         socket, holding one record per seed. A record lists the conquered
 //         nodes and what each becomes.
 //   ABYN  type 11 (Zorath): one block per passive node, plus an "ASCS" section
-//         choosing one notable per Ascendancy. Reading it needs the character's
-//         allocated path from the socket to their class start, which PobTools
-//         does not track, so type 11 is parsed but not offered.
+//         choosing one notable per Ascendancy. Which passives apply is the
+//         character's allocated path from the socket to their class start,
+//         taken from a POB build file (PtShortestPathToClassStart).
 //
 // Records are variable length: a seed's offset is only knowable by counting
 // from the start of its block. Offsets are therefore cached per block on first
@@ -118,10 +118,9 @@ TJTransform TJAbyssApply(const TJDataset& ds, const TJAbyssMod& mod);
 //
 // ABYS (7-10): the socket's own block is read and `q.nodeIds` is ignored — the
 // file names the conquered passives, so there is nothing for a caller to
-// choose. ABYN (11): `q.nodeIds` IS the candidate set, because which passives
-// count depends on a path PobTools cannot know; the caller decides what to
-// judge the seed on, and an empty list therefore returns nothing rather than
-// silently scoring the whole tree.
+// choose. ABYN (11): `q.nodeIds` is the allocated path from the socket to the
+// class start; an empty list returns nothing rather than silently scoring the
+// whole tree.
 //
 // `nodeKind` maps a passive id to passive_tree_data.h's kPt* value and decides
 // what q.scope means. Not optional in practice: 48 keystones the Abyss walk
@@ -133,6 +132,36 @@ std::vector<TJSeedHit> TJAbyssSearch(const TJDataset& ds, const std::string& blo
                                      int socketId, int topN,
                                      const std::map<int, int>* nodeKind = nullptr,
                                      const volatile bool* cancel = nullptr);
+
+// Scoring follows PoB 2.68.1 TreeTab searchSingleSocket: each matching line adds
+// weight x its value (x1 when the line has no number); keystones, sockets and
+// class starts never score. 7-10 honour q.allowedIds. Zorath scores q.nodeIds
+// (the path) plus the q.ascClass Ascendancy pick, which counts as a notable;
+// q.requiredAscOutcome / q.protectAscIds drop seeds as PoB does.
+
+// One conquered passive as the search scored it (for the detail panel, so what
+// it marks is exactly what the ranking counted).
+struct TJAbyssScored {
+	int nodeId = 0;
+	bool ascendancy = false;          // Zorath's Ascendancy pick (not on the main tree)
+	bool scored = false;              // passed keystone/socket/scope/allowedIds filters
+	TJTransform t;
+	std::vector<double> lineWeight;   // parallel to t.lines; 0 = line matched nothing
+};
+
+// Score one seed. False when the seed is dropped (unreadable, a protected
+// Ascendancy passive conquered, the required outcome missing). `detail`, when
+// set, receives every conquered passive, scored or not. TJAbyssSearch's own
+// filters (requireAll, minTotalWeight, matches > 0) are NOT applied here.
+bool TJAbyssScoreSeed(const TJDataset& ds, const std::string& blob, TJAbyssLUT& lut,
+                      const TJSearchQuery& q, int socketId, int seed,
+                      const std::map<int, int>* nodeKind, TJSeedHit& hit,
+                      std::vector<TJAbyssScored>* detail = nullptr);
+
+// Ascendancy passives Zorath can conquer for `ascClass` across the whole seed
+// range (the candidates for "protect"). Empty when the class is absent.
+std::vector<int> TJAbyssAscendancyTargets(const std::string& blob, TJAbyssLUT& lut,
+                                          const std::string& ascClass);
 
 // scope -> does this passive count? Shared so the UI marks exactly what the
 // search counted. scope 1 keeps notables AND keystones (both are "the big ones"
@@ -149,3 +178,6 @@ int RunAbyssSelfTest(const std::wstring& exeDir);
 
 // --abyss <jewelType> <socketId> <seed>; socketId 0 lists the sockets instead.
 int RunAbyssCli(const std::wstring& exeDir, int jewelType, int socketId, int seed);
+
+// --abyss-search <params.json>; see the definition for the params.
+int RunAbyssSearchCli(const std::wstring& exeDir, const std::wstring& paramsPath);

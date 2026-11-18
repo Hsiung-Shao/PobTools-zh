@@ -525,6 +525,26 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 		for (int s : sockets)
 			if (keep.count(s)) outSockets.push_back(remap[s]);
 
+		// class starts are not drawn; kept so Zorath's path to the class start can be walked
+		ordered_json outClassStarts = ordered_json::array();
+		for (const auto& [key, v] : nodesIn.items()) {
+			if (!v.contains("classStartIndex") || v["classStartIndex"].is_null()) continue;
+			ordered_json adjOut = ordered_json::array();
+			std::set<int> seen;
+			auto addNb = [&](const ordered_json& nb) {
+				auto it = id2idx.find(nb.is_string() ? nb.get<std::string>() : std::to_string(nb.get<long long>()));
+				if (it == id2idx.end() || remap[it->second] < 0 || !seen.insert(remap[it->second]).second) return;
+				adjOut.push_back(remap[it->second]);
+			};
+			if (v.contains("out")) for (const auto& nb : v["out"]) addNb(nb);
+			if (v.contains("in")) for (const auto& nb : v["in"]) addNb(nb);
+			ordered_json cs;
+			cs["classId"] = v["classStartIndex"];
+			cs["id"] = v.value("skill", atoi(key.c_str()));
+			cs["adj"] = std::move(adjOut);
+			outClassStarts.push_back(std::move(cs));
+		}
+
 		// frames
 		static const struct { int kind; const char* off; const char* path; const char* on; } kFrames[] = {
 			{ K_NORMAL,   "PSSkillFrame", "PSSkillFrameHighlighted", "PSSkillFrameActive" },
@@ -611,6 +631,7 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 		out["sockets"] = std::move(outSockets);
 		out["masteries"] = std::move(outMast);
 		out["groupbg"] = std::move(outGroupBg);
+		out["classStarts"] = std::move(outClassStarts);
 
 		// everything validated: bundle sheets, then overwrite the JSON. Sheet source: local PoB TreeData/<ver>/ when
 		// that league exists (no download), else the assets/ directory next to data.json

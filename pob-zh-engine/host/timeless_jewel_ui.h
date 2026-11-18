@@ -66,6 +66,10 @@ struct TjUiState {
 	int realm = 0;
 	int platform = 0;
 	std::string league;
+	// the 永恆 / 深淵 mode and each mode's last jewel; the Abyss mode's POB build (UTF-8 path)
+	int lastLegion = 3, lastAbyss = 8;
+	bool abyssMode = false;
+	std::string build;
 	bool Load(const std::wstring& exeDir);
 	bool Save(const std::wstring& exeDir) const;
 };

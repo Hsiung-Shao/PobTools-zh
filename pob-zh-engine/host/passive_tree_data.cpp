@@ -7,9 +7,13 @@
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 
+#include <algorithm>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <filesystem>
+#include <map>
+#include <set>
 
 using nlohmann::ordered_json;
 
@@ -38,7 +42,7 @@ static void parse_strings(const ordered_json& parent, const char* key, std::vect
 bool PassiveTreeData::Load(const std::wstring& exeDir, std::string* err)
 {
 	nodes.clear(); edges.clear(); sheets.clear(); sockets.clear();
-	masteries.clear(); groupbg.clear();
+	masteries.clear(); groupbg.clear(); classStarts.clear();
 
 	std::string content;
 	if (!read_file_utf8(exeDir + L"Data\\passive_tree_poe1.json", content)) {
@@ -124,6 +128,19 @@ bool PassiveTreeData::Load(const std::wstring& exeDir, std::string* err)
 		};
 		load_decos("masteries", masteries);
 		load_decos("groupbg", groupbg);
+
+		if (doc.contains("classStarts")) // optional: older tree files lack it, which only disables Zorath
+			for (const auto& jc : doc["classStarts"]) {
+				ClassStart cs;
+				cs.classId = jc.value("classId", -1);
+				cs.id = jc.value("id", 0);
+				if (jc.contains("adj"))
+					for (const auto& ja : jc["adj"]) {
+						const int i = ja.get<int>();
+						if (i >= 0 && i < (int)nodes.size()) cs.adj.push_back(i);
+					}
+				classStarts.push_back(std::move(cs));
+			}
 	} catch (const std::exception& e) {
 		if (err) *err = std::string("passive_tree_poe1.json parse error: ") + e.what();
 		return false;
@@ -156,6 +173,59 @@ int PassiveTreeData::IndexOfId(int id) const
 	for (int i = 0; i < (int)nodes.size(); i++)
 		if (nodes[i].id == id) return i;
 	return -1;
+}
+
+// PoB PassiveSpec:GetShortestPathToClassStart: BFS from the socket through allocated nodes only, ending on
+// a node adjacent to the class start. Class starts are not tree nodes here, so no path can cross one.
+std::set<int> PtShortestPathToClassStart(const PassiveTreeData& t, const std::set<int>& alloc, int socketId, int classId)
+{
+	if (!alloc.count(socketId)) return {};
+	const PassiveTreeData::ClassStart* cs = nullptr;
+	for (const PassiveTreeData::ClassStart& c : t.classStarts)
+		if (c.classId == classId) { cs = &c; break; }
+	if (!cs) return {};
+	const int root = t.IndexOfId(socketId);
+	if (root < 0) return {};
+	std::vector<char> isEnd(t.nodes.size(), 0);
+	for (int i : cs->adj) if (i >= 0 && i < (int)t.nodes.size()) isEnd[(size_t)i] = 1;
+	std::vector<int> prev(t.nodes.size(), -2);
+	std::vector<int> q{ root };
+	prev[(size_t)root] = -1;
+	for (size_t h = 0; h < q.size(); h++) {
+		const int u = q[h];
+		if (isEnd[(size_t)u]) {
+			std::set<int> out{ cs->id };
+			for (int v = u; v >= 0; v = prev[(size_t)v]) out.insert(t.nodes[(size_t)v].id);
+			return out;
+		}
+		for (int v : t.nodes[(size_t)u].adj)
+			if (prev[(size_t)v] == -2 && alloc.count(t.nodes[(size_t)v].id)) { prev[(size_t)v] = u; q.push_back(v); }
+	}
+	return {};
+}
+
+// PoB socketFilterDistance: hops from the nearest allocated node (an allocated class start reaches its neighbours).
+std::map<int, int> PtDistanceFromAllocated(const PassiveTreeData& t, const std::set<int>& alloc, int maxDist)
+{
+	std::vector<int> dist(t.nodes.size(), -1);
+	std::vector<int> q;
+	for (size_t i = 0; i < t.nodes.size(); i++)
+		if (alloc.count(t.nodes[i].id)) { dist[i] = 0; q.push_back((int)i); }
+	if (maxDist >= 1)
+		for (const PassiveTreeData::ClassStart& cs : t.classStarts)
+			if (alloc.count(cs.id))
+				for (int i : cs.adj)
+					if (i >= 0 && i < (int)t.nodes.size() && dist[(size_t)i] < 0) { dist[(size_t)i] = 1; q.push_back(i); }
+	for (size_t h = 0; h < q.size(); h++) {
+		const int u = q[h];
+		if (dist[(size_t)u] >= maxDist) continue;
+		for (int v : t.nodes[(size_t)u].adj)
+			if (dist[(size_t)v] < 0) { dist[(size_t)v] = dist[(size_t)u] + 1; q.push_back(v); }
+	}
+	std::map<int, int> out;
+	for (size_t i = 0; i < t.nodes.size(); i++)
+		if (dist[i] >= 0) out[t.nodes[i].id] = dist[i];
+	return out;
 }
 
 // selftest
@@ -289,6 +359,181 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 		} else {
 			ptlog(rep, "[note] timeless_jewels.json absent (%s) - coverage check skipped\n", terr.c_str());
 		}
+	}
+
+	// ---- Zorath 路徑 / 距離 / 缺欄位(T3 T4 T9 T10)----
+	// 全部非插槽節點的 id:當作「幾乎全配點」的配點集合
+	std::set<int> allNonSocketIds;
+	for (const PtNode& n : d.nodes)
+		if (n.kind != kPtSocket) allNonSocketIds.insert(n.id);
+	const int socketId = d.sockets.empty() ? -1 : d.nodes[(size_t)d.sockets[0]].id;
+	const int someClass = d.classStarts.empty() ? 0 : d.classStarts[0].classId;
+
+	// T3 插槽未配點時沒有 Zorath 路徑,即使其他節點全配點
+	{
+		check(socketId >= 0 && PtShortestPathToClassStart(d, allNonSocketIds, socketId, someClass).empty(),
+		      "T3a 插槽未配點時路徑為空(即使其餘節點全配點)", "socket=" + std::to_string(socketId));
+		std::set<int> withSocket = allNonSocketIds;
+		withSocket.insert(socketId);
+		check(PtShortestPathToClassStart(d, withSocket, socketId, 987654).empty(),
+		      "T3b 職業起點不存在時路徑為空", "");
+	}
+
+	// T4 Zorath 路徑為最短已配點路徑:配點 = 最短路 P + 一條較長的繞路 Q,結果必須恰為 P
+	if (d.classStarts.empty()) {
+		check(false, "T4 樹資料沒有 classStarts(tools/gen_passive_tree.py 尚未輸出該欄位)", "");
+	} else {
+		const int N = (int)d.nodes.size();   // 虛擬節點 N = 職業起點(它不在 nodes 裡)
+		bool done = false;
+		struct Pick { int classId = -1, csId = 0, socketId = 0; std::vector<int> P, Q; };
+		Pick best;                           // 優先找有繞路 Q 的組合,沒有就退而求其次
+		bool haveBest = false;
+		for (size_t ci = 0; ci < d.classStarts.size() && !done; ci++) {
+			const PassiveTreeData::ClassStart& cs = d.classStarts[ci];
+			std::set<int> csAdj(cs.adj.begin(), cs.adj.end());
+			auto nbrs = [&](int u) {
+				if (u == N) return cs.adj;
+				std::vector<int> v = d.nodes[(size_t)u].adj;
+				if (csAdj.count(u)) v.push_back(N);
+				return v;
+			};
+			// 從 src 做 BFS:dist、最短路條數(封頂 2)、父節點;blocked 的節點不可經過
+			auto bfs = [&](int src, const std::vector<char>& blocked,
+			               std::vector<int>& dist, std::vector<int>& ways, std::vector<int>& par) {
+				dist.assign((size_t)N + 1, -1); ways.assign((size_t)N + 1, 0); par.assign((size_t)N + 1, -1);
+				std::vector<int> q; q.push_back(src); dist[(size_t)src] = 0; ways[(size_t)src] = 1;
+				for (size_t h = 0; h < q.size(); h++) {
+					const int u = q[h];
+					for (int v : nbrs(u)) {
+						if (blocked[(size_t)v]) continue;
+						if (dist[(size_t)v] < 0) {
+							dist[(size_t)v] = dist[(size_t)u] + 1; par[(size_t)v] = u; ways[(size_t)v] = ways[(size_t)u];
+							q.push_back(v);
+						} else if (dist[(size_t)v] == dist[(size_t)u] + 1) {
+							ways[(size_t)v] = (std::min)(2, ways[(size_t)v] + ways[(size_t)u]);
+						}
+					}
+				}
+			};
+			for (int si : d.sockets) {
+				std::vector<char> none((size_t)N + 1, 0);
+				std::vector<int> dist, ways, par;
+				bfs(si, none, dist, ways, par);
+				if (dist[(size_t)N] < 0 || ways[(size_t)N] != 1) continue;   // 要最短路唯一,免得多條等長路讓預期值有歧義
+				Pick pk; pk.classId = cs.classId; pk.csId = cs.id; pk.socketId = d.nodes[(size_t)si].id;
+				for (int u = N; u >= 0; u = par[(size_t)u]) { pk.P.push_back(u); if (u == si) break; }
+				std::vector<char> blk((size_t)N + 1, 0);
+				for (int u : pk.P) if (u != si && u != N) blk[(size_t)u] = 1;
+				std::vector<int> d2, w2, p2;
+				bfs(si, blk, d2, w2, p2);
+				if (d2[(size_t)N] >= 0)
+					for (int u = N; u >= 0; u = p2[(size_t)u]) { pk.Q.push_back(u); if (u == si) break; }
+				if (!haveBest || (!pk.Q.empty() && best.Q.empty())) { best = pk; haveBest = true; }
+				if (!best.Q.empty()) { done = true; break; }
+			}
+		}
+		if (!haveBest) {
+			check(false, "T4 找不到任何(插槽,職業起點)有唯一最短路,無法建立情境", "");
+		} else {
+			auto idOf = [&](int u) { return u == N ? best.csId : d.nodes[(size_t)u].id; };
+			std::set<int> expect, alloc;
+			for (int u : best.P) { expect.insert(idOf(u)); alloc.insert(idOf(u)); }
+			for (int u : best.Q) alloc.insert(idOf(u));
+			const std::set<int> got = PtShortestPathToClassStart(d, alloc, best.socketId, best.classId);
+			check(got == expect && got.count(best.socketId) && got.count(best.csId),
+			      "T4a 結果恰為最短已配點路徑(含插槽與職業起點),不含較長繞路",
+			      "socket=" + std::to_string(best.socketId) + " class=" + std::to_string(best.classId) +
+			      " 最短=" + std::to_string(expect.size()) + " 配點=" + std::to_string(alloc.size()) +
+			      " 得到=" + std::to_string(got.size()) +
+			      (best.Q.empty() ? "  [注意:沒找到繞路,只驗了單一路徑]" : ""));
+
+			// T4b 路徑中間斷一格(取消配點一個內部節點、又沒有繞路)就沒有已配點路徑
+			if (best.P.size() >= 3) {
+				std::set<int> broken;
+				for (int u : best.P) broken.insert(idOf(u));
+				broken.erase(idOf(best.P[1]));
+				check(PtShortestPathToClassStart(d, broken, best.socketId, best.classId).empty(),
+				      "T4b 路徑中間斷一格且無繞路時回空", "");
+			}
+		}
+	}
+
+	// T9 距離:配點 = 0,相鄰 = 1,與自己獨立 BFS 的結果逐筆相等
+	{
+		std::set<int> csAdjIdx;
+		for (const PassiveTreeData::ClassStart& cs : d.classStarts) csAdjIdx.insert(cs.adj.begin(), cs.adj.end());
+		auto pickNode = [&](size_t from) {
+			for (size_t i = from; i < d.nodes.size(); i++)
+				if (d.nodes[i].kind != kPtSocket && d.nodes[i].adj.size() >= 2 && !csAdjIdx.count((int)i)) return (int)i;
+			return -1;
+		};
+		const int ia = pickNode(d.nodes.size() / 3), ib = pickNode(d.nodes.size() * 2 / 3);
+		if (ia < 0 || ib < 0 || ia == ib) {
+			check(false, "T9 找不到合適的配點節點", "");
+		} else {
+			const std::set<int> alloc = { d.nodes[(size_t)ia].id, d.nodes[(size_t)ib].id };
+			auto expected = [&](int maxDist) {
+				std::map<int, int> dist;                 // 以節點索引為鍵的多源 BFS
+				std::vector<int> q;
+				for (int i : { ia, ib }) { dist[i] = 0; q.push_back(i); }
+				for (size_t h = 0; h < q.size(); h++) {
+					const int u = q[h];
+					if (dist[u] >= maxDist) continue;
+					for (int v : d.nodes[(size_t)u].adj)
+						if (!dist.count(v)) { dist[v] = dist[u] + 1; q.push_back(v); }
+				}
+				std::map<int, int> byId;
+				for (const auto& kv : dist) byId[d.nodes[(size_t)kv.first].id] = kv.second;
+				return byId;
+			};
+			const std::map<int, int> m0 = PtDistanceFromAllocated(d, alloc, 0);
+			check(m0.size() == 2 && m0.count(*alloc.begin()) && m0.at(*alloc.begin()) == 0 &&
+			      m0.count(*alloc.rbegin()) && m0.at(*alloc.rbegin()) == 0,
+			      "T9a 距離 0 只含配點、距離值為 0", std::to_string(m0.size()) + " 筆");
+			const std::map<int, int> m1 = PtDistanceFromAllocated(d, alloc, 1);
+			check(m1 == expected(1) && m1.size() > alloc.size(),
+			      "T9b 距離 1 = 配點 + 其相鄰節點(相鄰為 1、配點為 0)", std::to_string(m1.size()) + " 筆");
+			const std::map<int, int> m2 = PtDistanceFromAllocated(d, alloc, 2);
+			check(m2 == expected(2) && m2.size() > m1.size(),
+			      "T9c 距離 2 與獨立 BFS 逐筆相等(差兩步的節點值為 2)", std::to_string(m2.size()) + " 筆");
+			check(PtDistanceFromAllocated(d, std::set<int>(), 3).empty(),
+			      "T9d 沒有配點時距離表為空", "");
+		}
+	}
+
+	// T10 樹資料缺 classStarts 欄位(舊版樹檔)時 Load 仍成功、classStarts 為空、路徑查詢回空,不崩潰
+	{
+		wchar_t buf[MAX_PATH];
+		GetTempPathW(MAX_PATH, buf);
+		const std::wstring tmp = std::wstring(buf) + L"pt_selftest_noclass_" + std::to_wstring(GetCurrentProcessId()) + L"\\";
+		std::error_code ec;
+		std::filesystem::remove_all(tmp, ec);
+		std::filesystem::create_directories(tmp + L"Data", ec);
+
+		std::string content;
+		bool wrote = false;
+		if (read_file_utf8(exeDir + L"Data\\passive_tree_poe1.json", content)) {
+			try {
+				ordered_json doc = ordered_json::parse(content);
+				doc.erase("classStarts");
+				wrote = write_file_utf8(tmp + L"Data\\passive_tree_poe1.json", doc.dump());
+			} catch (...) { wrote = false; }
+		}
+		if (!wrote) {
+			check(false, "T10 無法造出缺 classStarts 的樹檔", "");
+		} else {
+			PassiveTreeData d2 = d;          // 先帶著 classStarts,Load 後必須清掉
+			std::string err2;
+			const bool ok = d2.Load(tmp, &err2);
+			check(ok && d2.nodes.size() == d.nodes.size(), "T10a 缺 classStarts 的樹檔 Load 成功", err2);
+			check(d2.classStarts.empty(), "T10b 缺欄位時 classStarts 為空(不殘留上一份樹的資料)",
+			      std::to_string(d2.classStarts.size()));
+			std::set<int> withSocket = allNonSocketIds;
+			withSocket.insert(socketId);
+			check(PtShortestPathToClassStart(d2, withSocket, socketId, someClass).empty(),
+			      "T10c 沒有 classStarts 時路徑查詢回空、不崩潰", "");
+		}
+		std::filesystem::remove_all(tmp, ec);
 	}
 
 	ptlog(rep, "\n%d passed, %d failed\n", pass, fail);
