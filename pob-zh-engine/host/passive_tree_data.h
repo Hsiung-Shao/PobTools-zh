@@ -15,6 +15,7 @@ enum : int {
 	kPtNotable = 1,
 	kPtKeystone = 2,
 	kPtSocket = 3,
+	kPtAscStart = 4,                         // ascendancy start (asc section only)
 };
 
 // Where a sprite lives: sheet slot + normalized uv + world-unit quad size.
@@ -33,6 +34,8 @@ struct PtNode {
 	std::vector<std::string> stats, statsZh;
 	PtSprite on, off;                    // allocated / unallocated icon (sockets: none)
 	std::vector<int> adj;                // neighbour node indices
+	bool cluster = false;                // socket: outer Large cluster-jewel socket (GGG expansionJewel size 2)
+	std::string asc;                     // ascendancy id (asc section nodes only)
 };
 
 // The stat lines to SHOW for a node: statsZh line by line, falling back to English where the Chinese is missing or
@@ -86,6 +89,15 @@ public:
 	// to the class start can be walked. Empty for trees written before this field.
 	struct ClassStart { int classId = -1; int id = 0; std::vector<int> adj; }; // adj: node indices
 	std::vector<ClassStart> classStarts;
+
+	// Ascendancy discs, drawn where the game puts them (outside the main tree). Kept apart from `nodes` so
+	// socket/path/LUT code never sees them. Empty for trees written before this field.
+	struct AscClass { std::string id; float x = 0, y = 0; PtSprite bg; };
+	std::vector<AscClass> ascClasses;
+	std::vector<PtNode> ascNodes;        // kind: normal / notable / kPtAscStart; adj = ascNodes indices
+	std::vector<PtEdge> ascEdges;        // a/b index ascNodes
+	PtFrame ascFrames[2];                // small / large: off + on (path unused)
+	int AscIndexOfId(int id) const;
 
 private:
 	std::string treeVersion_;            // e.g. "3_28" (sheet subfolder)

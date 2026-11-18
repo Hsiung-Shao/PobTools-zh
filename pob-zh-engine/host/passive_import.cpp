@@ -33,7 +33,7 @@ static const double kPi = 3.14159265358979323846;
 static const int kGlesMax = 4096;        // texture dimension ceiling
 
 // kind values shared with host/passive_tree_data.h
-enum { K_NORMAL = 0, K_NOTABLE = 1, K_KEYSTONE = 2, K_SOCKET = 3 };
+enum { K_NORMAL = 0, K_NOTABLE = 1, K_KEYSTONE = 2, K_SOCKET = 3, K_ASC_START = 4 };
 
 // small helpers (same conventions as atlas_import.cpp)
 
@@ -397,6 +397,10 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 			nd["id"] = v.value("skill", 0);
 			nd["name"] = v.value("name", std::string());
 			nd["kind"] = kind;
+			// outer Large cluster socket: GGG marks it with expansionJewel size 2 and no parent cluster
+			if (isSocket && v.contains("expansionJewel") && v["expansionJewel"].is_object() &&
+			    v["expansionJewel"].value("size", -1) == 2 && !v["expansionJewel"].contains("parent"))
+				nd["cl"] = 1;
 			nd["x"] = r2(x);
 			nd["y"] = r2(y);
 			std::string nz = tr.Name(v.value("name", std::string()));
@@ -545,6 +549,139 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 			outClassStarts.push_back(std::move(cs));
 		}
 
+		// ascendancy discs: only the classes' own ascendancies (bloodlines / alternate are not drawn)
+		ordered_json outAsc;
+		{
+			std::map<std::string, std::string> ascStart; // ascendancy id -> its start node key
+			std::set<std::string> official;
+			for (const auto& c : d["classes"])
+				if (c.contains("ascendancies"))
+					for (const auto& a : c["ascendancies"])
+						if (a.contains("id")) official.insert(a["id"].get<std::string>());
+			auto ascOf = [&](const ordered_json& v) -> std::string {
+				if (!v.contains("ascendancyName") || !v["ascendancyName"].is_string()) return {};
+				std::string a = v["ascendancyName"].get<std::string>();
+				return official.count(a) ? a : std::string();
+			};
+			ordered_json aNodes = ordered_json::array(), aEdges = ordered_json::array(), aClasses = ordered_json::array();
+			std::map<std::string, int> aIdx;
+			std::vector<Keep> aMeta;
+			for (const auto& [key, v] : nodesIn.items()) {
+				if (key == "root" || !v.contains("group") || v["group"].is_null()) continue;
+				const std::string asc = ascOf(v);
+				// multiple-choice options are picked from a popup, not drawn on the disc
+				if (asc.empty() || v.value("isProxy", false) || v.value("isMultipleChoiceOption", false)) continue;
+				std::string gid = std::to_string(v["group"].get<long long>());
+				int orbit = v.value("orbit", 0), orbitIndex = v.value("orbitIndex", 0);
+				if (!groups.contains(gid) || orbit >= (int)orbitAngles.size() ||
+				    orbitIndex >= (int)orbitAngles[orbit].size()) continue;
+				const ordered_json& grp = groups[gid];
+				double ang = orbitAngles[orbit][orbitIndex];
+				double x = grp.value("x", 0.0) + std::sin(ang) * orbitRadii[orbit];
+				double y = grp.value("y", 0.0) - std::cos(ang) * orbitRadii[orbit];
+				const bool start = v.value("isAscendancyStart", false);
+				const int kind = start ? K_ASC_START : v.value("isNotable", false) ? K_NOTABLE : K_NORMAL;
+				ordered_json nd;
+				nd["id"] = v.value("skill", 0);
+				nd["name"] = v.value("name", std::string());
+				std::string nz = tr.Name(v.value("name", std::string()));
+				if (!nz.empty()) nd["nameZh"] = nz;
+				nd["asc"] = asc;
+				nd["kind"] = kind;
+				nd["x"] = r2(x); nd["y"] = r2(y);
+				ordered_json on, off;
+				if (start) {
+					on = off = sheets.uv("ascendancy", "AscendancyMiddle");
+					ascStart[asc] = key;
+				} else {
+					on = sheets.uv(kind == K_NOTABLE ? "notableActive" : "normalActive", v.value("icon", std::string()));
+					off = sheets.uv(kind == K_NOTABLE ? "notableInactive" : "normalInactive", v.value("icon", std::string()));
+				}
+				if (on.is_null() || off.is_null())
+					return fail(u8"昇華節點 " + key + u8" 的圖示在 sprite 表中缺失: " + v.value("icon", std::string()));
+				nd["on"] = std::move(on);
+				nd["off"] = std::move(off);
+				if (v.contains("stats") && v["stats"].is_array() && !v["stats"].empty()) {
+					ordered_json st = ordered_json::array(), stZh = ordered_json::array();
+					bool anyZh = false;
+					for (const auto& sv : v["stats"]) {
+						std::string s = sv.get<std::string>();
+						st.push_back(unescape_newlines(s));
+						std::string zh = unescape_newlines(tr.Stat(escape_newlines(s)));
+						if (!zh.empty()) anyZh = true;
+						stZh.push_back(std::move(zh));
+					}
+					nd["stats"] = std::move(st);
+					if (anyZh) nd["statsZh"] = std::move(stZh);
+				}
+				aIdx[key] = (int)aNodes.size();
+				aNodes.push_back(std::move(nd));
+				aMeta.push_back({ gid, orbit, ang });
+			}
+			std::set<std::pair<int, int>> aSet;
+			for (const auto& [key, v] : nodesIn.items()) {
+				auto ai = aIdx.find(key);
+				if (ai == aIdx.end()) continue;
+				auto addNb = [&](const ordered_json& nb) {
+					auto bi = aIdx.find(nb.is_string() ? nb.get<std::string>() : std::to_string(nb.get<long long>()));
+					if (bi != aIdx.end() && bi->second != ai->second)
+						aSet.insert({ std::min(ai->second, bi->second), std::max(ai->second, bi->second) });
+				};
+				if (v.contains("out")) for (const auto& nb : v["out"]) addNb(nb);
+				if (v.contains("in")) for (const auto& nb : v["in"]) addNb(nb);
+			}
+			for (const auto& [a, b] : aSet) {
+				ordered_json je;
+				je["a"] = a; je["b"] = b;
+				const Keep& ka = aMeta[a];
+				const Keep& kb = aMeta[b];
+				if (ka.grp == kb.grp && ka.orb == kb.orb && ka.orb > 0) {
+					const ordered_json& grp = groups[ka.grp];
+					double a0 = ka.ang - kPi / 2.0, a1 = kb.ang - kPi / 2.0;
+					double delta = std::fmod(a1 - a0, 2.0 * kPi);
+					if (delta < -kPi) delta += 2.0 * kPi;
+					else if (delta > kPi) delta -= 2.0 * kPi;
+					if (delta < 0) { a0 += delta; delta = -delta; }
+					je["arc"] = { r2(grp.value("x", 0.0)), r2(grp.value("y", 0.0)), orbitRadii[ka.orb], r5(a0), r5(delta) };
+				}
+				aEdges.push_back(std::move(je));
+			}
+			// class order as GGG lists it; the disc centre is the start node's group (POB draws Classes<id> there)
+			for (const auto& c : d["classes"]) {
+				if (!c.contains("ascendancies")) continue;
+				for (const auto& a : c["ascendancies"]) {
+					const std::string id = a.value("id", std::string());
+					auto st = ascStart.find(id);
+					if (st == ascStart.end()) continue;
+					const ordered_json& grp = groups[std::to_string(nodesIn[st->second]["group"].get<long long>())];
+					ordered_json jc;
+					jc["id"] = id;
+					jc["x"] = r2(grp.value("x", 0.0)); jc["y"] = r2(grp.value("y", 0.0));
+					ordered_json bg = sheets.uv("ascendancy", "Classes" + id);
+					if (!bg.is_null()) jc["bg"] = std::move(bg);
+					aClasses.push_back(std::move(jc));
+				}
+			}
+			if (!aClasses.empty()) {
+				ordered_json fr;
+				static const struct { const char* off; const char* on; } kAscFrames[] = {
+					{ "AscendancyFrameSmallNormal", "AscendancyFrameSmallAllocated" },
+					{ "AscendancyFrameLargeNormal", "AscendancyFrameLargeAllocated" },
+				};
+				for (int k = 0; k < 2; k++) {
+					ordered_json f;
+					f["off"] = sheets.uv("ascendancy", kAscFrames[k].off);
+					f["on"] = sheets.uv("ascendancy", kAscFrames[k].on);
+					if (f["off"].is_null() || f["on"].is_null()) return fail(u8"昇華框 sprite 缺失");
+					fr[std::to_string(k)] = std::move(f);
+				}
+				outAsc["classes"] = std::move(aClasses);
+				outAsc["nodes"] = std::move(aNodes);
+				outAsc["edges"] = std::move(aEdges);
+				outAsc["frames"] = std::move(fr);
+			}
+		}
+
 		// frames
 		static const struct { int kind; const char* off; const char* path; const char* on; } kFrames[] = {
 			{ K_NORMAL,   "PSSkillFrame", "PSSkillFrameHighlighted", "PSSkillFrameActive" },
@@ -632,6 +769,7 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 		out["masteries"] = std::move(outMast);
 		out["groupbg"] = std::move(outGroupBg);
 		out["classStarts"] = std::move(outClassStarts);
+		if (!outAsc.is_null()) out["asc"] = std::move(outAsc);
 
 		// everything validated: bundle sheets, then overwrite the JSON. Sheet source: local PoB TreeData/<ver>/ when
 		// that league exists (no download), else the assets/ directory next to data.json

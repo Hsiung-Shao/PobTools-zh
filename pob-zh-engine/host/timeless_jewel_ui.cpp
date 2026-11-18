@@ -1890,12 +1890,17 @@ public:
 		                      : ptSelected.empty() ? nullptr : &ptSelected;
 		tin.protectedMark = (canProtect() && !ptProtected.empty()) ? &ptProtected : nullptr;
 		tin.emphasize = emphNode;
+		tin.showAsc = treeAbyss;
+		tin.ascName = ascClass();
+		tin.ascLit = buildOk_ ? &build_.nodes : nullptr;   // the view only looks up ascendancy ids in it
+		tin.ascHit = &ascHit_;
 		const bool pickable = treeRadius;
 		tin.overlay = [this, pickable](ImDrawList* dl, ImVec2 mn, ImVec2 mx) { drawLegend(dl, mn, mx, pickable); };
 		// Test aid (POBTOOLS_TJ_STATE=protectclick): pin a notable under the canvas
 		// centre, right-click it through ImGui's own input queue (no OS input), then
 		// write what the click changed to POBTOOLS_TJ_CLICK_DUMP.
 		if (testClickNode_ >= 0) ptView.SetCamera(0.3f, ptData.nodes[testClickNode_].x, ptData.nodes[testClickNode_].y);
+		if (testCam_.x > 0) { ptView.SetCamera(testCam_.x, testCam_.y, testCam_.z); centerPending_ = false; }
 		PassiveTreeOutput tout = ptView.Draw(ptData, scale, tin);
 		if (testClickNode_ >= 0 && testClickFrame_ >= 0) {
 			if (testClickFrame_ == 2) {
@@ -1945,6 +1950,7 @@ public:
 			}
 		}
 		if (tout.hoveredNode >= 0) drawNodeTooltip(tout.hoveredNode);
+		else if (tout.hoveredAsc >= 0) drawAscTooltip(tout.hoveredAsc);
 		else if (testHoverNode_ >= 0) drawNodeTooltip(testHoverNode_); // POBTOOLS_TJ_STATE=keystone
 	}
 
@@ -1958,13 +1964,15 @@ public:
 		const float gap = PobUi::D(16.0f), padX = PobUi::D(10.0f), padY = PobUi::D(6.0f);
 		const char* hitL = u8"種子改變的節點";
 		const char* sockL = u8"珠寶插槽";
+		const char* clL = u8"星團珠寶格";
 		const char* pickL = canProtect() ? u8"左鍵點節點可單獨查看｜右鍵大點＝保護不被替換" : u8"點一般節點可單獨查看";
 		if (TJIsAbyss(jewelType) && buildOk_) {   // the lit nodes/links are the build (Zorath: its path)
 			pickable = true;
 			pickL = TJIsZorath(jewelType) ? u8"亮起＝插槽到職業起點的已配點路徑" : u8"亮起＝流派已配點";
 		}
 		float w = padX * 2.0f + sw + PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, hitL).x + gap + sw +
-		          PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, sockL).x;
+		          PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, sockL).x +
+		          gap + sw + PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, clL).x;
 		if (pickable) w += gap + f->CalcTextSizeA(px, FLT_MAX, 0, pickL).x;
 		const float h = px + padY * 2.0f;
 		const ImVec2 p(mn.x + PobUi::D(16.0f), mx.y - PobUi::D(14.0f) - h);
@@ -1980,6 +1988,10 @@ public:
 		x += sw + PobUi::D(6.0f);
 		dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, sockL);
 		x += f->CalcTextSizeA(px, FLT_MAX, 0, sockL).x + gap;
+		dl->AddCircle(ImVec2(x + sw * 0.5f, cy), sw * 0.5f, Tok::FxPurple, 16, 2.0f);
+		x += sw + PobUi::D(6.0f);
+		dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, clL);
+		x += f->CalcTextSizeA(px, FLT_MAX, 0, clL).x + gap;
 		if (pickable) dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, pickL);
 	}
 
@@ -2030,11 +2042,31 @@ public:
 			const std::vector<std::string> lines = PtDisplayStats(n);
 			if (!lines.empty()) ImGui::Separator();
 			for (const std::string& s : lines) ImGui::TextColored(text, "%s", s.c_str());
+			if (n.cluster) PobUi::Hint(u8"大型星團珠寶格（也可放深淵／永恆珠寶）");
 		}
 		if (canProtect() && nodeIdx < (int)ptProtected.size() && ptProtected[nodeIdx]) {
 			ImGui::Separator();
 			ImGui::TextColored(PobUi::TokV4(Tok::Success), "%s", u8"已保護：搜尋會排除替換這個大點的種子（右鍵取消）");
 		}
+		ImGui::PopTextWrapPos();
+		ImGui::EndTooltip();
+		ImGui::PopStyleVar();
+	}
+
+	void drawAscTooltip(int ascIdx)
+	{
+		const PtNode& n = ptData.ascNodes[ascIdx];
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(std::floor(16 * scale), std::floor(12 * scale)));
+		ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(440 * scale, FLT_MAX));
+		ImGui::BeginTooltip();
+		ImGui::PushTextWrapPos(400 * scale);
+		const bool hit = ascHit_.count(n.id) != 0;
+		const std::string& nm = n.nameZh.empty() ? n.name : n.nameZh;
+		ImGui::TextColored(PobUi::TokV4(hit ? Tok::TreeHit : PobUi::TreeKindColor(kindOf(n.kind))), "%s", nm.c_str());
+		if (hit) PobUi::Hint(u8"（這個種子會改掉這個昇華天賦，詳見右側種子明細）");
+		const std::vector<std::string> lines = PtDisplayStats(n);
+		if (!lines.empty()) ImGui::Separator();
+		for (const std::string& s : lines) ImGui::TextColored(PobUi::TokV4(Tok::Text), "%s", s.c_str());
 		ImGui::PopTextWrapPos();
 		ImGui::EndTooltip();
 		ImGui::PopStyleVar();
@@ -2055,6 +2087,7 @@ public:
 		}
 		ptHi.assign(ptData.nodes.size(), kPtHiNone);
 		ptTrans.clear();
+		ascHit_.clear();
 		statGroups.clear();
 		emphNode = -1; hlStatGroup = -1;
 		const bool abyssDetail = TJIsAbyss(jewelType);
@@ -2099,6 +2132,13 @@ public:
 					abyssMods[idx] = it->second;
 				}
 				cand.swap(kept);
+				// the Ascendancy passive the seed takes: same scorer the seed detail panel reads
+				std::vector<TJAbyssScored> det;
+				TJSeedHit hit;
+				if (abyssBlocker().empty())
+					TJAbyssScoreSeed(*ds, *blob, *abyssLut, makeQuery(), ptData.nodes[selSocket].id, detailSeed, &ptKind, hit, &det);
+				for (const TJAbyssScored& d : det)
+					if (d.ascendancy && d.t.ok) ascHit_.insert(d.nodeId);
 			}
 		}
 
@@ -3045,6 +3085,11 @@ public:
 		}
 		selSocket = best;
 		centerPending_ = true;
+		// POBTOOLS_TJ_CAM="zoom,x,y": pin the tree camera (whole tree / an ascendancy disc) instead of centring the socket
+		if (const char* cam = std::getenv("POBTOOLS_TJ_CAM")) {
+			float z = 0, x = 0, y = 0;
+			if (sscanf(cam, "%f,%f,%f", &z, &x, &y) == 3) testCam_ = ImVec4(z, x, y, 0);
+		}
 		const char* wantEn[3] = { "Attack Speed", "Leech", "maximum Life" };
 		const float wantW[3] = { 1.0f, 2.0f, 1.5f };
 		for (int k = 0; k < 3; k++)
@@ -3557,6 +3602,8 @@ private:
 	std::set<int> zorathPath_;    // ids, socket and class start included
 	std::vector<char> pathMask_;  // node index -> lit on the tree: Zorath's path, or the build's allocation (7-10)
 	std::vector<int> allowedIds_; // 7-10 with allocOnly_; {-1} = nothing qualifies
+	ImVec4 testCam_{ 0, 0, 0, 0 }; // POBTOOLS_TJ_CAM: zoom, x, y pinned every frame (screenshot aid)
+	std::set<int> ascHit_;        // Zorath: ascendancy node ids the detail seed conquers (gold ring on the disc)
 	std::vector<int> ascTargets_; // Zorath: the build's allocated Ascendancy passives the jewel can take
 	std::map<int, std::string> passiveZh_; // passives_by_id.json, for Ascendancy names
 };

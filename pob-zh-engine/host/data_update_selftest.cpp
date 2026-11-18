@@ -1,6 +1,7 @@
 #include "data_update_selftest.h"
 #include "atlas_update.h"
 #include "passive_tree_update.h"
+#include "passive_import.h"
 #include "http_client.h"
 #include "error_log.h"
 
@@ -303,6 +304,21 @@ std::string without_key(const std::string& good, const char* key)
 {
 	ordered_json d = ordered_json::parse(good);
 	d.erase(key);
+	return d.dump();
+}
+
+// pt_data_good + one ascendancy (Ascendant under Scion): a start node (20) linked to one ordinary node (21), same group.
+// The ascendancy sprite keys (Classes<id>, AscendancyMiddle, AscendancyFrame*) live in the "ascendancy" sprite category.
+std::string pt_data_asc()
+{
+	ordered_json d = ordered_json::parse(pt_data_good());
+	d["classes"] = ordered_json::parse(R"([{"name":"Scion","ascendancies":[{"id":"Ascendant","name":"Ascendant"}]}])");
+	d["groups"]["2"] = ordered_json::parse(R"({"x":0,"y":0})");
+	d["nodes"]["20"] = ordered_json::parse(R"({"skill":20,"name":"Ascendant Start","ascendancyName":"Ascendant","isAscendancyStart":true,"group":2,"orbit":0,"orbitIndex":0,"icon":"ic","out":["21"]})");
+	d["nodes"]["21"] = ordered_json::parse(R"({"skill":21,"name":"Asc Node","ascendancyName":"Ascendant","group":2,"orbit":1,"orbitIndex":0,"icon":"ic","in":["20"],"stats":["+2 to test"]})");
+	d["sprites"]["ascendancy"] = ordered_json::parse(sprite("0.3835", "asc-3.png", 64,
+		coords_obj({ "ClassesAscendant", "AscendancyMiddle", "AscendancyFrameSmallNormal", "AscendancyFrameSmallAllocated",
+		             "AscendancyFrameLargeNormal", "AscendancyFrameLargeAllocated" }, 32)));
 	return d.dump();
 }
 
@@ -865,6 +881,40 @@ void test_pob_local(Rep& R)
 	}
 }
 
+// ---- A6: 匯入器把昇華節點/連線寫進 asc 區段,不污染主樹 nodes ----------------------------------------------------
+
+// 直接呼叫 ImportPassiveTreeData(圖集從 data.json 旁的 assets\ 取);回傳輸出樹檔,失敗時 *err 帶原因
+ordered_json import_tree(const std::string& dataJson, std::string* err)
+{
+	const std::wstring d = make_sandbox_dir();
+	put(d + L"in\\data.json", dataJson);
+	for (const char* a : { "a-3.png", "b-3.png", "f-3.png", "g-3.png", "asc-3.png" })
+		put(d + L"in\\assets\\" + widen(a), std::string("ASSET:") + a);
+	std::string summary;
+	ordered_json out;
+	if (ImportPassiveTreeData(d + L"in\\data.json", "3_29", d, err, &summary))
+		out = parse_file(d + L"Data\\passive_tree_poe1.json");
+	rmtree(d.substr(0, d.size() - 1));
+	return out;
+}
+
+void test_pt_ascendancy(Rep& R)
+{
+	std::string e0, e1;
+	const ordered_json base = import_tree(pt_data_good(), &e0);
+	const ordered_json asc = import_tree(pt_data_asc(), &e1);
+	R.chk_id("A6a", base.is_object() && asc.is_object(), u8"含昇華與不含昇華的最小 data.json 都匯入成功", e0 + " | " + e1);
+	if (!base.is_object() || !asc.is_object()) return;
+	const bool hasAsc = asc.contains("asc") && asc["asc"].is_object();
+	R.chk_id("A6b", hasAsc && asc["asc"]["nodes"].size() == 2, u8"輸出 asc.nodes 為 2 筆（起點 + 一般昇華節點）",
+	         hasAsc ? std::to_string(asc["asc"]["nodes"].size()) : std::string("無 asc 區段"));
+	R.chk_id("A6c", hasAsc && asc["asc"]["edges"].size() == 1, u8"輸出 asc.edges 為 1 筆（兩昇華節點相連）",
+	         hasAsc ? std::to_string(asc["asc"]["edges"].size()) : std::string("無 asc 區段"));
+	R.chk_id("A6d", base["nodes"].size() == asc["nodes"].size() && asc["nodes"].size() == 2,
+	         u8"主樹 nodes 數與不含昇華時相同（昇華節點不進主樹）",
+	         std::to_string(base["nodes"].size()) + " vs " + std::to_string(asc["nodes"].size()));
+}
+
 int run(const std::wstring& exeDir, const Flavor& fl, const wchar_t* reportName)
 {
 	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
@@ -882,7 +932,8 @@ int run(const std::wstring& exeDir, const Flavor& fl, const wchar_t* reportName)
 	test_cache_write(R);
 	if (!fl.atlas) test_pt_tree_write(R);
 	if (!fl.atlas) test_pob_local(R);
-	else rep.note(u8"輿圖更新器不讀本機 POB，無對應補充項");
+	if (!fl.atlas) test_pt_ascendancy(R);
+	if (fl.atlas) rep.note(u8"輿圖更新器不讀本機 POB，無對應補充項");
 	return rep.finish(exeDir + reportName);
 }
 

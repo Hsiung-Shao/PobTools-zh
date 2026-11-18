@@ -1137,6 +1137,17 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 			      "Tecrod and Ulaman conquer the same passives for the same (socket, seed)",
 			      std::to_string(compared) + " pairs compared");
 
+			// E2 Ulaman 查表的插槽清單必須含 6 個外圍大型星團插槽(55190, 2491, 7960, 46882, 21984, 32763)
+			{
+				const int want[] = { 55190, 2491, 7960, 46882, 21984, 32763 };
+				std::string missing;
+				for (int w : want)
+					if (std::find(lut8.socketIds.begin(), lut8.socketIds.end(), w) == lut8.socketIds.end())
+						missing += (missing.empty() ? "" : ",") + std::to_string(w);
+				check(missing.empty(), "E2 Ulaman 查表 socketIds 含 6 個外圍大型星團插槽",
+				      missing.empty() ? std::string() : "missing=" + missing);
+			}
+
 			// A10 the negative-roll rule. Stored negatives occur on only two of the four jewels; assert the
 			// stored value really is negative first, or the rule is "confirmed" by a case that never needed it.
 			std::map<int, TJAbyssMod> rec;

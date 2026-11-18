@@ -43,6 +43,8 @@ bool PassiveTreeData::Load(const std::wstring& exeDir, std::string* err)
 {
 	nodes.clear(); edges.clear(); sheets.clear(); sockets.clear();
 	masteries.clear(); groupbg.clear(); classStarts.clear();
+	ascClasses.clear(); ascNodes.clear(); ascEdges.clear();
+	ascFrames[0] = ascFrames[1] = PtFrame{};
 
 	std::string content;
 	if (!read_file_utf8(exeDir + L"Data\\passive_tree_poe1.json", content)) {
@@ -75,6 +77,7 @@ bool PassiveTreeData::Load(const std::wstring& exeDir, std::string* err)
 			n.x = jn.value("x", 0.0f); n.y = jn.value("y", 0.0f);
 			parse_strings(jn, "stats", n.stats);
 			parse_strings(jn, "statsZh", n.statsZh);
+			n.cluster = jn.value("cl", 0) != 0;
 			// sockets carry no icon; everything else must have on/off
 			if (n.kind != kPtSocket) {
 				if (!parse_sprite(jn.at("on"), n.on) || !parse_sprite(jn.at("off"), n.off))
@@ -141,6 +144,52 @@ bool PassiveTreeData::Load(const std::wstring& exeDir, std::string* err)
 					}
 				classStarts.push_back(std::move(cs));
 			}
+
+		if (doc.contains("asc")) { // optional: older tree files have no ascendancy discs
+			const ordered_json& ja = doc["asc"];
+			for (const auto& jc : ja.value("classes", ordered_json::array())) {
+				AscClass c;
+				c.id = jc.value("id", std::string());
+				c.x = jc.value("x", 0.0f); c.y = jc.value("y", 0.0f);
+				if (jc.contains("bg")) parse_sprite(jc["bg"], c.bg);
+				ascClasses.push_back(std::move(c));
+			}
+			for (const auto& jn : ja.value("nodes", ordered_json::array())) {
+				PtNode n;
+				n.id = jn.value("id", 0);
+				n.name = jn.value("name", std::string());
+				n.nameZh = jn.value("nameZh", std::string());
+				n.asc = jn.value("asc", std::string());
+				n.kind = jn.value("kind", 0);
+				n.x = jn.value("x", 0.0f); n.y = jn.value("y", 0.0f);
+				parse_strings(jn, "stats", n.stats);
+				parse_strings(jn, "statsZh", n.statsZh);
+				if (jn.contains("on")) parse_sprite(jn["on"], n.on);
+				if (jn.contains("off")) parse_sprite(jn["off"], n.off);
+				ascNodes.push_back(std::move(n));
+			}
+			for (const auto& je : ja.value("edges", ordered_json::array())) {
+				PtEdge e;
+				e.a = je.value("a", -1); e.b = je.value("b", -1);
+				if (e.a < 0 || e.b < 0 || e.a >= (int)ascNodes.size() || e.b >= (int)ascNodes.size()) continue;
+				if (je.contains("arc") && je["arc"].is_array() && je["arc"].size() == 5) {
+					e.hasArc = true;
+					e.cx = je["arc"][0].get<float>(); e.cy = je["arc"][1].get<float>();
+					e.r = je["arc"][2].get<float>();
+					e.a0 = je["arc"][3].get<float>(); e.sweep = je["arc"][4].get<float>();
+				}
+				ascNodes[e.a].adj.push_back(e.b);
+				ascNodes[e.b].adj.push_back(e.a);
+				ascEdges.push_back(e);
+			}
+			if (ja.contains("frames"))
+				for (const auto& [key, jf] : ja["frames"].items()) {
+					const int k = atoi(key.c_str());
+					if (k < 0 || k > 1) continue;
+					if (jf.contains("off")) parse_sprite(jf["off"], ascFrames[k].off);
+					if (jf.contains("on")) parse_sprite(jf["on"], ascFrames[k].on);
+				}
+		}
 	} catch (const std::exception& e) {
 		if (err) *err = std::string("passive_tree_poe1.json parse error: ") + e.what();
 		return false;
@@ -172,6 +221,13 @@ int PassiveTreeData::IndexOfId(int id) const
 {
 	for (int i = 0; i < (int)nodes.size(); i++)
 		if (nodes[i].id == id) return i;
+	return -1;
+}
+
+int PassiveTreeData::AscIndexOfId(int id) const
+{
+	for (int i = 0; i < (int)ascNodes.size(); i++)
+		if (ascNodes[i].id == id) return i;
 	return -1;
 }
 
@@ -534,6 +590,79 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 			      "T10c 沒有 classStarts 時路徑查詢回空、不崩潰", "");
 		}
 		std::filesystem::remove_all(tmp, ec);
+	}
+
+	// ---- 昇華盤(A1-A5)與外圍大型星團插槽(E1)----
+	// A1 21 個正式昇華(7 職業 x 3),含 Necromancer
+	const PassiveTreeData::AscClass* necro = nullptr;
+	for (const PassiveTreeData::AscClass& c : d.ascClasses) if (c.id == "Necromancer") necro = &c;
+	check(d.ascClasses.size() == 21 && necro != nullptr, "A1 出貨樹有 21 個昇華(含 Necromancer)",
+	      std::to_string(d.ascClasses.size()) + " 個");
+	// A2 Necromancer 位置 (1500,-9850)
+	check(necro && std::fabs(necro->x - 1500.0f) <= 1.0f && std::fabs(necro->y + 9850.0f) <= 1.0f,
+	      "A2 Necromancer 昇華盤位置為 (1500,-9850)",
+	      necro ? std::to_string(necro->x) + "," + std::to_string(necro->y) : std::string("找不到"));
+	// A3 昇華節點 id 不與主樹 nodes 重疊,主樹節點數維持
+	{
+		int overlap = 0;
+		for (const PtNode& a : d.ascNodes) if (d.IndexOfId(a.id) >= 0) overlap++;
+		check(!d.ascNodes.empty() && overlap == 0 && d.nodes.size() > 1500,
+		      "A3 昇華節點 id 與主樹 nodes 無交集且主樹節點數 > 1500",
+		      "asc=" + std::to_string(d.ascNodes.size()) + " overlap=" + std::to_string(overlap) +
+		      " nodes=" + std::to_string(d.nodes.size()));
+	}
+	// A4 全部昇華節點 on/off 為有效 sprite;缺譯名者只記錄不判失敗
+	{
+		int bad = 0, noZh = 0;
+		std::string names;
+		for (const PtNode& a : d.ascNodes) {
+			if (!a.on.valid || !a.off.valid) bad++;
+			if (a.nameZh.empty()) { noZh++; if (noZh <= 20) names += (names.empty() ? "" : "; ") + a.name; }
+		}
+		check(!d.ascNodes.empty() && bad == 0, "A4a 昇華節點 on/off sprite 皆有效",
+		      "invalid=" + std::to_string(bad) + "/" + std::to_string(d.ascNodes.size()));
+		ptlog(rep, "[note] A4b 昇華節點缺譯名 %d 個(不判失敗)  %s\n", noZh, names.c_str());
+	}
+	// A5 樹檔沒有 asc 區段(舊版)時 Load 成功且昇華資料全空
+	{
+		wchar_t buf[MAX_PATH];
+		GetTempPathW(MAX_PATH, buf);
+		const std::wstring tmp = std::wstring(buf) + L"pt_selftest_noasc_" + std::to_wstring(GetCurrentProcessId()) + L"\\";
+		std::error_code ec;
+		std::filesystem::remove_all(tmp, ec);
+		std::filesystem::create_directories(tmp + L"Data", ec);
+		std::string content;
+		bool wrote = false;
+		if (read_file_utf8(exeDir + L"Data\\passive_tree_poe1.json", content)) {
+			try {
+				ordered_json doc = ordered_json::parse(content);
+				doc.erase("asc");
+				wrote = write_file_utf8(tmp + L"Data\\passive_tree_poe1.json", doc.dump());
+			} catch (...) { wrote = false; }
+		}
+		if (!wrote) {
+			check(false, "A5 無法造出缺 asc 的樹檔", "");
+		} else {
+			PassiveTreeData d3 = d;          // 先帶著昇華資料,Load 後必須清掉
+			std::string err3;
+			const bool ok = d3.Load(tmp, &err3);
+			check(ok && d3.ascClasses.empty() && d3.ascNodes.empty() && d3.ascEdges.empty(),
+			      "A5 缺 asc 區段的樹檔 Load 成功且昇華資料皆空",
+			      err3 + " classes=" + std::to_string(d3.ascClasses.size()) + " nodes=" +
+			      std::to_string(d3.ascNodes.size()) + " edges=" + std::to_string(d3.ascEdges.size()));
+		}
+		std::filesystem::remove_all(tmp, ec);
+	}
+	// E1 外圍大型星團插槽(cluster)恰為 6 個,其餘插槽為 false
+	{
+		const std::set<int> want = { 55190, 2491, 7960, 46882, 21984, 32763 };
+		std::set<int> got;
+		bool nonSocketFlag = false;
+		for (const PtNode& n : d.nodes)
+			if (n.cluster) { got.insert(n.id); if (n.kind != kPtSocket) nonSocketFlag = true; }
+		std::string gs;
+		for (int g : got) gs += (gs.empty() ? "" : ",") + std::to_string(g);
+		check(got == want && !nonSocketFlag, "E1 cluster 插槽恰為 6 個指定 id、其餘插槽皆 false", "got=" + gs);
 	}
 
 	ptlog(rep, "\n%d passed, %d failed\n", pass, fail);
