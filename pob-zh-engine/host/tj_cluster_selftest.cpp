@@ -203,6 +203,22 @@ int RunTJClusterSelfTest(const std::wstring& exeDir, const std::wstring& pobDirA
 		      "C3 只有對不到的節點受影響,其他節點圖示仍有效", "");
 	}
 
+	// C3b 圖示座標來自別版天賦樹(POB 缺計算器的樹版本):不畫圖示、框照畫
+	{
+		json assets = MakeAssets();
+		assets["version"] = "9_99";
+		TJClusterGraph g; std::string err;
+		const bool ok = ParseClusterGraph(MakeState(), assets, tree, g, &err);
+		int icons = 0, frames = 0;
+		for (const TJClusterNode& n : g.nodes) {
+			icons += n.on.valid + n.off.valid;
+			frames += n.frameOn.valid && n.frameOff.valid;
+		}
+		check(ok && g.nodes.size() == 3 && icons == 0, "C3b 版本不符時節點仍在、圖示全部無效",
+		      "ok=" + std::to_string(ok) + " n=" + std::to_string(g.nodes.size()) + " icons=" + std::to_string(icons));
+		check(frames == 3, "C3b 版本不符時框照畫", "frames=" + std::to_string(frames));
+	}
+
 	// C4 同組同環連線:畫弧,半徑=節點到組中心距離,弧度 0..π
 	{
 		TJClusterGraph g; std::string err;
@@ -272,6 +288,10 @@ int RunTJClusterSelfTest(const std::wstring& exeDir, const std::wstring& pobDirA
 				}
 				check(allocN >= 1, "C7 至少一個節點 alloc=true", "alloc=" + std::to_string(allocN));
 				check(missFrame == 0, "C7 每個非插槽節點的 frameOff 有效", "missing=" + std::to_string(missFrame));
+				int icons = 0;
+				for (const TJClusterNode& n : g.nodes) icons += n.off.valid;
+				check(ta.value("version", std::string()) == real.TreeVersion() && icons > 0,
+				      "C7 樹版本相符時圖示照畫", "assets=" + ta.value("version", std::string()) + " tree=" + real.TreeVersion() + " icons=" + std::to_string(icons));
 				bool idxOk = true;
 				for (const TJClusterEdge& e : g.edges) {
 					const int na = e.aMain ? (int)real.nodes.size() : (int)g.nodes.size();

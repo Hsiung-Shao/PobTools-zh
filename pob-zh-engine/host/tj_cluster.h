@@ -37,7 +37,7 @@ struct TJClusterGraph {
 
 // treeState: bridge get_tree_state result (dynamicNodes / dynamicConnectors / dynamicGroups).
 // treeAssets: bridge tree_assets result (assets / disabled: sprite name -> {file,x,y,w,h}).
-// A sprite resolves only when its file's basename is one of tree.sheets (uv = rect / that sheet's w,h; world size =
+// Icons are skipped when treeAssets.version is not tree.TreeVersion(). A sprite resolves only when its file's basename is one of tree.sheets (uv = rect / that sheet's w,h; world size =
 // px * tree.worldPerPx). Mastery nodes are skipped. A connector end that is neither a kept cluster node nor a main
 // tree node drops the edge. false (with *err) only when treeState has no dynamicNodes array.
 bool ParseClusterGraph(const nlohmann::json& treeState, const nlohmann::json& treeAssets, const PassiveTreeData& tree,

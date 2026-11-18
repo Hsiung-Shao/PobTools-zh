@@ -70,6 +70,9 @@ bool ParseClusterGraph(const json& treeState, const json& treeAssets, const Pass
 	static const json kEmpty = json::object();
 	const json& assets = treeAssets.is_object() && treeAssets.contains("assets") ? treeAssets["assets"] : kEmpty;
 	const json& disabled = treeAssets.is_object() && treeAssets.contains("disabled") ? treeAssets["disabled"] : kEmpty;
+	// icon rects of another tree version would cut the wrong art out of our sheets: frames only then
+	const std::string assetsVer = treeAssets.is_object() ? str_or(treeAssets, "version") : std::string();
+	const bool iconsOk = assetsVer.empty() || assetsVer == tree.TreeVersion();
 
 	std::map<int, int> idx;     // POB id -> out.nodes index
 	std::map<int, int> grpOf;   // POB id -> subgraph group id
@@ -88,8 +91,10 @@ bool ParseClusterGraph(const json& treeState, const json& treeAssets, const Pass
 		strings_of(jn, "statsZh", n.statsZh);
 		n.alloc = jn.value("allocated", false);
 		const std::string icon = str_or(jn, "icon");
-		n.on = resolve_sprite(assets, icon, tree);
-		n.off = resolve_sprite(disabled, icon, tree);
+		if (iconsOk) {
+			n.on = resolve_sprite(assets, icon, tree);
+			n.off = resolve_sprite(disabled, icon, tree);
+		}
 		const auto fr = jn.find("frames");
 		if (fr != jn.end() && fr->is_object()) {
 			n.frameOn = resolve_sprite(assets, str_or(*fr, "alloc"), tree);
@@ -198,7 +203,7 @@ bool TJClusterFetchSync(const std::wstring& exeDir, const std::wstring& pobDir, 
 		json r;
 		if (!child->Call("load_build_file", json{ { "path", path } }, r, 120000)) { ok = false; e = "load_build_file: " + r.dump().substr(0, 300); }
 		else if (!child->Call("get_tree_state", json::object(), treeState, 60000)) { ok = false; e = "get_tree_state: " + treeState.dump().substr(0, 300); }
-		// POB without our tree version: fall back to the build's tree (icons may misplace, nodes still draw)
+		// POB without our tree version: fall back to the build's tree (ParseClusterGraph then skips the icons)
 		else if (!child->Call("tree_assets", assetsArgs, treeAssets, 60000) &&
 		         (assetsArgs.empty() || !child->Call("tree_assets", json::object(), treeAssets, 60000))) { ok = false; e = "tree_assets: " + treeAssets.dump().substr(0, 300); }
 	}
