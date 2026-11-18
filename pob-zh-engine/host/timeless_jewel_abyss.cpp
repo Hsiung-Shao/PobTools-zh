@@ -967,6 +967,28 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 			check(TJStatValue("Adds 0 to 26 Lightning Damage to Attacks") == 26.0 &&
 			      TJStatValue("Adds 2 to 0 Lightning Damage to Attacks") == 2.0,
 			      "「0 至 N」行的數值取 N", std::to_string(TJStatValue("Adds 0 to 26 Lightning Damage to Attacks")));
+			// 深淵鑰石不計分 → 選單不列只出現在鑰石上的詞綴(POB 選單排除 node.ks);永恆鑰石照列
+			{
+				auto listed = [&](int type, const std::string& en) {
+					for (const TJStatTemplate& t : TJStatTemplates(ds, type))
+						if (t.en == TJNormalizeStat(en)) return true;
+					return false;
+				};
+				check(!listed(8, "Take 30% less damage from Critical Strikes") &&
+				      !listed(10, "Maximum number of raised Spectres, Skeletons and Zombies is 1"),
+				      "深淵選單不列鑰石專屬詞綴");
+				check(listed(7, "Adds 0 to 26 Lightning Damage to Attacks"), "深淵選單仍列一般天賦詞綴");
+				bool eternalKs = false;
+				for (const TJEntry& e : ds.nodes)
+					if (e.ks && e.id.rfind("vaal", 0) == 0 && !e.sd.empty() && listed(1, e.sd[0])) eternalKs = true;
+				check(eternalKs, "永恆珠寶選單照舊列鑰石詞綴");
+				int missing = 0;
+				for (const TJEntry& e : ds.nodes)
+					if (e.ks && e.id.rfind("abyss", 0) == 0)
+						for (size_t i = 0; i < e.sd.size(); i++)
+							if (i >= e.sdZh.size() || e.sdZh[i].empty()) missing++;
+				check(missing == 0, "深淵鑰石每行都有中文", std::to_string(missing) + " 行缺");
+			}
 		}
 
 		// A5 seed addressing rejects what it cannot answer instead of guessing.

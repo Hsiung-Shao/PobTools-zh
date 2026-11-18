@@ -700,6 +700,7 @@ std::vector<TJStatTemplate> TJStatTemplates(const TJDataset& ds, int jewelType)
 	auto add = [&](const std::vector<TJEntry>& v) {
 		for (const auto& e : v) {
 			if (!prefix.empty() && e.id.rfind(prefix, 0) != 0) continue; // other jewel
+			if (e.ks && TJIsAbyss(jewelType)) continue; // Abyss keystones never score (PoB lists exclude node.ks)
 			for (size_t i = 0; i < e.sd.size(); i++) {
 				if (e.sd[i].empty()) continue;
 				std::string en = TJNormalizeStat(e.sd[i]);
