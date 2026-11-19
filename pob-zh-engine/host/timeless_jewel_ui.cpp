@@ -103,10 +103,32 @@ std::string TradeQueryJson(const std::string& tradeStatId, int seed)
 	return q;
 }
 
-TradeBatch TradeNextBatch(size_t total, size_t next)
+size_t TradeSeedsPerSearch(size_t nIds)
+{
+	return nIds ? (std::max)((size_t)1, kMaxTradeSeeds / nIds) : kMaxTradeSeeds;
+}
+
+std::string TradeQueryJsonAny(const std::vector<std::string>& statIds, const std::vector<int>& seeds)
+{
+	std::string filters;
+	size_t n = 0;
+	for (int s : seeds)
+		for (const std::string& id : statIds) {
+			if (n >= kMaxTradeSeeds) break;
+			char f[256];
+			snprintf(f, sizeof(f), "%s{\"id\":\"%s\",\"value\":{\"min\":%d,\"max\":%d}}", n ? "," : "", id.c_str(), s, s);
+			filters += f;
+			n++;
+		}
+	return "{\"query\":{\"status\":{\"option\":\"securable\"},\"stats\":[{\"type\":\"count\","
+	       "\"value\":{\"min\":1},\"filters\":[" + filters + "]}]"
+	       "},\"sort\":{\"price\":\"asc\"}}";
+}
+
+TradeBatch TradeNextBatch(size_t total, size_t next, size_t per)
 {
 	const size_t begin = next < total ? next : 0;
-	return { begin, (std::min)(total, begin + kMaxTradeSeeds) };
+	return { begin, (std::min)(total, begin + (per ? per : kMaxTradeSeeds)) };
 }
 
 // Query JSON matching ANY of several seeds (PoE "count" stat group, one filter
@@ -702,9 +724,7 @@ public:
 		// conqueror (affects keystones + trade export)
 		const std::vector<TJConqueror>* conqs = conqListFor(jewelType);
 		const int conqN = conqs ? (int)conqs->size() : 0;
-		if (conquerorSel >= conqN || conquerorSel < 0) conquerorSel = 0;
-		conquerorId_ = conqN ? (*conqs)[conquerorSel].id : std::string("1");
-		tradeStatId_ = conqN ? (*conqs)[conquerorSel].trade : std::string();
+		deriveConqueror(conqs, conqN);
 
 		// A finished search reports once, as a toast; the table says the rest.
 		if (job.done.load() && !job.running.load() && !jobReported_) {
@@ -854,8 +874,10 @@ public:
 			if (c.id.find("_v2") != std::string::npos) note += u8"（舊版）";
 			conqNote.push_back(note);
 		}
+		if (conqAnyOk(conqN)) { conqLbl.push_back(u8"任意"); conqNote.push_back(u8"不限征服者，只看詞綴"); }
+		const int conqItems = (int)conqLbl.size();
 		std::vector<const char*> conqP, conqNP;
-		for (int i = 0; i < conqN; i++) { conqP.push_back(conqLbl[i].c_str()); conqNP.push_back(conqNote[i].c_str()); }
+		for (int i = 0; i < conqItems; i++) { conqP.push_back(conqLbl[i].c_str()); conqNP.push_back(conqNote[i].c_str()); }
 		const char* modeLabels[2] = { u8"找種子", u8"查已知種子" };
 		const char* pasteLbl = u8"從遊戲貼上珠寶";
 
@@ -941,9 +963,9 @@ public:
 		// conqueror (keystones + trade export)
 		at(x, H);
 		int csel = conquerorSel;
-		if (PobUi::Select("##conq", &csel, conqP.data(), conqNP.data(), conqN, conqW, conqN > 0))
+		if (PobUi::Select("##conq", &csel, conqP.data(), conqNP.data(), conqItems, conqW, conqN > 0))
 			conquerorSel = csel;
-		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"征服者決定關鍵天賦會變成哪一個，也是交易站搜尋用的詞綴");
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"征服者決定關鍵天賦會變成哪一個，也是交易站搜尋用的詞綴；選「任意」不限征服者，只找種子對應的詞綴");
 		x += conqW + gap;
 
 		// mode. Bound straight to `mode`, so setting it elsewhere (a paste) sticks:
@@ -1207,7 +1229,8 @@ public:
 	void tradeSeed(int seed)
 	{
 		if (tradeOff()) return;
-		openTrade(TradeSearchUrl(tradeRealm, tradeLeague, tradePlatform, TradeQueryJson(tradeStatId_, seed)), "seed");
+		const std::string q = conqAny_ ? TradeQueryJsonAny(tradeIds_, { seed }) : TradeQueryJson(tradeStatId_, seed);
+		openTrade(TradeSearchUrl(tradeRealm, tradeLeague, tradePlatform, q), "seed");
 	}
 
 	// Several seeds in one search: a "count >= 1" stat group, one filter per seed
@@ -1216,7 +1239,8 @@ public:
 	void tradeSeeds(const std::vector<int>& seeds, const char* tag)
 	{
 		if (tradeOff() || seeds.empty()) return;
-		openTrade(TradeSearchUrl(tradeRealm, tradeLeague, tradePlatform, TradeQueryJsonMulti(tradeStatId_, seeds)), tag);
+		const std::string q = conqAny_ ? TradeQueryJsonAny(tradeIds_, seeds) : TradeQueryJsonMulti(tradeStatId_, seeds);
+		openTrade(TradeSearchUrl(tradeRealm, tradeLeague, tradePlatform, q), tag);
 	}
 
 	// Banners under the header: a failed tree update, a failed paste or copy.
@@ -1362,14 +1386,66 @@ public:
 		for (int idx : ptData.NodesInRadius(selSocket, 1800.0f)) {
 			const PtNode& n = ptData.nodes[idx];
 			if (n.kind != kPtKeystone) continue;
-			TJTransform t = TJApply(*ds, kNoBlob, jewelType, -1, n.id, "Keystone", n.stats,
-			                        ConquerorType(jewelType), conquerorId_, n.name);
+			TJTransform t = applyNode(kNoBlob, -1, n, "Keystone");
 			if (!t.ok || !t.replaced) continue;
 			lost += u8"「" + (n.nameZh.empty() ? n.name : n.nameZh) + u8"」";
-			becomes = t.newNameZh.empty() ? t.newName : t.newNameZh;
+			if (conqAny_) {
+				becomes.clear();
+				for (size_t i = 0; i < t.linesZh.size(); i++) becomes += (i ? u8"、" : "") + t.linesZh[i];
+			} else {
+				becomes = u8"「" + (t.newNameZh.empty() ? t.newName : t.newNameZh) + u8"」";
+			}
 		}
 		if (lost.empty()) return {};
-		return u8"此插槽的鑰石" + lost + u8"會變成「" + becomes + u8"」，與種子無關";
+		if (conqAny_) return u8"此插槽的鑰石" + lost + u8"依征服者而定：" + becomes + u8"，與種子無關";
+		return u8"此插槽的鑰石" + lost + u8"會變成" + becomes + u8"，與種子無關";
+	}
+
+	// "任意" sits after the conquerors (saved / pasted indices keep their meaning); Legion only.
+	bool conqAnyOk(int conqN) const { return conqN > 1 && !TJIsAbyss(jewelType); }
+
+	void deriveConqueror(const std::vector<TJConqueror>* conqs, int conqN)
+	{
+		const int items = conqN + (conqAnyOk(conqN) ? 1 : 0);
+		if (conquerorSel >= items || conquerorSel < 0) conquerorSel = 0;
+		conqAny_ = conqAnyOk(conqN) && conquerorSel == conqN;
+		tradeIds_.clear();
+		if (conqAny_) {
+			conquerorId_ = "*"; // keystones go through applyNode; other nodes ignore the conqueror
+			for (const TJConqueror& c : *conqs)
+				if (!c.trade.empty() && std::find(tradeIds_.begin(), tradeIds_.end(), c.trade) == tradeIds_.end())
+					tradeIds_.push_back(c.trade);
+			tradeStatId_ = tradeIds_.empty() ? std::string() : tradeIds_.front();
+		} else {
+			conquerorId_ = conqN ? (*conqs)[conquerorSel].id : std::string("1");
+			tradeStatId_ = conqN ? (*conqs)[conquerorSel].trade : std::string();
+		}
+	}
+
+	// Seeds one trade search carries for the current conqueror pick.
+	size_t tradePerSearch() const { return conqAny_ ? TradeSeedsPerSearch(tradeIds_.size()) : kMaxTradeSeeds; }
+
+	// TJApply for the picked conqueror; under "任意" a keystone lists every conqueror's ("卡奧姆 → X").
+	TJTransform applyNode(const std::string& blobRef, int seed, const PtNode& n, const char* nodeType) const
+	{
+		const std::vector<TJConqueror>* conqs = conqListFor(jewelType);
+		if (!conqAny_ || !conqs || n.kind != kPtKeystone)
+			return TJApply(*ds, blobRef, jewelType, seed, n.id, nodeType, n.stats, ConquerorType(jewelType),
+			               conquerorId_, n.name);
+		TJTransform out;
+		for (const TJConqueror& c : *conqs) {
+			const TJTransform t = TJApply(*ds, blobRef, jewelType, seed, n.id, nodeType, n.stats,
+			                              ConquerorType(jewelType), c.id, n.name);
+			if (!t.ok || !t.replaced) continue;
+			out.ok = out.replaced = true;
+			std::string who = c.nameZh.empty() ? c.name : c.nameZh;
+			if (c.id.find("_v2") != std::string::npos) who += u8"（舊版）";
+			out.lines.push_back(c.name + " -> " + t.newName);
+			out.linesZh.push_back(who + u8" → " + (t.newNameZh.empty() ? t.newName : t.newNameZh));
+		}
+		out.newName = "Depends on conqueror";
+		out.newNameZh = u8"依征服者而定";
+		return out;
 	}
 
 	// The pinned block under both forms: the socket line, then the keystone
@@ -1753,9 +1829,11 @@ public:
 
 	void copyForPob(int seed)
 	{
-		std::string t = TJItemText(*ds, jewelType, conquerorSel, seed);
+		// POB needs one conqueror on the item: under "任意" the first one (the seed's mods do not depend on it)
+		std::string t = TJItemText(*ds, jewelType, conqAny_ ? 0 : conquerorSel, seed);
 		if (!t.empty() && WriteClipboardUtf8(nullptr, t))
-			PobUi::ShowToast(u8"已複製物品文字，可在 POB 的物品欄貼上 (Ctrl+V)", PobUi::Tone::Ok);
+			PobUi::ShowToast(conqAny_ ? u8"已複製物品文字（征服者用第一位，鑰石以實際珠寶為準），可在 POB 的物品欄貼上 (Ctrl+V)"
+			                          : u8"已複製物品文字，可在 POB 的物品欄貼上 (Ctrl+V)", PobUi::Tone::Ok);
 		else
 			showError(u8"複製失敗", u8"無法寫入剪貼簿，請再試一次。", false);
 	}
@@ -1955,7 +2033,29 @@ public:
 		if (tout.hoveredNode >= 0) drawNodeTooltip(tout.hoveredNode);
 		else if (tout.hoveredCluster >= 0 && tin.cluster) drawClusterTooltip(tin.cluster->nodes[tout.hoveredCluster]);
 		else if (tout.hoveredAsc >= 0) drawAscTooltip(tout.hoveredAsc);
-		else if (testHoverNode_ >= 0) drawNodeTooltip(testHoverNode_); // POBTOOLS_TJ_STATE=keystone
+		else if (testHoverNode_ >= 0) { drawNodeTooltip(testHoverNode_); dumpKeystoneOnce(); } // POBTOOLS_TJ_STATE=keystone
+	}
+
+	// Test aid (POBTOOLS_TJ_STATE=keystone): the socket note and the hovered keystone's lines go to POBTOOLS_TJ_KS_DUMP.
+	void dumpKeystoneOnce()
+	{
+		if (testKsDumped_ || hiSig == -1) return;
+		testKsDumped_ = true;
+		wchar_t path[MAX_PATH] = L"";
+		const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_TJ_KS_DUMP", path, MAX_PATH);
+		if (n == 0 || n >= MAX_PATH) return;
+		std::string out = "note=" + keystoneNote() + "\n";
+		const auto it = ptTrans.find(testHoverNode_);
+		out += std::string("replaced=") + (it != ptTrans.end() && it->second.replaced ? "1" : "0") + "\n";
+		if (it != ptTrans.end()) {
+			out += "name=" + it->second.newNameZh + "\n";
+			for (const auto& l : it->second.linesZh) out += "line=" + l + "\n";
+		}
+		HANDLE f = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (f == INVALID_HANDLE_VALUE) return;
+		DWORD wr = 0;
+		WriteFile(f, out.data(), (DWORD)out.size(), &wr, nullptr);
+		CloseHandle(f);
 	}
 
 	// Bottom-left of the canvas: what the gold ring and the socket mean.
@@ -2158,8 +2258,7 @@ public:
 		{
 			const std::vector<TJConqueror>* conqs = conqListFor(jewelType);
 			const int conqN = conqs ? (int)conqs->size() : 0;
-			if (conquerorSel >= conqN || conquerorSel < 0) conquerorSel = 0;
-			conquerorId_ = conqN ? (*conqs)[conquerorSel].id : std::string("1");
+			deriveConqueror(conqs, conqN);
 		}
 		ptHi.assign(ptData.nodes.size(), kPtHiNone);
 		ptTrans.clear();
@@ -2230,8 +2329,7 @@ public:
 				// so preview it now and let the conqueror picker change it.
 				if (!abyssDetail && n.kind == kPtKeystone) {
 					static const std::string kNoBlob;
-					TJTransform t = TJApply(*ds, kNoBlob, jewelType, -1, n.id, "Keystone", n.stats,
-					                        ConquerorType(jewelType), conquerorId_, n.name);
+					TJTransform t = applyNode(kNoBlob, -1, n, "Keystone");
 					if (t.ok && t.replaced) {
 						ptHi[idx] = kPtHiReplaced;
 						ptTrans[idx] = std::move(t);
@@ -2248,8 +2346,7 @@ public:
 				t = TJAbyssApply(*ds, m->second);
 			} else {
 				const char* nt = n.kind == kPtKeystone ? "Keystone" : n.kind == kPtNotable ? "Notable" : "Normal";
-				t = TJApply(*ds, *blob, jewelType, detailSeed, n.id, nt, n.stats, ConquerorType(jewelType),
-				            conquerorId_, n.name);
+				t = applyNode(*blob, detailSeed, n, nt);
 			}
 			if (t.ok && (!t.lines.empty() || t.replaced)) {
 				ptHi[idx] = t.replaced ? kPtHiReplaced : kPtHiAffected;
@@ -2407,16 +2504,18 @@ public:
 	// ("… 41-80"). Call under the same ID stack as drawTradeGroupButton.
 	std::string tradeGroupLabel(const std::vector<int>& seeds, const char* base, const char* tag)
 	{
-		if (seeds.size() <= kMaxTradeSeeds) return base;
-		const TradeBatch b = TradeNextBatch(seeds.size(), tradeNext_[ImGui::GetID(tag)]);
+		const size_t per = tradePerSearch();
+		if (seeds.size() <= per) return base;
+		const TradeBatch b = TradeNextBatch(seeds.size(), tradeNext_[ImGui::GetID(tag)], per);
 		return std::string(base) + " " + std::to_string(b.begin + 1) + "-" + std::to_string(b.end);
 	}
 
 	void drawTradeGroupButton(const std::vector<int>& seeds, const char* base, const char* tag, float minW)
 	{
-		const bool capped = seeds.size() > kMaxTradeSeeds;
+		const size_t per = tradePerSearch();
+		const bool capped = seeds.size() > per;
 		size_t& next = tradeNext_[ImGui::GetID(tag)];
-		const TradeBatch b = TradeNextBatch(seeds.size(), next);
+		const TradeBatch b = TradeNextBatch(seeds.size(), next, per);
 		// the ID stays `tag` while the visible label moves on to the next batch
 		const std::string label = tradeGroupLabel(seeds, base, tag) + "###" + tag;
 		if (PobUi::Button(label.c_str(), PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::ExternalLink, minW, !tradeOff())) {
@@ -2442,8 +2541,9 @@ public:
 			if (tradeOff()) tip = tradeOffWhy();
 			else {
 				tip = u8"一次在交易站搜尋 " + std::to_string(b.end - b.begin) + u8" 個種子（任一符合即列出，即時購買）。";
+				if (conqAny_) tip += u8"征服者選「任意」：每個種子對每位征服者各佔一條條件。";
 				if (capped)
-					tip += u8"交易站一次查詢最多 " + std::to_string(kMaxTradeSeeds) + u8" 個種子，這裡共 " +
+					tip += u8"交易站一次查詢最多 " + std::to_string(per) + u8" 個種子，這裡共 " +
 					       std::to_string(seeds.size()) + u8" 個：這次送排名第 " + std::to_string(b.begin + 1) + "-" +
 					       std::to_string(b.end) + u8" 個，再按一次送下一批，送完最後一批會從頭開始。";
 			}
@@ -2564,8 +2664,7 @@ public:
 			for (int idx : resultNodesCache_) {
 				const PtNode& n = ptData.nodes[idx];
 				const char* nt = n.kind == kPtKeystone ? "Keystone" : n.kind == kPtNotable ? "Notable" : "Normal";
-				TJTransform t = TJApply(*ds, *blob, jewelType, seed, n.id, nt, n.stats,
-				                        ConquerorType(jewelType), conquerorId_, n.name);
+				TJTransform t = applyNode(*blob, seed, n, nt);
 				if (t.ok) take(t, isBig(n.kind));
 			}
 		}
@@ -2826,7 +2925,7 @@ public:
 		snprintf(lbl, sizeof(lbl), u8"命中 %d 個節點", matches);
 		// past the cap the note says how many go to the trade site per click (the
 		// button names the batch, its tooltip says why)
-		if (seeds.size() > kMaxTradeSeeds) snprintf(note, sizeof(note), u8"%d 個種子・每次查 %d 個", count, (int)kMaxTradeSeeds);
+		if (seeds.size() > tradePerSearch()) snprintf(note, sizeof(note), u8"%d 個種子・每次查 %d 個", count, (int)tradePerSearch());
 		else snprintf(note, sizeof(note), u8"%d 個種子", count);
 		dl->PushClipRect(p, ImVec2(p.x + toggleW, p.y + h), true);
 		dl->AddText(body, px, ImVec2(x, ty), Tok::Text, lbl);
@@ -3147,6 +3246,10 @@ public:
 		if (testState_.empty() || !ptDataOk) return;
 		jewelType = 2;
 		conquerorSel = 0;
+		{
+			wchar_t cq[8] = L""; // POBTOOLS_TJ_CONQ = conqueror index, for every state
+			if (GetEnvironmentVariableW(L"POBTOOLS_TJ_CONQ", cq, 8) > 0) conquerorSel = (std::max)(0, _wtoi(cq));
+		}
 		templates = TJStatTemplates(*ds, jewelType);
 		templatesFor = jewelType;
 		ensureBin(jewelType);
@@ -3197,7 +3300,7 @@ public:
 			openMore_ = true;
 		} else if (testState_ == "paste" || testState_ == "pastenosock") {
 			mode = 0;   // the paste must be what switches to the seed page
-			std::string txt = TJItemText(*ds, jewelType, conquerorSel, mid);
+			std::string txt = TJItemText(*ds, jewelType, conqAny_ ? 0 : conquerorSel, mid);
 			wchar_t path[MAX_PATH] = L"";
 			const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_TJ_PASTE_FILE", path, MAX_PATH);
 			if (n > 0 && n < MAX_PATH) {
@@ -3563,6 +3666,8 @@ private:
 	// this frame's conqueror, for the trade export and TJApply
 	std::string conquerorId_ = "1";
 	std::string tradeStatId_;
+	bool conqAny_ = false;               // conqueror "任意": keystones list every conqueror, trade ORs all
+	std::vector<std::string> tradeIds_;  // every conqueror's trade stat (deduped) under "任意"
 	// results: toast once per finished search; the test aid picks the first seed
 	bool jobReported_ = true;
 	bool autoPick_ = false;
@@ -3591,6 +3696,7 @@ private:
 	// POBTOOLS_TJ_STATE / POBTOOLS_TOOL_SHOT
 	std::string testState_;
 	bool testMode_ = false;
+	bool testKsDumped_ = false;   // POBTOOLS_TJ_STATE=keystone: POBTOOLS_TJ_KS_DUMP written
 	int testHoverNode_ = -1;      // POBTOOLS_TJ_STATE=keystone: tooltip shown without a mouse
 	int testConqSwitch_ = -1;     // POBTOOLS_TJ_CONQ_SWITCH: conqueror picked after the first recompute
 	int testClickNode_ = -1;      // POBTOOLS_TJ_STATE=protectclick: the notable right-clicked

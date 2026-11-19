@@ -1743,6 +1743,42 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 			      std::to_string(sent.size()) + " sent in " + std::to_string(rounds));
 		}
 
+		// 征服者「任意」:每個種子對每位征服者的 stat 各一條,count>=1
+		{
+			const std::vector<std::string> ids = { "explicit.a", "explicit.b", "explicit.c" };
+			nlohmann::json j;
+			try { j = nlohmann::json::parse(TradeQueryJsonAny(ids, { 2000, 2001 })); } catch (...) {}
+			const auto& st = j.is_object() ? j["query"]["stats"] : nlohmann::json();
+			std::set<std::string> pairs;
+			if (st.is_array() && st.size() == 1)
+				for (const auto& f : st[0]["filters"])
+					if (f["value"].value("min", -1) == f["value"].value("max", -2))
+						pairs.insert(f.value("id", "") + "|" + std::to_string(f["value"].value("min", -1)));
+			check(st.is_array() && st.size() == 1 && st[0].value("type", "") == "count" &&
+			          st[0]["value"].value("min", -1) == 1 && st[0]["filters"].size() == 6 && pairs.size() == 6 &&
+			          pairs.count("explicit.c|2001"),
+			      "T1 任意的交易查詢:2 個種子 × 3 位征服者 = 6 條、count>=1", j.dump().substr(0, 200));
+
+			const size_t per = TradeSeedsPerSearch(ids.size());
+			std::vector<int> sent;
+			bool capOk = per >= 1 && per * ids.size() <= kMaxTradeSeeds;
+			size_t next = 0, rounds = 0;
+			do {
+				const TradeBatch b = TradeNextBatch(40, next, per);
+				std::vector<int> seeds;
+				for (size_t i = b.begin; i < b.end; i++) { seeds.push_back(3000 + (int)i); sent.push_back((int)i); }
+				nlohmann::json q = nlohmann::json::parse(TradeQueryJsonAny(ids, seeds));
+				capOk = capOk && q["query"]["stats"][0]["filters"].size() == seeds.size() * ids.size() &&
+				        q["query"]["stats"][0]["filters"].size() <= kMaxTradeSeeds;
+				next = b.end;
+				rounds++;
+			} while (next < 40 && rounds < 20);
+			bool all = sent.size() == 40;
+			for (size_t i = 0; all && i < sent.size(); i++) all = sent[i] == (int)i;
+			check(capOk && all, "T2 任意分批:每批不超過 40 條，種子不漏不重",
+			      "per=" + std::to_string(per) + " sent=" + std::to_string(sent.size()) + " rounds=" + std::to_string(rounds));
+		}
+
 		// Remembered region/league/platform. Round-tripped through the real file
 		// because that is what breaks (encoding, missing dir); the user's own
 		// state is saved and put back afterwards.
