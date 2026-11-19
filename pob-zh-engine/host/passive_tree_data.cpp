@@ -265,6 +265,14 @@ std::set<int> PtShortestPathToClassStart(const PassiveTreeData& t, const std::se
 	return {};
 }
 
+int PtFirstSocketWithPath(const PassiveTreeData& t, const std::set<int>& alloc, int classId)
+{
+	for (int s : t.sockets)
+		if (s >= 0 && s < (int)t.nodes.size() && !PtShortestPathToClassStart(t, alloc, t.nodes[(size_t)s].id, classId).empty())
+			return s;
+	return -1;
+}
+
 // PoB socketFilterDistance: hops from the nearest allocated node (an allocated class start reaches its neighbours).
 std::map<int, int> PtDistanceFromAllocated(const PassiveTreeData& t, const std::set<int>& alloc, int maxDist)
 {
@@ -516,6 +524,12 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 				check(PtShortestPathToClassStart(d, broken, best.socketId, best.classId).empty(),
 				      "T4b 路徑中間斷一格且無繞路時回空", "");
 			}
+			// T4c 自動選插槽:選到的插槽在配點內且有路徑;T4d 全斷時回 -1
+			const int pickIdx = PtFirstSocketWithPath(d, expect, best.classId);
+			check(pickIdx >= 0 && expect.count(d.nodes[(size_t)pickIdx].id) &&
+			      !PtShortestPathToClassStart(d, expect, d.nodes[(size_t)pickIdx].id, best.classId).empty(),
+			      "T4c 自動選到有已配點路徑的插槽", "got idx=" + std::to_string(pickIdx));
+			check(PtFirstSocketWithPath(d, {}, best.classId) < 0, "T4d 沒有配點時回 -1", "");
 		}
 	}
 

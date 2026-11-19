@@ -111,6 +111,10 @@ private:
 std::set<int> PtShortestPathToClassStart(const PassiveTreeData& t, const std::set<int>& allocIds,
                                          int socketId, int classId);
 
+// Node index of the first socket (t.sockets order) with an allocated path to the
+// class start; -1 when there is none.
+int PtFirstSocketWithPath(const PassiveTreeData& t, const std::set<int>& allocIds, int classId);
+
 // PoB's pathDist for the "Filter Nodes" option: id -> how many unallocated
 // nodes must be taken to reach it (allocated = 0), for every node within
 // `maxDist`. Nodes farther away are absent.

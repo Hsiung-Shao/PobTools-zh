@@ -3348,7 +3348,8 @@ public:
 			selectBuild(pick, false);
 			selSocket = -1;
 			for (int s : ptData.sockets)
-				if (selSocket < 0 && build_.nodes.count(ptData.nodes[s].id)) selSocket = s;
+				if (selSocket < 0 && (testState_ == "zorath") != (build_.nodes.count(ptData.nodes[s].id) > 0)) selSocket = s;
+			// zorath starts on an unallocated socket: updateAbyssDerived must move it to an allocated one
 			centerPending_ = true;
 			wants.clear();
 			const char* en = jewelType == 11 ? "+# to maximum Life" : "#% increased Impale Effect";
@@ -3516,7 +3517,19 @@ private:
 	void updateAbyssDerived()
 	{
 		if (!TJIsAbyss(jewelType)) return;
-		const std::string key = std::to_string(jewelType) + "|" + std::to_string(selSocket) + "|" +
+		// Zorath picked or build changed while the socket has no allocated path: move to one that has
+		// (only on that change, so a socket the user clicks afterwards stays picked)
+		const std::string autoKey = std::to_string(jewelType) + "|" + std::to_string(buildSel_) + "|" +
+		                            std::to_string(buildOk_) + "|" + ptData.Version();
+		if (autoKey != zorathAutoKey_) {
+			zorathAutoKey_ = autoKey;
+			if (TJIsZorath(jewelType) && buildOk_ &&
+			    (selSocket < 0 || PtShortestPathToClassStart(ptData, build_.nodes, ptData.nodes[selSocket].id, build_.classId).empty())) {
+				const int s = PtFirstSocketWithPath(ptData, build_.nodes, build_.classId);
+				if (s >= 0) { selSocket = s; ptProtected.clear(); hiSig = -1; centerPending_ = true; }
+			}
+		}
+		const std::string key =std::to_string(jewelType) + "|" + std::to_string(selSocket) + "|" +
 		                        std::to_string(buildSel_) + "|" + std::to_string(buildOk_) + "|" +
 		                        std::to_string(allocOnly_) + "|" + std::to_string(allocDist_) + "|" +
 		                        std::to_string(binOk && loadedBinType == jewelType) + "|" + ptData.Version();
@@ -3786,6 +3799,7 @@ private:
 	std::set<int> protectAsc_;    // Zorath: Ascendancy passives a seed must not conquer
 	// derived from the above + socket + jewel; rebuilt when abyssKey_ changes
 	std::string abyssKey_;
+	std::string zorathAutoKey_;   // jewel/build the Zorath socket auto-pick last ran for
 	int abyssVer_ = 0;
 	std::set<int> zorathPath_;    // ids, socket and class start included
 	std::vector<char> pathMask_;  // node index -> lit on the tree: Zorath's path, or the build's allocation (7-10)
