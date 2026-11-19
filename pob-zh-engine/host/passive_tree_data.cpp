@@ -529,7 +529,12 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 			check(pickIdx >= 0 && expect.count(d.nodes[(size_t)pickIdx].id) &&
 			      !PtShortestPathToClassStart(d, expect, d.nodes[(size_t)pickIdx].id, best.classId).empty(),
 			      "T4c 自動選到有已配點路徑的插槽", "got idx=" + std::to_string(pickIdx));
-			check(PtFirstSocketWithPath(d, {}, best.classId) < 0, "T4d 沒有配點時回 -1", "");
+			if (best.P.size() >= 3) {
+				std::set<int> broken = expect;
+				broken.erase(idOf(best.P[1]));
+				const int b = PtFirstSocketWithPath(d, broken, best.classId);
+				check(b < 0 || d.nodes[(size_t)b].id != best.socketId, "T4d 插槽有配點但路徑斷了就不選它", "got idx=" + std::to_string(b));
+			}
 		}
 	}
 

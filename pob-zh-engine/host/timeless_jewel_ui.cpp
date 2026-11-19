@@ -3516,11 +3516,11 @@ private:
 	// anything they depend on changes. Cheap: two BFS over ~2000 nodes, one ASCS walk.
 	void updateAbyssDerived()
 	{
-		if (!TJIsAbyss(jewelType)) return;
+		if (!TJIsAbyss(jewelType)) { zorathAutoKey_.clear(); return; } // coming back to Zorath re-runs the auto-pick
 		// Zorath picked or build changed while the socket has no allocated path: move to one that has
 		// (only on that change, so a socket the user clicks afterwards stays picked)
 		const std::string autoKey = std::to_string(jewelType) + "|" + std::to_string(buildSel_) + "|" +
-		                            std::to_string(buildOk_) + "|" + ptData.Version();
+		                            std::to_string(buildOk_) + "|" + std::to_string(build_.nodes.size()) + "|" + ptData.Version();
 		if (autoKey != zorathAutoKey_) {
 			zorathAutoKey_ = autoKey;
 			if (TJIsZorath(jewelType) && buildOk_ &&
