@@ -19064,6 +19064,7 @@
     "Socketed Gems deal {0}% more Damage over Time": "此物品插槽中寶石造成 {0}% 更多持續傷害",
     "Socketed Gems deal {0}% more Damage while on Low Life": "貧血時，插槽中的寶石造成 {0}% 更多傷害",
     "Socketed Gems deal {0}% more Elemental Damage": "插槽中的寶石造成 {0}% 更多元素傷害",
+    "Socketed Gems deal {0}% more damage per Socketed Skill Gem": "每鑲嵌一顆技能寶石，插槽中的寶石即造成{0}%更多傷害",
     "Socketed Gems fire {0} additional Projectiles": "此物品插槽中寶石射出 {0} 個額外投射物",
     "Socketed Gems gain {0} of Physical Damage as extra Lightning Damage": "此物品上的技能石獲得 {0} 物理傷害，並轉化為額外閃電傷害",
     "Socketed Gems gain {0}% of Physical Damage as extra Lightning Damage": "插槽中的寶石獲得等同物理傷害 {0}% 的額外閃電傷害",
