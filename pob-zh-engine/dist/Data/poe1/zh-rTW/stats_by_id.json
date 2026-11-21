@@ -27812,7 +27812,9 @@
     "you_and_nearby_allies_life_regeneration_rate_per_minute_%_if_have_blocked_recently|#|stat_descriptions.txt|0@3.29.3": "若你近期有格擋，你和附近友方每秒回復 {0}% 生命",
     "you_and_nearby_allies_life_regeneration_rate_per_minute_%_if_you_hit_an_enemy_recently|#|stat_descriptions.txt|0@3.29.3": "若你近期有擊中敵人，你和附近友方每秒回復 {0}% 生命",
     "your_marks_transfer_to_nearby_enemies_on_death_%_chance|#|stat_descriptions.txt|0@3.29.3": "當被印記的敵人死亡時，你的印記有 {0}% 機率轉移至其他敵人",
-    "your_marks_transfer_to_nearby_enemies_on_death_%_chance|100|stat_descriptions.txt|0@3.29.3": "當被印記的敵人死亡時，你的印記轉移至其他敵人"
+    "your_marks_transfer_to_nearby_enemies_on_death_%_chance|100|stat_descriptions.txt|0@3.29.3": "當被印記的敵人死亡時，你的印記轉移至其他敵人",
+    "ModGrantsEffectWithLevel|#|stat_descriptions.txt|0": "賦予等級 {1} 的 {0}",
+    "ModGrantsEffect|#|stat_descriptions.txt|0": "賦予 {0}"
   },
   "fixed_slots": {
     "kinetic_shell_hit_damage_absorbed_% kinetic_shell_maximum_damage_absorbed_from_hits|100|# 1|#|skill_stat_descriptions.txt|0": {
@@ -27943,6 +27945,12 @@
     },
     "local_pearl_random_support_gem_2_slot_index local_pearl_random_support_gem_2_index local_pearl_random_support_gem_2_level|4 # #|stat_descriptions.txt|0@3.29.3": {
       "1": "gem_names_nonactive"
+    },
+    "ModGrantsEffectWithLevel|#|stat_descriptions.txt|0": {
+      "0": "gems"
+    },
+    "ModGrantsEffect|#|stat_descriptions.txt|0": {
+      "0": "gems"
     }
   },
   "source_files": [
@@ -55806,6 +55814,8 @@
     "you_and_nearby_allies_life_regeneration_rate_per_minute_%_if_have_blocked_recently|#|stat_descriptions.txt|0@3.29.3": "If you have Blocked Recently, you and nearby Allies Regenerate {0}% of Life per second",
     "you_and_nearby_allies_life_regeneration_rate_per_minute_%_if_you_hit_an_enemy_recently|#|stat_descriptions.txt|0@3.29.3": "If you've Hit an Enemy Recently, you and nearby Allies Regenerate {0}% of Life per second",
     "your_marks_transfer_to_nearby_enemies_on_death_%_chance|#|stat_descriptions.txt|0@3.29.3": "Your Mark has a {0}% chance to Transfer to another Enemy when Marked Enemy dies",
-    "your_marks_transfer_to_nearby_enemies_on_death_%_chance|100|stat_descriptions.txt|0@3.29.3": "Your Mark Transfers to another Enemy when Marked Enemy dies"
+    "your_marks_transfer_to_nearby_enemies_on_death_%_chance|100|stat_descriptions.txt|0@3.29.3": "Your Mark Transfers to another Enemy when Marked Enemy dies",
+    "ModGrantsEffectWithLevel|#|stat_descriptions.txt|0": "Grants Level {1} {0}",
+    "ModGrantsEffect|#|stat_descriptions.txt|0": "Grants {0}"
   }
 }

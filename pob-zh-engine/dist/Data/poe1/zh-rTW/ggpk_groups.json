@@ -691,9 +691,18 @@
    ],
    "handlers": [],
    "slots": [],
-   "zh": "你的地圖隨機擁有更多變動詞綴效果，機率 0 到 80%\n額外內容無法出現在你的地圖上\n你的地圖無法使用影響"
+   "zh": "你的地圖隨機擁有 0 到 80% 更多隨機詞綴效果\n額外內容無法出現在你的地圖上\n你的地圖無法被勢力影響"
   },
   "atlas_keystone_speaker_of_the_dead|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Tormented Spirits in your Maps can Possess Players for 30 seconds",
+    "Tormented Spirits in your Maps cannot Possess Monsters"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "你地圖中的罪魂可以附身玩家 30 秒\n你地圖中的罪魂不能附身怪物"
+  },
+  "atlas_keystone_speaker_of_the_dead|#|atlas_stat_descriptions.txt|0@3.29.3": {
    "en": [
     "Tormented Spirits in your Maps can Possess Players for 20 seconds",
     "Tormented Spirits in your Maps cannot Possess Monsters"
@@ -822,6 +831,26 @@
   },
   "attack_damage_taken_+%_final_from_enemies_unaffected_by_sand_armour|#|-1|skill_stat_descriptions.txt|0": {
    "en": [
+    "Nearby Enemies are [Blind|Blinded] while in Sand Stance",
+    "You take {0}% less Damage from Attacks from Enemies that aren't nearby while in Sand Stance",
+    "Nearby Enemies are Maimed while in Blood Stance"
+   ],
+   "handlers": [
+    [
+     "negate",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在沙戮姿態時，附近敵人被致盲\n在沙戮姿態時，你承受 {0}% 更少來自非附近敵人的攻擊傷害\n在血腥姿態時，附近敵人被癱瘓"
+  },
+  "attack_damage_taken_+%_final_from_enemies_unaffected_by_sand_armour|#|-1|skill_stat_descriptions.txt|0@3.29.3": {
+   "en": [
     "Nearby Enemies are Blinded while in Sand Stance",
     "You take {0}% less Damage from Attacks from Enemies that aren't nearby while in Sand Stance",
     "Nearby Enemies are Maimed while in Blood Stance"
@@ -841,6 +870,21 @@
    "zh": "在沙戮姿態時，附近敵人被致盲\n在沙戮姿態時，你承受 {0}% 更少來自非附近敵人的攻擊傷害\n在血腥姿態時，附近敵人被癱瘓"
   },
   "attack_damage_taken_+%_final_from_enemies_unaffected_by_sand_armour|1|#|skill_stat_descriptions.txt|0": {
+   "en": [
+    "Nearby Enemies are [Blind|Blinded] while in Sand Stance",
+    "You take {0}% more Damage from Attacks from Enemies that aren't nearby while in Sand Stance",
+    "Nearby Enemies are Maimed while in Blood Stance"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在沙戮姿態時，附近敵人被致盲\n在沙戮姿態時，你承受 {0}% 更多來自非附近敵人的攻擊傷害\n在血腥姿態時，附近敵人被癱瘓"
+  },
+  "attack_damage_taken_+%_final_from_enemies_unaffected_by_sand_armour|1|#|skill_stat_descriptions.txt|0@3.29.3": {
    "en": [
     "Nearby Enemies are Blinded while in Sand Stance",
     "You take {0}% more Damage from Attacks from Enemies that aren't nearby while in Sand Stance",
@@ -1020,6 +1064,20 @@
   },
   "base_number_of_essence_spirits_allowed|3|stat_descriptions.txt|0": {
    "en": [
+    "Triggers Level 20 [SpectralSpirits::20|Spectral Spirits] when Equipped",
+    "{0:+d} to maximum number of Spectral Spirits"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     "+d"
+    ]
+   ],
+   "zh": "當裝備時，觸發等級 20 的幽魂之靈\n{0:+d} 幽魂之靈最大數量"
+  },
+  "base_number_of_essence_spirits_allowed|3|stat_descriptions.txt|0@3.29.3": {
+   "en": [
     "Triggers Level 20 Spectral Spirits when Equipped",
     "{0:+d} to maximum number of Spectral Spirits"
    ],
@@ -1156,6 +1214,15 @@
    ],
    "zh": "你可造成敵人流血，最多 {0} 次\n當敵人移動時你的流血不能造成額外的傷害"
   },
+  "blightcore_display_stat|1|#|stat_descriptions.txt|0": {
+   "en": [
+    "Grows four random Passive Skills when Anointed",
+    "Passive Skills grown are influenced by Oils used when Anointing"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "塗抹時會生長成一個隨機的天賦點\n生長的天賦點會被用於塗抹的油瓶類型影響"
+  },
   "blood_offering_%_of_life_to_lose blood_offering_%_of_lost_life_to_regenerate_as_life_per_second|# #|offering_skill_stat_descriptions.txt|0": {
    "en": [
     "Sacrifices {0}% of your Life",
@@ -1205,6 +1272,15 @@
    "handlers": [],
    "slots": [],
    "zh": "若為稀有則可被不滅之火製作\n無法獲得[Intangibility|無形性]"
+  },
+  "cannot_be_stunned_if_have_been_stunned_or_blocked_stunning_hit_in_past_2_seconds|#|stat_descriptions.txt|0": {
+   "en": [
+    "You cannot be Stunned if you've been Stunned or Blocked",
+    "a Stunning Hit in the past 2 seconds"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "若過去 2 秒你被暈眩或是格擋暈眩一擊，你將不能再被暈眩"
   },
   "cast_on_stunned_%|#|gem_stat_descriptions.txt|0": {
    "en": [
@@ -1334,6 +1410,20 @@
   "chance_%_elemental_ailments_redirected_to_nearby_minion|1|99|stat_descriptions.txt|0": {
    "en": [
     "{0}% chance for Elemental Ailments inflicted on you to",
+    "be inflicted on a Minion within 4 metres instead"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你被施加元素異常狀態時，有{0}%機率\n改為施加在 4 公尺內的召喚物"
+  },
+  "chance_%_elemental_ailments_redirected_to_nearby_minion|1|99|stat_descriptions.txt|0@3.29.3": {
+   "en": [
+    "{0}% chance for Elemental Ailments inflicted on you to",
     "be inflicted on a nearby Minion instead"
    ],
    "handlers": [],
@@ -1449,6 +1539,20 @@
   },
   "chance_to_gain_onslaught_for_4_seconds_on_leech_removed_by_filling_unreserved_life_%|#|stat_descriptions.txt|0": {
    "en": [
+    "{0}% chance to gain [Onslaught] for 4 Seconds when Leech is",
+    "removed by Filling Unreserved Life"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "當偷取被填滿未保留生命移除時，有 {0}% 機率獲得猛攻 4 秒"
+  },
+  "chance_to_gain_onslaught_for_4_seconds_on_leech_removed_by_filling_unreserved_life_%|#|stat_descriptions.txt|0@3.29.3": {
+   "en": [
     "{0}% chance to gain Onslaught for 4 Seconds when Leech is",
     "removed by Filling Unreserved Life"
    ],
@@ -1462,6 +1566,20 @@
    "zh": "當偷取被填滿未保留生命移除時，有 {0}% 機率獲得猛攻 4 秒"
   },
   "chance_to_gain_onslaught_on_hit_%_vs_rare_or_unique_enemy|1|#|stat_descriptions.txt|0": {
+   "en": [
+    "{0}% chance to gain [Onslaught] for 10 Seconds when you Hit a Rare",
+    "or Unique Enemy"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "當你擊中稀有或傳奇敵人時，有 {0}% 機率\n獲得猛攻 10 秒"
+  },
+  "chance_to_gain_onslaught_on_hit_%_vs_rare_or_unique_enemy|1|#|stat_descriptions.txt|0@3.29.3": {
    "en": [
     "{0}% chance to gain Onslaught for 10 Seconds when you Hit a Rare",
     "or Unique Enemy"
@@ -1947,6 +2065,15 @@
     ]
    ],
    "zh": "區域沒有被封鎖時，{0:+d}% 暴擊加成\n玩家在區域沒有被封鎖時 {0:+d}% 暴擊加成"
+  },
+  "critically_strike_every_sixth_spellcast|1|stat_descriptions.txt|0": {
+   "en": [
+    "Every sixth time you cast each Spell, All Hits are Critically Strikes",
+    "These effects do not apply to Reservation, Duration or Channelling Spells"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "你每第六次施放各個法術時，所有擊中都會造成暴擊\n這些效果不會套用至保留、持續、或引導法術"
   },
   "curse_apply_as_aura|#|gem_stat_descriptions.txt|0": {
    "en": [
@@ -2802,6 +2929,20 @@
    ],
    "zh": "每對揮舞的初始獲得 1 疊層\n最多 {0} 層"
   },
+  "dummy_display_bestiary_family_selector|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Red Beasts in your Maps have {0}% increased chance to be from",
+    "Your Maps that contain capturable Beasts contain an additional Red Beast from"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "增加{0}%你地圖中紅色野獸來自指定地區的機率\n你含有可捕獲野獸的地圖中會額外含有一隻來自指定地區的紅色野獸"
+  },
   "elemental_damage_+%_per_different_enemy_elemental_ailment|#|-1|stat_descriptions.txt|0": {
    "en": [
     "{0}% reduced Elemental Damage with Hits and Ailments for",
@@ -2910,6 +3051,20 @@
    "slots": [],
    "zh": "只會造成被選擇的元素傷害\n其他傷害類型不會造成傷害"
   },
+  "elemental_resistance_%_per_empty_white_socket|#|stat_descriptions.txt|0": {
+   "en": [
+    "Players have {:+d}% to all Elemental Resistances for each Empty White Socket",
+    "on any Equipped Item"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     "+d"
+    ]
+   ],
+   "zh": "裝備中每個空的白色插槽，玩家即\n擁有{:+d}%全部元素抗性"
+  },
   "elementalist_cold_penetration_%_for_4_seconds_on_using_fire_skill|1|#|stat_descriptions.txt|0": {
    "en": [
     "Damage Penetrates {0}% Cold Resistance if you've",
@@ -2997,7 +3152,36 @@
    ],
    "zh": "每 5 強度，增益效果每秒給予 {0}% 生命\n回復，最多 25 強度"
   },
+  "enemies_near_corpses_created_recently_have_%_reduced_life_regeneration_rate|#|stat_descriptions.txt|0": {
+   "en": [
+    "Enemies within 6 metres of corpses you spawned Recently",
+    "have {0}% reduced Life Regeneration Rate"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "位於你近期召喚的屍體6公尺範圍內的敵人\n會減少{0}%生命回復率"
+  },
   "enemies_near_cursed_corpses_are_blinded_and_explode_on_death_for_%_life_as_physical_damage|#|stat_descriptions.txt|0": {
+   "en": [
+    "Enemies near corpses affected by your Curses are [Blind|Blinded]",
+    "Enemies Killed near corpses affected by your Curses explode, dealing",
+    "{0}% of their Life as Physical Damage"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "敵人靠近被你詛咒的屍體時被致盲\n敵人靠近被你詛咒的屍體被擊殺時爆炸，\n造成 {0}% 他們生命的物理傷害"
+  },
+  "enemies_near_cursed_corpses_are_blinded_and_explode_on_death_for_%_life_as_physical_damage|#|stat_descriptions.txt|0@3.29.3": {
    "en": [
     "Enemies near corpses affected by your Curses are Blinded",
     "Enemies Killed near corpses affected by your Curses explode, dealing",
@@ -3081,6 +3265,34 @@
    "handlers": [],
    "slots": [],
    "zh": "你的帶來幸運和帶來厄運效果採計三次抽選中最高或\n最低者，而非兩次抽選"
+  },
+  "eyethief_display_replace_mod|#|stat_descriptions.txt|0": {
+   "en": [
+    "[Blind|Blinding] a non-Blinded Pinnacle Atlas Boss with this Weapon will",
+    "steal a Modifier for this item ({0} Modifiers remaining)"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "以此武器[Blind|致盲]一名未致盲的輿圖巔峰頭目時會\n為此物品偷取一條詞綴(剩餘{0}條詞綴)"
+  },
+  "eyethief_display_replace_mod|1|stat_descriptions.txt|0": {
+   "en": [
+    "[Blind|Blinding] a non-Blinded Pinnacle Atlas Boss with this Weapon will",
+    "steal a Modifier for this item ({0} Modifier remaining)"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "以此武器[Blind|致盲]一名未致盲的輿圖巔峰頭目時會\n為此物品偷取一條詞綴(剩餘{0}條詞綴)"
   },
   "feast_of_flesh_gain_X_life_per_corpse_consumed feast_of_flesh_gain_X_mana_per_corpse_consumed feast_of_flesh_gain_X_energy_shield_per_corpse_consumed|# # #|skill_stat_descriptions.txt|0": {
    "en": [
@@ -3398,6 +3610,34 @@
    ],
    "zh": "造成相當於裝備中匕首傷害 {0}% 的附加法術傷害\n裝備兩把匕首時，每一把貢獻 60% 的附加傷害"
   },
+  "gain_%_of_base_dagger_damage_as_added_spell_damage|1|#|stat_descriptions.txt|0": {
+   "en": [
+    "Gain Added Spell Damage equal to {0}% of Damage of Equipped Dagger",
+    "If two Daggers are Equipped, each contributes 60% as much Added Damage"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "獲得等同於裝備匕首{0}%傷害的附加法術傷害\n若裝備了兩把匕首，則各自貢獻等同於其60%傷害的附加傷害"
+  },
+  "gain_%_of_base_wand_damage_as_added_spell_damage quality_display_wand_damage_as_added_spell_damage_is_gem|# #|stat_descriptions.txt|0": {
+   "en": [
+    "Gain Added Spell Damage equal to {0}% of Damage of Equipped Wand",
+    "If two Wands are Equipped, each contributes half as much Added Damage"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "獲得等同於裝備法杖{0}%傷害的附加法術傷害\n若裝備了兩把法杖，則各自貢獻等同於其一半傷害的附加傷害"
+  },
   "gain_%_of_base_wand_damage_as_added_spell_damage quality_display_wand_damage_as_added_spell_damage_is_gem|# 0|gem_stat_descriptions.txt|0": {
    "en": [
     "Supported Skills have Added Spell Damage equal to {0:+d}% of Damage of Equipped Wand",
@@ -3494,7 +3734,7 @@
      ""
     ]
    ],
-   "zh": "法術擁有等同於你已裝備雙手武器{0]%物理傷害的附加法術傷害"
+   "zh": "法術擁有等同於你已裝備雙手武器{0}%物理傷害\n的附加法術傷害"
   },
   "gain_%_total_phys_damage_prevented_in_the_past_10_sec_as_life_regen_per_sec|#|stat_descriptions.txt|0": {
    "en": [
@@ -3778,6 +4018,25 @@
    ],
    "zh": "你在被輔助技能的前期消耗和效果消耗魔力時，\n有 {0}% 機率獲得 1 顆啟發球"
   },
+  "gain_shrine_buff_on_rare_or_unique_blind_centiseconds|#|stat_descriptions.txt|0": {
+   "en": [
+    "Gain a random Shrine Buff for {0} seconds when you [Blind] a",
+    "non-Blinded Rare or Unique Enemy"
+   ],
+   "handlers": [
+    [
+     "divide_by_one_hundred",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "當你[Blind|致盲]一名未致盲的稀有或傳奇敵人時，\n獲得一個隨機神殿增益效果，持續{0}秒"
+  },
   "gain_spell_cost_as_energy_shield_every_fifth_cast|#|stat_descriptions.txt|0": {
    "en": [
     "Spells cause you to gain Energy Shield equal to their Upfront",
@@ -3976,6 +4235,20 @@
   "guardian_reserved_mana_%_given_to_you_and_nearby_allies_as_base_maximum_energy_shield|#|stat_descriptions.txt|0": {
    "en": [
     "Grants maximum Energy Shield equal to {0}% of your Reserved Mana to",
+    "you and Allies within 6 metres"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "賦予你和 6 公尺內的友方等同於你 {0}% 魔力保留的最大能量護盾"
+  },
+  "guardian_reserved_mana_%_given_to_you_and_nearby_allies_as_base_maximum_energy_shield|#|stat_descriptions.txt|0@3.29.3": {
+   "en": [
+    "Grants maximum Energy Shield equal to {0}% of your Reserved Mana to",
     "you and nearby Allies"
    ],
    "handlers": [],
@@ -3986,6 +4259,39 @@
     ]
    ],
    "zh": "賦予你和附近友方等同你 {0}% 魔力保留的額外能量護盾"
+  },
+  "harvest_tree_wisps_monster_count_+%|#|-1|harvest_stat_descriptions.txt|0": {
+   "en": [
+    "{0}% reduced number of Monsters in Area affected by Wildwood Wisps",
+    "on encounter completion"
+   ],
+   "handlers": [
+    [
+     "negate",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在遭遇完成後，減少{0}%區域內被荒林妖精\n所影響的怪物數量"
+  },
+  "harvest_tree_wisps_monster_count_+%|1|#|harvest_stat_descriptions.txt|0": {
+   "en": [
+    "{0}% increased number of Monsters in Area affected by Wildwood Wisps",
+    "on encounter completion"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在遭遇完成後，增加{0}%區域內被荒林妖精\n所影響的怪物數量"
   },
   "heavens_scourge_channeling_trigger_interval_ms heavens_scourge_max_channelling_lightning_strikes|# #|skill_stat_descriptions.txt|0": {
    "en": [
@@ -4160,6 +4466,20 @@
   "is_blighted_map|#|stat_descriptions.txt|0": {
    "en": [
     "Area is infested with Fungal Growths",
+    "Can be Anointed up to {0} times"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "區域被凋落菌絲侵擾\n可以被塗抹至多{0}次"
+  },
+  "is_blighted_map|#|stat_descriptions.txt|0@3.29.3": {
+   "en": [
+    "Area is infested with Fungal Growths",
     "Map's Item Quantity Modifiers also affect Blight Chest count at 50% value",
     "Can be Anointed up to {0} times"
    ],
@@ -4173,6 +4493,15 @@
    "zh": "區域被毒菌滋長蔓延\n地圖物品數量詞綴同時以 40% 的值影響凋落保險箱\n最多可以抹油 {0} 次"
   },
   "is_blighted_map|1|stat_descriptions.txt|0": {
+   "en": [
+    "Area is infested with Fungal Growths",
+    "Can be Anointed up to 3 times"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "區域被凋落菌絲侵擾\n可以被塗抹至多3次"
+  },
+  "is_blighted_map|1|stat_descriptions.txt|0@3.29.3": {
    "en": [
     "Area is infested with Fungal Growths",
     "Map's Item Quantity Modifiers also affect Blight Chest count at 25% value",
@@ -4267,6 +4596,16 @@
    "zh": "攻擊投射物一並造成流血、癱瘓和擊退敵人\n投射物不會穿透、分裂或連鎖"
   },
   "keystone_blind_monk|#|passive_skill_stat_descriptions.txt|0": {
+   "en": [
+    "You are [Blind]",
+    "[Blind] does not affect your Light Radius",
+    "25% more Melee Critical Strike Chance while [Blind|Blinded]"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "你瞎了\n致盲不會影響你的照亮範圍\n被致盲時有 25% 更多近戰暴擊率"
+  },
+  "keystone_blind_monk|#|passive_skill_stat_descriptions.txt|0@3.29.3": {
    "en": [
     "You are Blind",
     "Blind does not affect your Light Radius",
@@ -4399,7 +4738,7 @@
    ],
    "handlers": [],
    "slots": [],
-   "zh": "50% 更少生命恢復率\n50% 更少來自偷取的每秒最大總恢復\n能量護盾充能套用至生命"
+   "zh": "50% 更少生命回復率\n50% 更少來自偷取的每秒最大總恢復\n能量護盾充能套用至生命"
   },
   "keystone_fire_purist|#|passive_skill_stat_descriptions.txt|0": {
    "en": [
@@ -5027,6 +5366,24 @@
    ],
    "zh": "增加 {0}% 被帝王迷宮陷阱擊中傷害\n對玩家增加 {0}% 帝王迷宮陷阱持續傷害效果"
   },
+  "legion_multiple_breakout|#|legion_stat_descriptions.txt|0": {
+   "en": [
+    "Monsters can be broken out of Stasis multiple times",
+    "Monsters gain increased Difficulty and Reward for each time they are broken out"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "怪物可以從凝滯狀態下多次釋放\n怪物會根據其被釋放的次數增加難度和獎勵"
+  },
+  "legion_small_crystals|#|legion_stat_descriptions.txt|0": {
+   "en": [
+    "Battlefield is carpeted with Crystals",
+    "Slaying Seargants and Generals shatters nearby crystals"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "戰場會遍佈水晶\n擊殺中士和將軍會使附近的水晶破碎"
+  },
   "life_flask_effects_are_not_removed_at_full_life|#|stat_descriptions.txt|0": {
    "en": [
     "Life Flask Effects are not removed when Unreserved Life is Filled",
@@ -5089,6 +5446,15 @@
    "zh": "每個你配置紋身的部落，增加 {}% 生命、魔力和能量護盾恢復率"
   },
   "light_radius_additive_modifiers_apply_to_buff_effect_of_link_skills_if_link_target_is_your_permanent_mercenary|#|stat_descriptions.txt|0": {
+   "en": [
+    "Increases and Reductions to Light Radius also apply to Effect of",
+    "your Link Skill Buffs on your Mercenary at 50% of their value"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "增加和減少照亮範圍同時會以 50% 的數值套用至\n作用於你傭兵上的連結技能增益效果"
+  },
+  "light_radius_additive_modifiers_apply_to_buff_effect_of_link_skills_if_link_target_is_your_permanent_mercenary|#|stat_descriptions.txt|0@3.29.3": {
    "en": [
     "Increases and Reductions to Light Radius also apply to Effect",
     "of your Link Skill Buffs on your Mercenary"
@@ -5165,6 +5531,24 @@
   },
   "local_display_cast_primal_aegis_on_gain_skill|1|#|stat_descriptions.txt|0": {
    "en": [
+    "Triggers Level {0} [PrimalAegis::{0}|Primal Aegis] when Allocated",
+    "Primal Aegis can take 75 Elemental Damage per Allocated Notable Passive Skill"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "配置時觸發等級 {0} 的始祖聖盾\n每個配置的核心天賦使始祖聖盾可以承受 75 元素傷害"
+  },
+  "local_display_cast_primal_aegis_on_gain_skill|1|#|stat_descriptions.txt|0@3.29.3": {
+   "en": [
     "Triggers Level {0} Primal Aegis when Allocated",
     "Primal Aegis can take 75 Elemental Damage per Allocated Notable Passive Skill"
    ],
@@ -5178,6 +5562,26 @@
    "zh": "配置時觸發等級 {0} 的始祖聖盾\n每個配置的核心天賦使始祖聖盾可以承受 75 元素傷害"
   },
   "local_display_grants_level_x_curse_pillar_skil_and_20%_less_curse_effect|#|stat_descriptions.txt|0": {
+   "en": [
+    "Grants Level {0} [SummonDoedresEffigy::{0}|Summon Doedre's Effigy] Skill",
+    "Socketed Hex Curse Skills are Triggered by Doedre's Effigy when Summoned",
+    "Hexes from Socketed Skills can apply 5 additional Curses",
+    "20% less Effect of Curses from Socketed Hex Skills"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "獲得等級 {0} 的召喚德瑞肖像技能\n被召喚時插槽中咒術詛咒技能被德瑞肖像觸發\n來自插槽技能的咒術可以套用 5 個額外詛咒\n20% 更少插槽中咒術技能的效果"
+  },
+  "local_display_grants_level_x_curse_pillar_skil_and_20%_less_curse_effect|#|stat_descriptions.txt|0@3.29.3": {
    "en": [
     "Grants Level {0} Summon Doedre's Effigy Skill",
     "Socketed Hex Curse Skills are Triggered by Doedre's Effigy when Summoned",
@@ -5195,6 +5599,25 @@
   },
   "local_display_grants_level_x_curse_pillar_skill|#|stat_descriptions.txt|0": {
    "en": [
+    "Grants Level {0} [SummonDoedresEffigy::{0}|Summon Doedre's Effigy] Skill",
+    "Socketed Hex Curse Skills are Triggered by Doedre's Effigy when Summoned",
+    "Hexes from Socketed Skills can apply 5 additional Curses"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "獲得等級 {0} 的召喚德瑞肖像技能\n被召喚時插槽中的咒術詛咒技能被德瑞肖像觸發\n來自插槽技能的咒術可以套用額外 5 詛咒"
+  },
+  "local_display_grants_level_x_curse_pillar_skill|#|stat_descriptions.txt|0@3.29.3": {
+   "en": [
     "Grants Level {0} Summon Doedre's Effigy Skill",
     "Socketed Hex Curse Skills are Triggered by Doedre's Effigy when Summoned",
     "Hexes from Socketed Skills can apply 5 additional Curses"
@@ -5209,6 +5632,24 @@
    "zh": "獲得等級 {0} 的召喚德瑞肖像技能\n被召喚時插槽中的咒術詛咒技能被德瑞肖像觸發\n來自插槽技能的咒術可以套用額外 5 詛咒"
   },
   "local_display_grants_skill_mirage_chieftain|#|stat_descriptions.txt|0": {
+   "en": [
+    "Trigger Level {0} [SummonMirageChieftain::{0}|Tawhoa's Chosen] when you Attack with",
+    "a Non-Vaal Slam or Strike Skill near an Enemy"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "當你使用非瓦爾重擊或打擊技能的攻擊時，觸發等級 {0} 的塔赫亞的抉擇"
+  },
+  "local_display_grants_skill_mirage_chieftain|#|stat_descriptions.txt|0@3.29.3": {
    "en": [
     "Trigger Level {0} Tawhoa's Chosen when you Attack with",
     "a Non-Vaal Slam or Strike Skill near an Enemy"
@@ -5294,6 +5735,24 @@
   },
   "local_display_tattoo_trigger_level_x_kahuturoa|#|stat_descriptions.txt|0": {
    "en": [
+    "Trigger level {0} [TriggerSummonedAncestorKahuturoa::{0}|Summon Spirit of Kahuturoa] Skill when you take",
+    "a Critical Strike from a Unique Enemy"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "受到傳奇敵人暴擊時，\n觸發等級 {0} 的召喚卡胡圖羅亞之靈技能"
+  },
+  "local_display_tattoo_trigger_level_x_kahuturoa|#|stat_descriptions.txt|0@3.29.3": {
+   "en": [
     "Trigger level {0} Summon Spirit of Kahuturoa Skill when you take",
     "a Critical Strike from a Unique Enemy"
    ],
@@ -5307,6 +5766,24 @@
    "zh": "受到傳奇敵人暴擊時，\n觸發等級 {0} 的召喚卡胡圖羅亞之靈技能"
   },
   "local_display_tattoo_trigger_level_x_kaom|#|stat_descriptions.txt|0": {
+   "en": [
+    "Trigger level {0} [TriggerSummonedAncestorKaom::{0}|Summon Spirit of Kaom] Skill when a Totem dies while",
+    "a Unique Enemy is in your Presence"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "有傳奇敵人在你的存在範圍內且有圖騰死亡時，\n觸發等級 {0} 的召喚岡姆之靈技能"
+  },
+  "local_display_tattoo_trigger_level_x_kaom|#|stat_descriptions.txt|0@3.29.3": {
    "en": [
     "Trigger level {0} Summon Spirit of Kaom Skill when a Totem dies while",
     "a Unique Enemy is in your Presence"
@@ -5358,6 +5835,21 @@
    ],
    "zh": "每 10 秒:\n5 秒承受 {0}% 更少來自擊中傷害\n5 秒承受 {0}% 更少持續傷害"
   },
+  "local_display_trickster_heartstopper_rotating_buff|#|stat_descriptions.txt|0": {
+   "en": [
+    "Every 10 seconds:",
+    "Take 50% less Damage from Hits for 5 seconds",
+    "Take 75% less Damage over Time for 5 seconds"
+   ],
+   "handlers": [
+    [
+     "negate",
+     1
+    ]
+   ],
+   "slots": [],
+   "zh": "每 10 秒內:\n5 秒承受 50% 更少來自擊中的傷害\n5 秒承受 75% 更少持續傷害"
+  },
   "local_display_trickster_heartstopper_rotating_buff|1|#|stat_descriptions.txt|0": {
    "en": [
     "Every 10 seconds:",
@@ -5379,6 +5871,24 @@
   },
   "local_display_trigger_level_X_assassins_mark_when_you_critically_hit_rare_or_unique_enemy_with_attacks|#|stat_descriptions.txt|0": {
    "en": [
+    "Trigger Level {0} [AssassinsMarkTriggeredAssassin::{0}|Assassin's Mark] on Attack Critical Strike against",
+    "a Rare or Unique Enemy and you have no Mark"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在你沒有已施加印記的敵人時，\n攻擊稀有或傳奇敵人且造成暴擊會觸發等級 {0} 的刺客印記"
+  },
+  "local_display_trigger_level_X_assassins_mark_when_you_critically_hit_rare_or_unique_enemy_with_attacks|#|stat_descriptions.txt|0@3.29.3": {
+   "en": [
     "Trigger Level {0} Assassin's Mark on Attack Critical Strike against",
     "a Rare or Unique Enemy and you have no Mark"
    ],
@@ -5392,6 +5902,32 @@
    "zh": "在你沒有已施加印記的敵人時，\n攻擊稀有或傳奇敵人且造成暴擊會觸發等級 {0} 的刺客印記"
   },
   "local_display_trigger_level_X_offering_every_5_seconds|1|#|stat_descriptions.txt|0": {
+   "en": [
+    "Trigger Level {0} [BoneOfferingTriggeredUnique::{0}|Bone Offering], [FleshOfferingTriggeredUnique::{0}|Flesh Offering], [SpiritOfferingTriggeredUnique::{0}|Spirit Offering] every 5 seconds in sequence",
+    "Offering Skills Triggered this way also affect you"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "每 5 秒按順序觸發等級 {0} 的骸骨奉獻、血肉奉獻和靈魂奉獻\n以這種方法觸發的奉獻技能也會對你造成影響"
+  },
+  "local_display_trigger_level_X_offering_every_5_seconds|1|#|stat_descriptions.txt|0@3.29.3": {
    "en": [
     "Trigger Level {0} Bone Offering, Flesh Offering, Spirit Offering every 5 seconds in sequence",
     "Offering Skills Triggered this way also affect you"
@@ -5647,6 +6183,20 @@
    "slots": [],
    "zh": "有 1 顆雙手劍的熔火天賦樹\n若此詞綴被移除，熔火天賦樹也會被移除"
   },
+  "local_unique_flask_chance_%_for_damaging_retaliation_skill_to_become_usable_per_100_life_lost|1|#|stat_descriptions.txt|0": {
+   "en": [
+    "{0}% chance for a damaging Retaliation skill to",
+    "become usable for every 100 life removed this way"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你每以此方式移除100生命，\n反擊技能即有{0}%機率變為可用"
+  },
   "local_unique_hungry_loop_number_of_gems_to_consume local_unique_hungry_loop_has_consumed_gem|1 #|stat_descriptions.txt|0": {
    "en": [
     "Consumes Socketed Uncorrupted Support Gems when they reach Maximum Level",
@@ -5709,6 +6259,76 @@
     ]
    ],
    "zh": "當插槽內未汙染的輔助寶石達到最大等級時吞噬該寶石\n可以吞噬 {0} 顆未汙染的輔助寶石\n尚未吞噬任何寶石"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|1 # # #|advanced_mod_stat_descriptions.txt|0": {
+   "en": [
+    "Bathed in the blood of {1} sacrificed in the name of {2}",
+    "Passives in radius are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "浸泡在以{2}之名獻祭的{1}條生命中\n範圍內的天賦臣服於{0}"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|1 # # #|stat_descriptions.txt|0": {
+   "en": [
+    "Bathed in the blood of {1} sacrificed in the name of {2}",
+    "Passives in radius are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "浸泡在以{2}之名獻祭的{1}條生命中\n範圍內的天賦臣服於{0}"
   },
   "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|1 # 1 #|advanced_mod_stat_descriptions.txt|0": {
    "en": [
@@ -5822,6 +6442,76 @@
    ],
    "zh": "浸泡在以多里亞尼之名獻祭的 {1} 條生命中\n範圍內的天賦臣服於瓦爾"
   },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|10 # # #|advanced_mod_stat_descriptions.txt|0": {
+   "en": [
+    "Subjugating {1} souls in the thrall of {2}",
+    "Passives affected are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在{2}的奴役下征服{1}位靈魂\n範圍內的天賦被{0}所征服"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|10 # # #|stat_descriptions.txt|0": {
+   "en": [
+    "Subjugating {1} souls in the thrall of {2}",
+    "Passives affected are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在{2}的奴役下征服{1}位靈魂\n範圍內的天賦被{0}所征服"
+  },
   "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|10 # 1 #|stat_descriptions.txt|0": {
    "en": [
     "Subjugating {1} souls in the thrall of Amanamu",
@@ -5836,6 +6526,76 @@
    ],
    "zh": "在阿姆那姆的奴役下征服 {1} 位靈魂\n範圍內的天賦被深淵族所征服"
   },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|11 # # #|advanced_mod_stat_descriptions.txt|0": {
+   "en": [
+    "Binding {1} souls to phylacteries to sustain {2}",
+    "Passives affected are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "將{1}位靈魂縛於命匣以維持{2}\n範圍內的天賦被{0}所征服"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|11 # # #|stat_descriptions.txt|0": {
+   "en": [
+    "Binding {1} souls to phylacteries to sustain {2}",
+    "Passives affected are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "將{1}位靈魂縛於命匣以維持{2}\n範圍內的天賦被{0}所征服"
+  },
   "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|11 # 1 #|stat_descriptions.txt|0": {
    "en": [
     "Binding {1} souls to phylacteries to sustain Zorath",
@@ -5849,6 +6609,76 @@
     ]
    ],
    "zh": "將 {1} 位靈魂縛於命匣以維持澤洛斯\n範圍內的天賦被深淵族所征服"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|2 # # #|advanced_mod_stat_descriptions.txt|0": {
+   "en": [
+    "Commanded leadership over {1} warriors under {2}",
+    "Passives in radius are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "{2}指揮領導超過{1}名戰士\n範圍內的天賦臣服於{0}"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|2 # # #|stat_descriptions.txt|0": {
+   "en": [
+    "Commanded leadership over {1} warriors under {2}",
+    "Passives in radius are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "{2}指揮領導超過{1}名戰士\n範圍內的天賦臣服於{0}"
   },
   "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|2 # 1 #|advanced_mod_stat_descriptions.txt|0": {
    "en": [
@@ -5962,6 +6792,76 @@
    ],
    "zh": "艾古亞指揮領導超過 {1} 戰士\n範圍內的天賦臣服於卡魯"
   },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|3 # # #|advanced_mod_stat_descriptions.txt|0": {
+   "en": [
+    "Denoted service of {1} dekhara in the akhara of {2}",
+    "Passives in radius are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "{1}位部屬宣誓服從於{2}的血脈\n範圍內的天賦臣服於{0}"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|3 # # #|stat_descriptions.txt|0": {
+   "en": [
+    "Denoted service of {1} dekhara in the akhara of {2}",
+    "Passives in radius are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "{1}位部屬宣誓服從於{2}的血脈\n範圍內的天賦臣服於{0}"
+  },
   "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|3 # 1 0|advanced_mod_stat_descriptions.txt|0": {
    "en": [
     "Denoted service of {1} dekhara in the akhara of Deshret(Asenath-Nasima)",
@@ -6074,6 +6974,76 @@
    ],
    "zh": "{1} 位部屬宣誓服從於納西瑪的血脈\n範圍內的天賦臣服於馬拉克斯"
   },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|4 # # #|advanced_mod_stat_descriptions.txt|0": {
+   "en": [
+    "Carved to glorify {1} new faithful converted by {2}",
+    "Passives in radius are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "為了禮讚{1}名受到{2}感化的信眾所雕刻\n範圍內的天賦臣服於{0}"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|4 # # #|stat_descriptions.txt|0": {
+   "en": [
+    "Carved to glorify {1} new faithful converted by {2}",
+    "Passives in radius are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "為了禮讚{1}名受到{2}感化的信眾所雕刻\n範圍內的天賦臣服於{0}"
+  },
   "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|4 # 1 0|advanced_mod_stat_descriptions.txt|0": {
    "en": [
     "Carved to glorify {1} new faithful converted by High Templar Venarius(Avarius-Maxarius)",
@@ -6185,6 +7155,84 @@
     ]
    ],
    "zh": "為了禮讚 {1} 名受到聖宗伊爾莉斯感化的信眾所雕刻\n範圍內的天賦臣服於聖宗"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|5 # # #|advanced_mod_stat_descriptions.txt|0": {
+   "en": [
+    "Commissioned {1} coins to commemorate {2}",
+    "Passives in radius are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ],
+    [
+     "times_twenty",
+     2
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "授銜{1}個硬幣以紀念{2}\n範圍內的天賦臣服於{0}"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|5 # # #|stat_descriptions.txt|0": {
+   "en": [
+    "Commissioned {1} coins to commemorate {2}",
+    "Passives in radius are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ],
+    [
+     "times_twenty",
+     2
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "授銜{1}個硬幣以紀念{2}\n範圍內的天賦臣服於{0}"
   },
   "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|5 # 1 #|advanced_mod_stat_descriptions.txt|0": {
    "en": [
@@ -6338,6 +7386,76 @@
    ],
    "zh": "授銜 {1} 個硬幣以紀念卡斯皮羅\n範圍內的天賦臣服於不朽帝國"
   },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|6 # # #|advanced_mod_stat_descriptions.txt|0": {
+   "en": [
+    "Remembrancing {1} songworthy deeds by the line of {2}",
+    "Passives in radius are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "緬懷由{1}位{2}血脈所傳誦的壯舉\n範圍內的天賦臣服於{0}"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|6 # # #|stat_descriptions.txt|0": {
+   "en": [
+    "Remembrancing {1} songworthy deeds by the line of {2}",
+    "Passives in radius are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "緬懷由{1}位{2}血脈所傳誦的壯舉\n範圍內的天賦臣服於{0}"
+  },
   "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|6 # 1 #|advanced_mod_stat_descriptions.txt|0": {
    "en": [
     "Remembrancing {1} songworthy deeds by the line of Vorana(Vorana-Medved)",
@@ -6422,6 +7540,76 @@
    ],
    "zh": "緬懷由 {1} 位梅德偉(沃拉娜-梅德偉)血脈所傳誦的壯舉\n範圍內的天賦臣服於卡葛爾"
   },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|7 # # #|advanced_mod_stat_descriptions.txt|0": {
+   "en": [
+    "Subjugating {1} souls in the thrall of {2}",
+    "Passives affected are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在{2}的奴役下征服{1}位靈魂\n範圍內的天賦被{0}所征服"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|7 # # #|stat_descriptions.txt|0": {
+   "en": [
+    "Subjugating {1} souls in the thrall of {2}",
+    "Passives affected are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在{2}的奴役下征服{1}位靈魂\n範圍內的天賦被{0}所征服"
+  },
   "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|7 # 1 #|stat_descriptions.txt|0": {
    "en": [
     "Subjugating {1} souls in the thrall of Tecrod",
@@ -6436,6 +7624,76 @@
    ],
    "zh": "在特克羅德的奴役下征服 {1} 位靈魂\n範圍內的天賦被深淵族所征服"
   },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|8 # # #|advanced_mod_stat_descriptions.txt|0": {
+   "en": [
+    "Subjugating {1} souls in the thrall of {2}",
+    "Passives affected are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在{2}的奴役下征服{1}位靈魂\n範圍內的天賦被{0}所征服"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|8 # # #|stat_descriptions.txt|0": {
+   "en": [
+    "Subjugating {1} souls in the thrall of {2}",
+    "Passives affected are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在{2}的奴役下征服{1}位靈魂\n範圍內的天賦被{0}所征服"
+  },
   "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|8 # 1 #|stat_descriptions.txt|0": {
    "en": [
     "Subjugating {1} souls in the thrall of Ulaman",
@@ -6449,6 +7707,76 @@
     ]
    ],
    "zh": "在烏拉曼的奴役下征服 {1} 位靈魂\n範圍內的天賦被深淵族所征服"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|9 # # #|advanced_mod_stat_descriptions.txt|0": {
+   "en": [
+    "Subjugating {1} souls in the thrall of {2}",
+    "Passives affected are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在{2}的奴役下征服{1}位靈魂\n範圍內的天賦被{0}所征服"
+  },
+  "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|9 # # #|stat_descriptions.txt|0": {
+   "en": [
+    "Subjugating {1} souls in the thrall of {2}",
+    "Passives affected are Conquered by the {0}"
+   ],
+   "handlers": [
+    [
+     "alternate_tree_version_name",
+     1
+    ],
+    [
+     "alternate_tree_version_keystone",
+     3
+    ],
+    [
+     "1",
+     4
+    ]
+   ],
+   "slots": [
+    [
+     "1",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在{2}的奴役下征服{1}位靈魂\n範圍內的天賦被{0}所征服"
   },
   "local_unique_jewel_alternate_tree_version local_unique_jewel_alternate_tree_seed local_unique_jewel_alternate_tree_keystone local_unique_jewel_alternate_tree_internal_revision|9 # 1 #|stat_descriptions.txt|0": {
    "en": [
@@ -6479,6 +7807,15 @@
    "zh": "若範圍內含 40 點智慧，被萎滅緩速的敵人增加 {0}% 承受混沌傷害"
   },
   "local_unique_jewel_cleave_+1_base_radius_per_nearby_enemy_up_to_10_with_40_str_in_radius|#|stat_descriptions.txt|0": {
+   "en": [
+    "With at least 40 Strength in Radius, Cleave has +0.1 metres to Radius per",
+    "Enemy within 2 metres, up to a maximum of +1 metre"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "若範圍內含 40 點力量，2 公尺內的每個敵人會\n使劈砍 +0.1 公尺範圍，最多 +1 公尺"
+  },
+  "local_unique_jewel_cleave_+1_base_radius_per_nearby_enemy_up_to_10_with_40_str_in_radius|#|stat_descriptions.txt|0@3.29.3": {
    "en": [
     "With at least 40 Strength in Radius, Cleave has +0.1 metres to Radius per Nearby",
     "Enemy, up to a maximum of +1 metre"
@@ -7598,6 +8935,48 @@
    "slots": [],
    "zh": "當未保留魔力被填滿時，魔力藥劑的效果不會被移除\n魔力藥劑的效果不會列隊"
   },
+  "mana_regeneration_rate_modifiers_apply_to_energy_shield_recharge_rate_at_%_value|#|stat_descriptions.txt|0": {
+   "en": [
+    "Increases and Reductions to Mana Regeneration Rate also apply to Energy",
+    "Shield Recharge Rate at {0}% of their value"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "對魔力回復率的增減同時會以{0}%的數值\n套用至能量護盾充能率"
+  },
+  "map_25%_chance_for_rare_monsters_to_be_possessed_up_to_x_times|1|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Rare Monsters in your Maps have a quarter chance to be",
+    "Possessed by up to {0} Tormented Spirit"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你地圖中的稀有怪物有四分之一的機率\n被至多{0}名罪魂所附身"
+  },
+  "map_25%_chance_for_rare_monsters_to_be_possessed_up_to_x_times|2|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Rare Monsters in your Maps have a quarter chance to be",
+    "Possessed by up to {0} Tormented Spirits"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你地圖中的稀有怪物有四分之一的機率\n被至多{0}名罪魂所附身"
+  },
   "map_X_magic_packs_drop_cards_from_area|#|map_stat_descriptions.txt|0": {
    "en": [
     "Area contains {0} additional Packs of Divination Touched Magic Monsters that",
@@ -7611,6 +8990,20 @@
     ]
    ],
    "zh": "區域含有額外 {0} 個命運之觸魔法怪物群，\n其掉落命運卡的機率增加 1000%"
+  },
+  "map_abyss_%_chance_path_spawns_at_least_magic_monsters_per_chasm_closed|1|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Abyss Pits in your Maps have {0}% chance to spawn all Monsters as",
+    "at least Magic for each prior Pit closed"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你地圖中的深淵坑洞有 {0}% 機率根據每一先前已關閉的坑洞使生成的所有怪物至少為魔法"
   },
   "map_abyss_jewels_%_chance_to_drop_corrupted_with_more_mods|#|atlas_stat_descriptions.txt|0": {
    "en": [
@@ -7800,6 +9193,81 @@
    "slots": [],
    "zh": "你地圖中可捕獲的野獸擁有野獸盛怒\n擊敗可捕獲的野獸時會給予一層獵人的狡猾"
   },
+  "map_betrayal_chance_%_on_interrogation_to_reveal_betrayal_anomaly|1|99|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "{0}% chance on Interrogating Syndicate Members in your level 83+ Maps to",
+    "manifest a Safehouse Atlas Anomaly"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "在等級83+的地圖中審問密教成員時有{0}%機率\n會顯化一個密教藏匿處輿圖異常"
+  },
+  "map_betrayal_chance_for_leader_to_intervene_+%|#|-1|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Immortal Syndicate Members in your Maps are {0}% less likely",
+    "to be accompanied by their Leader"
+   ],
+   "handlers": [
+    [
+     "negate",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你地圖中的密教成員有 {0}% 更低機率伴隨他們的首領"
+  },
+  "map_betrayal_chance_for_leader_to_intervene_+%|1|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Immortal Syndicate Members in your Maps are {0}% more likely",
+    "to be accompanied by their Leader"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你地圖中的密教成員有 {0}% 更高機率伴隨他們的首領"
+  },
+  "map_betrayal_executed_targets_gain_an_additional_rank_chance_%|1|99|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Immortal Syndicate Members Executed in your Maps have {0}% chance",
+    "to gain an additional Rank"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你地圖中處決的永生密教成員，有{0}%機率\n會獲得 1 階額外階級"
+  },
+  "map_betrayal_interrogated_targets_%_chance_to_not_lose_rank_on_release|1|99|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Interrogated Immortal Syndicate targets in your Maps have {0}%",
+    "chance to not lose Rank upon completing Interrogation"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "審問你地圖中的永生密教目標時有{0}%機率\n不會於結束審問時降低其階級"
+  },
   "map_betrayal_interrogated_targets_%_chance_to_not_lose_rank_on_release|1|99|map_stat_descriptions.txt|0": {
    "en": [
     "Interrogated Immortal Syndicate targets in Area have a {0}%",
@@ -7816,6 +9284,20 @@
   },
   "map_betrayal_item_reward_option_chance_+%|#|-1|atlas_stat_descriptions.txt|0": {
    "en": [
+    "{0}% reduced chance for Immortal Syndicate Members in your Maps",
+    "to offer to Bargain for Items"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "減少{0}%你地圖中永生密教成員提供\n交涉物品選項的機率"
+  },
+  "map_betrayal_item_reward_option_chance_+%|#|-1|atlas_stat_descriptions.txt|0@3.29.3": {
+   "en": [
     "Immortal Syndicate Members in your Maps are {0}% less",
     "likely to offer to Bargain for Items"
    ],
@@ -7829,6 +9311,20 @@
    "zh": "你地圖中的永生密教成員\n有 {0}% 更少機率交涉物品"
   },
   "map_betrayal_item_reward_option_chance_+%|1|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "{0}% increased chance for Immortal Syndicate Members in your Maps",
+    "to offer to Bargain for Items"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "增加{0}%你地圖中永生密教成員提供\n交涉物品選項的機率"
+  },
+  "map_betrayal_item_reward_option_chance_+%|1|#|atlas_stat_descriptions.txt|0@3.29.3": {
    "en": [
     "Immortal Syndicate Members in your Maps are {0}% more",
     "likely to offer to Bargain for Items"
@@ -7874,6 +9370,67 @@
     ]
    ],
    "zh": "你地圖中被擊敗的密教成員若沒有被審問或釋放，給予目前事件藏匿處 {0} 情報"
+  },
+  "map_betrayal_secondary_target_amount_+%|#|-1|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Immortal Syndicate Members in your Maps have {0}% reduced chance",
+    "to be accompanied by reinforcements"
+   ],
+   "handlers": [
+    [
+     "negate",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你地圖中的永生密教成員減少{0}% 機率會有支援"
+  },
+  "map_betrayal_secondary_target_amount_+%|1|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Immortal Syndicate Members in your Maps have {0}% increased chance",
+    "to be accompanied by reinforcements"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你地圖中的永生密教成員增加 {0}% 機率會有支援"
+  },
+  "map_betrayal_target_drop_item_template_for_double_veiled_item_%|1|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Immortal Syndicate Members in your Maps have {0}% chance to",
+    "drop an additional Double-Veiled Item"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你地圖中的永生密教成員有{0}%機率會\n額外掉落一件雙重隱匿物品"
+  },
+  "map_betrayal_targets_drop_veiled_item_chance_%|1|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Immortal Syndicate Members in your Maps have {0}% chance to",
+    "drop an additional Veiled Item"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你地圖中永生密教成員有 {0}% 機率掉落 1 個額外隱匿物品"
   },
   "map_beyond_basic_currency_quantity_+%_final_from_pale_faction|#|-1|stat_descriptions.txt|0": {
    "en": [
@@ -7982,6 +9539,29 @@
     ]
    ],
    "zh": "你地圖中戈沃的信徒超越惡魔，掉落 {0}% 更多傳奇物品"
+  },
+  "map_blight_empowering_towers_and_upgrades_enhance_enemies|1|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Each Empowering Tower in your Maps grants Blighted Monsters",
+    "in range increased Difficulty and Reward"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "你地圖中的每座賦予塔會使範圍內的\n凋落怪物增加難度和獎勵"
+  },
+  "map_blight_lane_additional_chests_surpassing_percent_chance_per_lane|1|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Blight Lanes in your Maps have {0:+d}% [SurpassChance|Surpassing Chance] to have",
+    "an additional reward per Lane in Blight encounter"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     "+d"
+    ]
+   ],
+   "zh": "你地圖中的凋落遭遇每有一條路徑，即{0:+d}%\n擁有額外一個獎勵的[SurpassChance|滿溢機率]"
   },
   "map_blight_towers_are_chests|#|atlas_stat_descriptions.txt|0": {
    "en": [
@@ -8105,6 +9685,15 @@
    ],
    "zh": "增加{0}%你地圖中艾里絲在不通往要塞的裂痕巢穴\n中所創造的技能數量"
   },
+  "map_breach_hive_skills_are_all_enrage_monsters|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Ailith's skills in your Maps instead enrage the Hive, increasing the Difficulty",
+    "and Reward of subsequent waves"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "你地圖中艾里絲的技能會改為激怒巢裔，增加\n後續波次的難度和獎勵"
+  },
   "map_breach_hive_skills_are_all_enrage_monsters|#|map_stat_descriptions.txt|0": {
    "en": [
     "Ailith's skills in Area instead enrage the Hive, increasing the Difficulty",
@@ -8147,6 +9736,25 @@
    ],
    "zh": "你地圖中的巢穴遭遇根據每一摧毀的可燃洞穴\n增加{0}%賦予的巢裔之血數量"
   },
+  "map_breach_monster_count_and_speed_+%_per_breach_opened|#|-1|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Unstable Breaches in your Maps are {0}% slower for each Unstable Breach already opened",
+    "Monsters from Unstable Breaches in your Maps have increased Difficulty and Reward for each Breach already opened"
+   ],
+   "handlers": [
+    [
+     "negate",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "每個已開啟的不穩定裂痕會使區域內不穩定裂痕開啟和關閉速度減緩{0}%\n每個已開啟的不穩定裂痕使區域內不穩定裂痕的怪物增加難度和獎勵"
+  },
   "map_breach_monster_count_and_speed_+%_per_breach_opened|#|-1|stat_descriptions.txt|0": {
    "en": [
     "Unstable Breaches are {0}% slower for each Unstable Breach already opened",
@@ -8165,6 +9773,20 @@
     ]
    ],
    "zh": "區域內的不穩定裂痕會根據每一先前已開啟的不穩定裂痕減緩{0}%\n來自不穩定裂痕中的怪物會根據每一先前已開啟的不穩定裂痕增加難度和獎勵"
+  },
+  "map_breach_monster_count_and_speed_+%_per_breach_opened|1|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Unstable Breaches in your Maps are {0}% faster for each Unstable Breach already opened",
+    "Monsters from Unstable Breaches in your Maps have increased Difficulty and Reward for each Breach already opened"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "每個已開啟的不穩定裂痕會使區域內不穩定裂痕開啟和關閉速度加快{0}%\n每個已開啟的不穩定裂痕使區域內不穩定裂痕的怪物增加難度和獎勵"
   },
   "map_breach_monster_count_and_speed_+%_per_breach_opened|1|#|stat_descriptions.txt|0": {
    "en": [
@@ -8427,6 +10049,15 @@
    "slots": [],
    "zh": "區域內的硫酸容量由碧藍礦坑怪物看守\n區域內的硫酸容量會釋放激怒煙霧"
   },
+  "map_expedition_remenants_enhance_monsters|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Expedition Monsters in your Maps gain increased Difficulty and Reward",
+    "for each Remnant detonated"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "你地圖中的探險怪物會根據每一引爆\n的遺物增加難度和獎勵"
+  },
   "map_final_incursion_architect_copies_temple|#|map_stat_descriptions.txt|0": {
    "en": [
     "Final Incursion Architect slain in Area will drop an Itemised Temple",
@@ -8434,7 +10065,7 @@
    ],
    "handlers": [],
    "slots": [],
-   "zh": "區域內擊殺的最終穿越設計師會掉落物品化神殿\n區域內掉落的物品化神殿房間階級隨機"
+   "zh": "區域內擊殺的最終穿越建師會掉落物品化的神廟\n區域內掉落的物品化神廟房間階級隨機"
   },
   "map_giga_blight_encounters|#|map_stat_descriptions.txt|0": {
    "en": [
@@ -8499,6 +10130,38 @@
    "slots": [],
    "zh": "當玩家被施加第 5 層穿刺時，\n移除穿刺並將物理傷害乘以\n其剩餘層數的傷害，反射給該玩家及其 1.8 公尺內的友方"
   },
+  "map_incursion_add_room_tier_to_other_architects_room_when_killing_architect|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Killing resident Architects in your Maps adds their Upgrade Tier",
+    "to the surviving Architect's Room"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "擊殺你地圖中居住的穿越建師時，會將提升他們的階級加至\n存活建師的房間"
+  },
+  "map_incursion_architects_x_additional_mods_per_incursion_room_completed|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Incursion Architects in your Maps have {0} additional Monster Modifiers for",
+    "each Incursion completed in the Area"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你每完成區域內的一個穿越，地圖中的穿越建師\n即會獲得{0}條額外怪物詞綴"
+  },
+  "map_incursion_architects_x_additional_mods_per_incursion_room_completed|1|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Incursion Architects in your Maps have an additional Monster Modifier for",
+    "each Incursion completed in the Area"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "你每完成區域內的一個穿越，地圖中的穿越建師\n即會獲得一條額外怪物詞綴"
+  },
   "map_incursion_chance_for_additional_upgrade_when_killing_non_resident_architect_%|#|atlas_stat_descriptions.txt|0": {
    "en": [
     "Killing non-resident Architects in your Maps has {}% chance to add",
@@ -8513,6 +10176,57 @@
    ],
    "zh": "擊殺你地圖中非居住的建造者，有 {}% 機率\n將 1 額外提升階級加至存活建造者的房間"
   },
+  "map_incursion_chance_for_additional_upgrade_when_killing_non_resident_architect_%|100|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Killing non-resident Architects in your Maps adds an additional Upgrade Tier",
+    "to the surviving Architect's Room"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "擊殺你地圖中非居住的建築師，會為存活建築師\n的房間額外提升1階級"
+  },
+  "map_incursion_chance_for_additional_upgrade_when_killing_non_resident_architect_%|1|99|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Killing non-resident Architects in your Maps has {}% chance to add",
+    "an additional Upgrade Tier to the surviving Architect's Room"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "擊殺你地圖中非居住的穿越建師，有{}%機率會為存活建師\n的房間額外提升1階級"
+  },
+  "map_incursion_portals_spawn_packs_when_encounter_ends|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Incursion Portals spawn packs of Invading Incursion Monsters",
+    "upon exiting Incursions in your Maps"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "在離開你地圖中的穿越後，會生成將召喚數群\n入侵穿越怪物的穿越傳送門"
+  },
+  "map_incursion_stone_of_passage_enrages_monsters|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Using a Stone of Passage in your Maps empowers Monsters in",
+    "the Incursion with [DoryanisSafeguards|Doryani's Safeguards]"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "在你地圖中使用連通之石時，會以[DoryanisSafeguards|多里亞尼的守禦]\n強化穿越中的怪物"
+  },
+  "map_legion_%_chance_chests_break_out_spread_rewards|100|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Legion Chests in your Maps spread their Rewards to",
+    "Legion Monsters they release from stasis when they are broken out",
+    "Legion Monsters that have gained Rewards have increased Difficulty"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "你地圖中的戰亂寶箱在從凝滯狀態被釋放時\n會擴散其獎勵至周遭的戰亂怪物上\n以此方式獲得獎勵的戰亂怪物會增加難度"
+  },
   "map_legion_%_chance_chests_break_out_spread_rewards|100|map_stat_descriptions.txt|0": {
    "en": [
     "Legion Chests in Area spread their Rewards to",
@@ -8521,7 +10235,22 @@
    ],
    "handlers": [],
    "slots": [],
-   "zh": "區域內的軍團寶箱在從凝滯狀態被釋放時\n會擴散其獎勵至周遭的軍團怪物上\n以此方式獲得獎勵的軍團怪物會增加難度"
+   "zh": "區域內的戰亂寶箱在從凝滯狀態被釋放時\n會擴散其獎勵至周遭的戰亂怪物上\n以此方式獲得獎勵的戰亂怪物會增加難度"
+  },
+  "map_legion_%_chance_chests_break_out_spread_rewards|1|99|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Legion Chests in your Maps have a {0}% chance to spread their Rewards to",
+    "Legion Monsters they release from stasis when they are broken out",
+    "Legion Monsters that have gained Rewards have increased Difficulty"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你地圖中的戰亂寶箱在從凝滯狀態被釋放時\n有{0}%機率會擴散其獎勵至周遭的戰亂怪物上\n以此方式獲得獎勵的戰亂怪物會增加難度"
   },
   "map_legion_%_chance_chests_break_out_spread_rewards|1|99|map_stat_descriptions.txt|0": {
    "en": [
@@ -8536,7 +10265,106 @@
      ""
     ]
    ],
-   "zh": "區域內的軍團寶箱在從凝滯狀態被釋放時\n有{0}%機率會擴散其獎勵至周遭的軍團怪物上\n以此方式獲得獎勵的軍團怪物會增加難度"
+   "zh": "區域內的戰亂寶箱在從凝滯狀態被釋放時\n有{0}%機率會擴散其獎勵至周遭的戰亂怪物上\n以此方式獲得獎勵的戰亂怪物會增加難度"
+  },
+  "map_legion_eternal_enshrouding_crystal_chance_+%|#|-1|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Legion Generals in your Maps have {0}% reduced chance to drop",
+    "an [ImperialEnshroudingCrystal|Imperial Enshrouding Crystal]"
+   ],
+   "handlers": [
+    [
+     "negate",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "減少{0}%你地圖中的戰亂將軍掉落\n[ImperialEnshroudingCrystal|永恆壟罩晶石]的機率"
+  },
+  "map_legion_eternal_enshrouding_crystal_chance_+%|1|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Legion Generals in your Maps have {0}% increased chance to drop",
+    "an [ImperialEnshroudingCrystal|Imperial Enshrouding Crystal]"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "增加{0}%你地圖中的戰亂將軍掉落\n[ImperialEnshroudingCrystal|永恆壟罩晶石]的機率"
+  },
+  "map_legion_karui_enshrouding_crystal_chance_+%|#|-1|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Legion Generals in your Maps have {0}% reduced chance to drop",
+    "a [KaruiEnshroudingCrystal|Karui Enshrouding Crystal]"
+   ],
+   "handlers": [
+    [
+     "negate",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "減少{0}%你地圖中的戰亂將軍掉落\n[KaruiEnshroudingCrystal|卡魯壟罩晶石]的機率"
+  },
+  "map_legion_karui_enshrouding_crystal_chance_+%|1|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Legion Generals in your Maps have {0}% increased chance to drop",
+    "a [KaruiEnshroudingCrystal|Karui Enshrouding Crystal]"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "增加{0}%你地圖中的戰亂將軍掉落\n[KaruiEnshroudingCrystal|卡魯壟罩晶石]的機率"
+  },
+  "map_legion_maraketh_enshrouding_crystal_chance_+%|#|-1|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Legion Generals in your Maps have {0}% reduced chance to drop",
+    "a [MarakethEnshroudingCrystal|Maraketh Enshrouding Crystal]"
+   ],
+   "handlers": [
+    [
+     "negate",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "減少{0}%你地圖中的戰亂將軍掉落\n[MarakethEnshroudingCrystal|馬拉克斯壟罩晶石]的機率"
+  },
+  "map_legion_maraketh_enshrouding_crystal_chance_+%|1|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Legion Generals in your Maps have {0}% increased chance to drop",
+    "a [MarakethEnshroudingCrystal|Maraketh Enshrouding Crystal]"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "增加{0}%你地圖中的戰亂將軍掉落\n[MarakethEnshroudingCrystal|馬拉克斯壟罩晶石]的機率"
   },
   "map_legion_monsters_chests_additional_splinter_chance_%|#|atlas_stat_descriptions.txt|0": {
    "en": [
@@ -8563,7 +10391,40 @@
    ],
    "handlers": [],
    "slots": [],
-   "zh": "軍團怪物可以多次脫離靜止狀態\n軍團怪物每次脫離都會增加難度和獎勵"
+   "zh": "戰亂怪物可以多次脫離靜止狀態\n戰亂怪物每次脫離都會增加難度和獎勵"
+  },
+  "map_legion_templar_enshrouding_crystal_chance_+%|#|-1|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Legion Generals in your Maps have {0}% reduced chance to drop",
+    "a [TemplarEnshroudingCrystal|Templar Enshrouding Crystal]"
+   ],
+   "handlers": [
+    [
+     "negate",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "減少{0}%你地圖中的戰亂將軍掉落\n[TemplarEnshroudingCrystal|聖宗壟罩晶石]的機率"
+  },
+  "map_legion_templar_enshrouding_crystal_chance_+%|1|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Legion Generals in your Maps have {0}% increased chance to drop",
+    "a [TemplarEnshroudingCrystal|Templar Enshrouding Crystal]"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "增加{0}%你地圖中的戰亂將軍掉落\n[TemplarEnshroudingCrystal|聖宗壟罩晶石]的機率"
   },
   "map_legion_uses_alert_instead_of_timer|#|atlas_stat_descriptions.txt|0": {
    "en": [
@@ -8574,6 +10435,39 @@
    "handlers": [],
    "slots": [],
    "zh": "你地圖中的戰亂事件沒有計時器\n打破處於靜止狀態的怪物和保險箱會導致碎裂\n你地圖中的戰亂事件開始於碎裂發生"
+  },
+  "map_legion_vaal_enshrouding_crystal_chance_+%|#|-1|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Legion Generals in your Maps have {0}% reduced chance to drop",
+    "a [VaalEnshroudingCrystal|Vaal Enshrouding Crystal]"
+   ],
+   "handlers": [
+    [
+     "negate",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "減少{0}%你地圖中的戰亂將軍掉落\n[VaalEnshroudingCrystal|瓦爾壟罩晶石]的機率"
+  },
+  "map_legion_vaal_enshrouding_crystal_chance_+%|1|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Legion Generals in your Maps have {0}% increased chance to drop",
+    "a [VaalEnshroudingCrystal|Vaal Enshrouding Crystal]"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "增加{0}%你地圖中的戰亂將軍掉落\n[VaalEnshroudingCrystal|瓦爾壟罩晶石]的機率"
   },
   "map_master_mission_zana_chance_+%|#|-1|atlas_stat_descriptions.txt|0": {
    "en": [
@@ -8619,6 +10513,104 @@
    "handlers": [],
    "slots": [],
    "zh": "怪物的行動速度不能被調整至低於基礎值\n怪物的移動速度不能被調整至低於基礎值"
+  },
+  "map_num_allflame_atlas_packs|1|#|stat_descriptions.txt|0": {
+   "en": [
+    "{0} Monster Packs in Area are substituted with Difficult and Rewarding Packs",
+    "which drop 300% increased Maps"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "區域內的{0}群怪物會被替換為更加困難但獎勵也更豐厚的怪物\n其會增加300%掉落的地圖數量"
+  },
+  "map_num_allflame_betrayal_packs|1|#|stat_descriptions.txt|0": {
+   "en": [
+    "{0} Monster Packs in Area are substituted with Syndicate Members",
+    "Pack Monsters revive after Final Map Boss has been slain"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "區域內的{0}群怪物會被替換為永生密教成員\n怪物群中的怪物會於最終地圖頭目被擊殺時復活"
+  },
+  "map_num_allflame_cleansed_packs|1|#|stat_descriptions.txt|0": {
+   "en": [
+    "{0} Monster Packs in Area are substituted with Packs that",
+    "cannot drop Equipment, Flasks or Tinctures"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "區域內的{0}群怪物會被替換為無法掉落\n裝備、藥劑、或萃取物的怪物群"
+  },
+  "map_num_allflame_gold_packs|1|#|stat_descriptions.txt|0": {
+   "en": [
+    "{0} Monster Packs in Area are substituted with Packs that",
+    "convert dropped Equipment to Gold"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "區域內的{0}群怪物會被替換為將\n掉落裝備轉換為金幣的怪物群"
+  },
+  "map_num_allflame_propagation_packs|1|#|stat_descriptions.txt|0": {
+   "en": [
+    "{0} Monster Packs in Area are substituted with Fungal Shamans",
+    "Pack Monsters that die when Rare spread Modifiers to other Rare Monsters in Area"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "區域內的{0}群怪物會被替換為真菌薩滿\n死亡的稀有怪物會將其詞綴傳播至區域內的其他稀有怪物"
+  },
+  "map_num_allflame_resplendence_packs|1|#|stat_descriptions.txt|0": {
+   "en": [
+    "{0} Monster Packs in Area are substituted with Packs that do not drop items",
+    "Pack Monsters grant increased Item Rarity when slain, up to 400%, decaying over time"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "區域內的{0}群怪物會被替換為不會掉落物品的怪物群\n怪物群中的怪物會於被擊殺時賦予物品稀有度，至多400%，並隨時間衰減"
+  },
+  "map_num_allflame_wildwood_packs|1|#|stat_descriptions.txt|0": {
+   "en": [
+    "{0} Monster Packs in Area are substituted with Wildwood Fiends",
+    "Pack Leaders Empower Map Bosses with Wildwood Wisps when slain"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "區域內的{0}群怪物會被替換為荒林惡魔\n怪物群首領在被擊殺時會以荒林妖精強化地圖頭目"
   },
   "map_player_death_mark_on_rare_unique_kill_ms|1000|stat_descriptions.txt|0": {
    "en": [
@@ -8700,6 +10692,15 @@
    ],
    "zh": "你的地圖有 {0:+d}% 機率含有可以透過\n輿圖天賦關閉的其他額外內容"
   },
+  "map_ritual_equipment_rewards_unidentified|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Equipment Item Favours from Ritual Altars in your Maps are unidentified",
+    "and can have Item Tiers"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "你地圖中祭祀神壇內的裝備恩賜之物會以未鑑定狀態出現\n且可以有物品階級"
+  },
   "map_rogue_exiles_possessed_%_chance map_area_rogue_exiles_soul_eater_%_chance|100|# 1|99|atlas_stat_descriptions.txt|0": {
    "en": [
     "Wild Rogue Exiles in your Maps are Possessed by a Tormented Spirit",
@@ -8760,6 +10761,15 @@
    ],
    "zh": "在你的地圖中，鉍礦床有 {0}% 機率\n對其影響的怪物附加一個詞綴"
   },
+  "map_shaped_regions_manifest_anomalies_instead|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Atlas Anomalies manifest on completing [ShapedRegionAnomalies|Shaped Region Objectives] instead of Map Completion",
+    "Atlas Anomalies can manifest from any Quadrant"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": ""
+  },
   "map_shaper_elder_guardians_assisted_by_allies|#|atlas_stat_descriptions.txt|0": {
    "en": [
     "Shaper and Elder Guardians are healed and joined by an ally on first reaching 33% Life",
@@ -8768,6 +10778,20 @@
    "handlers": [],
    "slots": [],
    "zh": "塑者和尊師守護者在初次到達 33% 生命時被治癒，並且加入 1 個友方\n友方有機率掉落他們的碎片"
+  },
+  "map_shrine_replaced_with_evolution_shrine_chance_%|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "{0}% chance for a Shrine in your Tier 16 Maps to",
+    "be replaced by an [EvolutionShrine|Evolving Shrine]"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你階級16地圖中的神殿有{0}%機率\n改為一座[EvolutionShrine|進化神殿]"
   },
   "map_shrines_have_standalone_map_boss|#|map_stat_descriptions.txt|0": {
    "en": [
@@ -8808,7 +10832,7 @@
      ""
     ]
    ],
-   "zh": "被擊中時，玩家獲得隨機移動速度詞綴，\n從 {0}% 更少至 {1}% 更多，直到再次被擊中"
+   "zh": "被擊中時，玩家獲得隨機移動速度詞綴，\n從 {0}% 更少至 {0}% 更多，直到再次被擊中"
   },
   "map_supporter_ruin_ghost_daemon_spawn|#|stat_descriptions.txt|0": {
    "en": [
@@ -8818,6 +10842,34 @@
    "handlers": [],
    "slots": [],
    "zh": "玩家被毀滅幽靈襲擊\n毀滅達到 7 層時無法獲得獎勵"
+  },
+  "map_torment_chance_%_to_contain_tormented_procurator|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "{0}% chance for a Tormented Spirit in your Tier 16 Maps to",
+    "be replaced by a [TormentedProcurator|Tormented Procurator]"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你階級16地圖中的罪魂有{0}%機率\n改為一個[TormentedProcurator|苦痛代行人]"
+  },
+  "map_tormented_spirit_release_and_dig_%_chance|1|99|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Tormented Spirits in your Maps have a {0}% chance to be set free when",
+    "Possessed Monsters are slain and dig up a Rare Monster"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你地圖中的罪魂有{0}%機率會在其附身的怪物被擊殺時\n釋放並挖掘出一名稀有怪物"
   },
   "map_tormented_spirit_release_and_dig_%_chance|1|99|map_stat_descriptions.txt|0": {
    "en": [
@@ -9151,6 +11203,29 @@
    ],
    "zh": "你的地圖含有礦床時，\n含有至少兩個礦床的機率增加 {0}%"
   },
+  "map_x_additional_free_threads_bypassing_maximum|1|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Your Maps with [Thread|Threads] applied gain an additional Thread,",
+    "which can bypass the 8 Thread maximum"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "你施加了[Thread|綢帶]的地圖會獲得一個額外綢帶，\n其可以超過8條最大詞綴的上限"
+  },
+  "map_x_additional_free_threads_bypassing_maximum|2|#|atlas_stat_descriptions.txt|0": {
+   "en": [
+    "Your Maps with [Thread|Threads] applied gain {0} additional Threads,",
+    "which can bypass the 8 Thread maximum"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你施加了[Thread|綢帶]的地圖會獲得{0}個額外綢帶，\n其可以超過8條最大詞綴的上限"
+  },
   "map_zana_influence_equipment_item_lucky_chance_%|1|#|atlas_stat_descriptions.txt|0": {
    "en": [
     "The number of Memory Strands on Equipment Items found",
@@ -9166,6 +11241,21 @@
    "zh": "在你的地圖中所找到之裝備物品的記憶絲縷數量\n有 {0}% 機率帶來幸運"
   },
   "max_barkskin_stacks|1|#|skill_stat_descriptions.txt|0": {
+   "en": [
+    "Gain 2 Bark each second if you haven't been Hit by an Enemy Attack Recently",
+    "Lose 1 Bark when Hit by an Enemy Attack",
+    "Maximum {0} Bark"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "若你近期沒有被敵人攻擊擊中，每秒獲得 1 層木質\n當被敵人攻擊擊中時，失去 1 層木質\n木質上限 {0}"
+  },
+  "max_barkskin_stacks|1|#|skill_stat_descriptions.txt|0@3.29.3": {
    "en": [
     "Gain 1 Bark each second if you haven't been Hit by an Enemy Attack Recently",
     "Lose 1 Bark when Hit by an Enemy Attack",
@@ -9212,6 +11302,52 @@
     ]
    ],
    "zh": "若你近期有造成暴擊\n偷取的每秒最大生命恢復總量增加 {0}%"
+  },
+  "maximum_number_of_X_minion_type_doubled|#|advanced_mod_stat_descriptions.txt|0": {
+   "en": [
+    "Maximum number of {0} is Doubled",
+    "Cannot have Minions other than {0}"
+   ],
+   "handlers": [
+    [
+     "minion_doubling_type",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "{0}的最大數量加倍\n無法擁有{0}以外的召喚物"
+  },
+  "maximum_number_of_X_minion_type_doubled|#|stat_descriptions.txt|0": {
+   "en": [
+    "Maximum number of {0} is Doubled",
+    "Cannot have Minions other than {0}"
+   ],
+   "handlers": [
+    [
+     "minion_doubling_type",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "{0}的最大數量加倍\n無法擁有{0}以外的召喚物"
   },
   "maximum_number_of_X_minion_type_doubled|10|advanced_mod_stat_descriptions.txt|0": {
    "en": [
@@ -9927,6 +12063,20 @@
   "movement_speed_+%_per_nearby_enemy|#|stat_descriptions.txt|0": {
    "en": [
     "{0}% increased Movement Speed for each",
+    "Enemy within 6 metres, up to 8%"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "6 公尺內每有一名敵人即增加{0}%移動速度，最大8%"
+  },
+  "movement_speed_+%_per_nearby_enemy|#|stat_descriptions.txt|0@3.29.3": {
+   "en": [
+    "{0}% increased Movement Speed for each",
     "nearby Enemy, up to 8%"
    ],
    "handlers": [],
@@ -9981,6 +12131,20 @@
   },
   "nearby_enemies_fire_dot_resistance_is_%_while_you_are_stationary|#|stat_descriptions.txt|0": {
    "en": [
+    "Enemy Monsters within 6 metres have Fire Resistance against",
+    "Damage over Time is {0}% while you are Stationary"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "你站立時，6 公尺內的敵人怪物的火焰抗性對持續傷害為 {0}%"
+  },
+  "nearby_enemies_fire_dot_resistance_is_%_while_you_are_stationary|#|stat_descriptions.txt|0@3.29.3": {
+   "en": [
     "Nearby Enemy Monsters' Fire Resistance against",
     "Damage over Time is {0}% while you are Stationary"
    ],
@@ -9994,6 +12158,15 @@
    "zh": "你站立時，附近敵人怪物的火焰抗性對持續傷害為 {0}%"
   },
   "nearby_enemies_no_fire_dot_resistance_while_you_are_stationary|#|stat_descriptions.txt|0": {
+   "en": [
+    "Enemy Monsters within 6 metres have no Fire Resistance against",
+    "Damage over Time while you are Stationary"
+   ],
+   "handlers": [],
+   "slots": [],
+   "zh": "你站立時，6 公尺內的敵人對持續傷害沒有火焰抗性"
+  },
+  "nearby_enemies_no_fire_dot_resistance_while_you_are_stationary|#|stat_descriptions.txt|0@3.29.3": {
    "en": [
     "Nearby Enemy Monsters have no Fire Resistance against",
     "Damage over Time while you are Stationary"
@@ -10017,6 +12190,25 @@
    "zh": ""
   },
   "necromancer_mana_regeneration_rate_per_minute_for_you_and_allies_per_nearby_corpse|#|stat_descriptions.txt|0": {
+   "en": [
+    "For each corpse within 6 metres, you and Allies within 6 metres Regenerate {0} Mana",
+    "per second, up to 50 per second"
+   ],
+   "handlers": [
+    [
+     "per_minute_to_per_second",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "6 公尺內每個屍體會使你和 6 公尺內的友方每秒回復 {0} 魔力，最多每秒 50"
+  },
+  "necromancer_mana_regeneration_rate_per_minute_for_you_and_allies_per_nearby_corpse|#|stat_descriptions.txt|0@3.29.3": {
    "en": [
     "For each nearby corpse, you and nearby Allies Regenerate {0} Mana",
     "per second, up to 50 per second"
@@ -10444,6 +12636,20 @@
   "physical_damage_reduction_%_if_only_one_enemy_nearby|#|stat_descriptions.txt|0": {
    "en": [
     "{0}% additional Physical Damage Reduction while there",
+    "is only one Enemy within 6 metres"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "若 6 公尺內只有一個敵人\n則有 {0}% 額外物理傷害減免"
+  },
+  "physical_damage_reduction_%_if_only_one_enemy_nearby|#|stat_descriptions.txt|0@3.29.3": {
+   "en": [
+    "{0}% additional Physical Damage Reduction while there",
     "is only one nearby Enemy"
    ],
    "handlers": [],
@@ -10456,6 +12662,20 @@
    "zh": "若附近只有一個敵人\n則有 {0}% 額外物理傷害減免"
   },
   "physical_damage_reduction_%_per_nearby_enemy|#|stat_descriptions.txt|0": {
+   "en": [
+    "{0}% additional Physical Damage Reduction for each",
+    "Enemy within 6 metres, up to 8%"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "6 公尺內的每個敵人使你有 {0}% 額外物理傷害減免, 最多 8%"
+  },
+  "physical_damage_reduction_%_per_nearby_enemy|#|stat_descriptions.txt|0@3.29.3": {
    "en": [
     "{0}% additional Physical Damage Reduction for each",
     "nearby Enemy, up to 8%"
@@ -11294,6 +13514,44 @@
    ],
    "zh": "當角色擊殺賦予稀有怪物時，\n有 {0}% 機率獲得它的詞綴 20 秒"
   },
+  "shaper_apparition_ability|#|advanced_mod_stat_descriptions.txt|0": {
+   "en": [
+    "Grants Level 20 [SummonShaperApparition::20|Summon Shaper Memory]",
+    "Grants Level 20 {0}, which will be used by Shaper Memory"
+   ],
+   "handlers": [
+    [
+     "shaper_apparition_ability",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "賦予等級 20 [SummonShaperApparition::20|召喚塑界者的記憶]\n賦予等級 20 {0}， 供塑界者的記憶使用"
+  },
+  "shaper_apparition_ability|#|stat_descriptions.txt|0": {
+   "en": [
+    "Grants Level 20 [SummonShaperApparition::20|Summon Shaper Memory]",
+    "Grants Level 20 {0}, which will be used by Shaper Memory"
+   ],
+   "handlers": [
+    [
+     "shaper_apparition_ability",
+     1
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "賦予等級 20 [SummonShaperApparition::20|召喚塑界者的記憶]\n賦予等級 20 {0}，供塑界者的記憶使用"
+  },
   "shaper_apparition_ability|1|advanced_mod_stat_descriptions.txt|0": {
    "en": [
     "Grants Level 20 Summon Shaper Memory",
@@ -11865,7 +14123,7 @@
      ""
     ]
    ],
-   "zh": "秘能波動增加 {0}% 施放速度\n秘能波動增加 {1}% 魔力恢復率"
+   "zh": "秘能波動賦予增加 {0}% 施放速度\n秘能波動賦予增加 {1}% 魔力恢復率"
   },
   "support_arcane_surge_cast_speed_+% support_arcane_surge_mana_regeneration_rate_+%|# #|skill_stat_descriptions.txt|0": {
    "en": [
@@ -11883,7 +14141,7 @@
      ""
     ]
    ],
-   "zh": "秘能波動增加 {0}% 施放速度\n秘能波動增加 {0}% 魔力恢復率"
+   "zh": "秘能波動賦予增加 {0}% 施放速度\n秘能波動賦予增加 {1}% 魔力恢復率"
   },
   "support_arcane_surge_gain_buff_on_mana_use_threshold|#|gem_stat_descriptions.txt|0": {
    "en": [
@@ -12626,6 +14884,20 @@
   },
   "support_scion_onslaught_for_3_seconds_on_hitting_unique_enemy_%_chance support_scion_onslaught_on_unique_hit_duration_ms|# #|gem_stat_descriptions.txt|0": {
    "en": [
+    "Supported Skills have {0}% chance to grant [Onslaught] for 3 seconds when",
+    "you Hit a Unique Enemy"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "當你擊中傳奇敵人時，被輔助的技能有 {0}% 機率獲得猛攻 3 秒"
+  },
+  "support_scion_onslaught_for_3_seconds_on_hitting_unique_enemy_%_chance support_scion_onslaught_on_unique_hit_duration_ms|# #|gem_stat_descriptions.txt|0@3.29.3": {
+   "en": [
     "Supported Skills have {0}% chance to grant Onslaught for 3 seconds when",
     "you Hit a Unique Enemy"
    ],
@@ -12639,6 +14911,29 @@
    "zh": "當你擊中傳奇敵人時，被輔助的技能有 {0}% 機率獲得猛攻 3 秒"
   },
   "support_scion_onslaught_on_killing_blow_%_chance support_scion_onslaught_on_killing_blow_duration_ms virtual_support_scion_onslaught_on_killing_blow_duration_ms|# !0 #|gem_stat_descriptions.txt|0": {
+   "en": [
+    "Supported Skills have {0}% chance to grant [Onslaught] for {1} seconds on",
+    "dealing a Killing Blow"
+   ],
+   "handlers": [
+    [
+     "milliseconds_to_seconds",
+     2
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "1",
+     ""
+    ]
+   ],
+   "zh": "被輔助的技能擊殺時\n有 {0}% 機率獲得猛攻 {1} 秒"
+  },
+  "support_scion_onslaught_on_killing_blow_%_chance support_scion_onslaught_on_killing_blow_duration_ms virtual_support_scion_onslaught_on_killing_blow_duration_ms|# !0 #|gem_stat_descriptions.txt|0@3.29.3": {
    "en": [
     "Supported Skills have {0}% chance to grant Onslaught for {1} seconds on",
     "dealing a Killing Blow"
@@ -12663,6 +14958,29 @@
   },
   "support_scion_onslaught_on_killing_blow_%_chance support_scion_onslaught_on_killing_blow_duration_ms virtual_support_scion_onslaught_on_killing_blow_duration_ms|# # !0|minion_attack_skill_stat_descriptions.txt|0": {
    "en": [
+    "This Attack and Minions have {0}% chance to gain [Onslaught] for {2} seconds on",
+    "dealing a Killing Blow"
+   ],
+   "handlers": [
+    [
+     "milliseconds_to_seconds",
+     3
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ]
+   ],
+   "zh": "攻擊和召喚物一擊必殺時\n有 {0}% 機率獲得猛攻 {2} 秒"
+  },
+  "support_scion_onslaught_on_killing_blow_%_chance support_scion_onslaught_on_killing_blow_duration_ms virtual_support_scion_onslaught_on_killing_blow_duration_ms|# # !0|minion_attack_skill_stat_descriptions.txt|0@3.29.3": {
+   "en": [
     "This Attack and Minions have {0}% chance to gain Onslaught for {2} seconds on",
     "dealing a Killing Blow"
    ],
@@ -12686,6 +15004,29 @@
   },
   "support_scion_onslaught_on_killing_blow_%_chance support_scion_onslaught_on_killing_blow_duration_ms virtual_support_scion_onslaught_on_killing_blow_duration_ms|# # !0|minion_skill_stat_descriptions.txt|0": {
    "en": [
+    "Minions have {0}% chance to gain [Onslaught] for {2} seconds on",
+    "dealing a Killing Blow"
+   ],
+   "handlers": [
+    [
+     "milliseconds_to_seconds",
+     3
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ]
+   ],
+   "zh": "召喚物一擊必殺時\n有 {0}% 機率獲得猛攻 {2} 秒"
+  },
+  "support_scion_onslaught_on_killing_blow_%_chance support_scion_onslaught_on_killing_blow_duration_ms virtual_support_scion_onslaught_on_killing_blow_duration_ms|# # !0|minion_skill_stat_descriptions.txt|0@3.29.3": {
+   "en": [
     "Minions have {0}% chance to gain Onslaught for {2} seconds on",
     "dealing a Killing Blow"
    ],
@@ -12708,6 +15049,29 @@
    "zh": "召喚物一擊必殺時\n有 {0}% 機率獲得猛攻 {2} 秒"
   },
   "support_scion_onslaught_on_killing_blow_%_chance support_scion_onslaught_on_killing_blow_duration_ms virtual_support_scion_onslaught_on_killing_blow_duration_ms|# # !0|skill_stat_descriptions.txt|0": {
+   "en": [
+    "{0}% chance to grant [Onslaught] for {2} seconds on",
+    "dealing a Killing Blow"
+   ],
+   "handlers": [
+    [
+     "milliseconds_to_seconds",
+     3
+    ]
+   ],
+   "slots": [
+    [
+     "0",
+     ""
+    ],
+    [
+     "2",
+     ""
+    ]
+   ],
+   "zh": "擊殺怪物時有 {0}% 機率\n獲得猛攻 {2} 秒"
+  },
+  "support_scion_onslaught_on_killing_blow_%_chance support_scion_onslaught_on_killing_blow_duration_ms virtual_support_scion_onslaught_on_killing_blow_duration_ms|# # !0|skill_stat_descriptions.txt|0@3.29.3": {
    "en": [
     "{0}% chance to grant Onslaught for {2} seconds on",
     "dealing a Killing Blow"
@@ -13911,7 +16275,7 @@
      ""
     ]
    ],
-   "zh": "移動或你立即傳送時，\n每 {0} 秒失去 1 強化"
+   "zh": "每移動 {0} 會失去 1 強化，\n當你傳送時會立即失去 {1}"
   },
   "virtual_lightning_tendrils_channelled_larger_pulse_interval lightning_tendrils_channelled_larger_pulse_interval lightning_tendrils_channelled_larger_pulse_always_crit|0 1 !0|skill_stat_descriptions.txt|0": {
    "en": [
@@ -14077,6 +16441,20 @@
    "zh": "若你近期有消耗屍體\n你和你的召喚物增加 {0}% 攻擊和施放速度"
   },
   "you_and_nearby_allies_armour_+_if_have_impaled_recently|#|stat_descriptions.txt|0": {
+   "en": [
+    "If you've Impaled an Enemy Recently, you",
+    "and Allies within 6 metres have +{0} to Armour"
+   ],
+   "handlers": [],
+   "slots": [
+    [
+     "0",
+     ""
+    ]
+   ],
+   "zh": "若你近期有穿刺敵人，你和 6 公尺內的友方 +{0} 護甲"
+  },
+  "you_and_nearby_allies_armour_+_if_have_impaled_recently|#|stat_descriptions.txt|0@3.29.3": {
    "en": [
     "If you've Impaled an Enemy Recently, you",
     "and nearby Allies have +{0} to Armour"
