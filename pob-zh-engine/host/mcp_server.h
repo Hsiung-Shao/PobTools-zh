@@ -19,3 +19,25 @@ int RunMcpServer(const std::wstring& exeDir, const std::wstring& pobDirOverride)
 // not load, 2 anything else; on failure no output file is left behind.
 int RunReport(const std::wstring& exeDir, const std::wstring& source, const std::wstring& pobDirOverride,
               const std::wstring& outOverride);
+
+// `pob-zh.exe --agent-serve [--session <name>] [--pob <dir>]`: the same tools
+// served to pobtools.exe (host/agent_cli.cpp) over the named pipe
+// AgentPipeName(session), one connection at a time, keeping the engine and its
+// build between connections. Exits after 30 idle minutes or on `agent/stop`;
+// 2 when the session name is bad or another daemon already has it.
+int RunAgentDaemon(const std::wstring& exeDir, const std::wstring& pobDirOverride, const std::wstring& session);
+
+// [A-Za-z0-9_-]{1,32}: the name goes into a pipe name.
+inline bool ValidAgentSession(const std::wstring& s)
+{
+	if (s.empty() || s.size() > 32) return false;
+	for (wchar_t c : s)
+		if (!((c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9') || c == L'_' || c == L'-')) return false;
+	return true;
+}
+inline std::wstring AgentPipeName(const std::wstring& session) { return L"\\\\.\\pipe\\pobtools-agent-" + session; }
+
+// Where the user's PoE1 POB keeps its builds: <POB>\Builds, or for an installed
+// POB (installed.cfg) Documents\Path of Building\Builds (empty if Documents is
+// unknown). The sandbox copies them from there; save_build writes back to AI\.
+std::wstring PobBuildsDir(const std::wstring& pobDir);

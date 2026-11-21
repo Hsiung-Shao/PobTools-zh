@@ -45,7 +45,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[52] = {
+const char* const kTitles[61] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -98,6 +98,15 @@ const char* const kTitles[52] = {
 	"R5 一次性指令寫出報告檔",
 	"R6 來源無效回 1 且不留檔",
 	"R7 產生報告不寫回使用者資料夾",
+	"C1 CLI 列出的工具與 MCP 相同",
+	"C2 兩次指令之間流派保留",
+	"C3 三種參數寫法結果相同",
+	"C4 參數錯誤回結束碼 1",
+	"C5 另存後重新載入數值一致",
+	"C6 同名已存在時拒絕且原檔不變",
+	"C7 檔名含路徑時拒絕",
+	"C8 stop 後行程與沙盒都清掉",
+	"C9 兩個 session 互不影響",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -3202,6 +3211,483 @@ void TestR7(const Ctx& c)
 	Record(51, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
 }
 
+// C1-C9:pobtools.exe(CLI,連到每個 session 一個的常駐 pob-zh.exe)
+
+struct CliOut {
+	DWORD code = 0;
+	std::string out;        // stdout 原文
+	json j;                 // out 去掉結尾空白後的 JSON(jsonOk 才有效)
+	bool jsonOk = false;    // 單行且可解析
+};
+
+std::wstring CliExePath()
+{
+	wchar_t buf[MAX_PATH * 4] = {};
+	GetModuleFileNameW(nullptr, buf, (DWORD)(sizeof(buf) / sizeof(buf[0])));
+	const std::wstring e = buf;
+	return e.substr(0, e.find_last_of(L'\\') + 1) + L"pobtools.exe";
+}
+
+// Windows 命令列單一參數的標準引號規則。
+std::wstring CliQuote(const std::wstring& a)
+{
+	std::wstring o = L"\"";
+	size_t bs = 0;
+	for (wchar_t ch : a) {
+		if (ch == L'\\') { bs++; continue; }
+		o.append(ch == L'"' ? bs * 2 + 1 : bs, L'\\');
+		bs = 0;
+		o += ch;
+	}
+	o.append(bs * 2, L'\\');
+	return o + L"\"";
+}
+
+// 跑 pobtools.exe <args>,stdout 接管線(必要時 stdin 餵 in),最多等 300 秒。
+// 常駐行程可能繼承管線寫端而不關,所以不等 EOF:子行程結束後再多等一下就取消讀取。
+bool RunCliRaw(const std::vector<std::wstring>& args, const std::string& in, CliOut& o, std::string& err)
+{
+	const std::wstring exe = CliExePath();
+	if (!file_exists(exe)) { err = "找不到 pobtools.exe(" + narrow(exe) + ")"; return false; }
+
+	SECURITY_ATTRIBUTES sa{};
+	sa.nLength = sizeof(sa);
+	sa.bInheritHandle = TRUE;
+	HANDLE inR = nullptr, inW = nullptr, outR = nullptr, outW = nullptr;
+	if (!CreatePipe(&inR, &inW, &sa, 0)) { err = "建立管線失敗"; return false; }
+	if (!CreatePipe(&outR, &outW, &sa, 0)) { CloseHandle(inR); CloseHandle(inW); err = "建立管線失敗"; return false; }
+	SetHandleInformation(inW, HANDLE_FLAG_INHERIT, 0);
+	SetHandleInformation(outR, HANDLE_FLAG_INHERIT, 0);
+	HANDLE nul = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
+
+	std::wstring cmd = L"\"" + exe + L"\"";
+	for (const auto& a : args) cmd += L" " + CliQuote(a);
+	std::vector<wchar_t> buf(cmd.begin(), cmd.end());
+	buf.push_back(0);
+	STARTUPINFOW si{};
+	si.cb = sizeof(si);
+	si.dwFlags = STARTF_USESTDHANDLES;
+	si.hStdInput = inR;
+	si.hStdOutput = outW;
+	si.hStdError = nul == INVALID_HANDLE_VALUE ? nullptr : nul;
+	PROCESS_INFORMATION pi{};
+	const std::wstring dir = exe.substr(0, exe.find_last_of(L'\\') + 1);
+	const BOOL ok = CreateProcessW(exe.c_str(), buf.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, dir.c_str(), &si, &pi);
+	const DWORD le = GetLastError();
+	CloseHandle(inR);
+	CloseHandle(outW);
+	if (nul != INVALID_HANDLE_VALUE) CloseHandle(nul);
+	if (!ok) {
+		CloseHandle(inW);
+		CloseHandle(outR);
+		err = "CreateProcess 失敗 (" + std::to_string(le) + ")";
+		return false;
+	}
+	CloseHandle(pi.hThread);
+
+	std::string got;
+	std::mutex mu;
+	std::atomic<bool> done{false};
+	std::thread t([&] {
+		char b[65536];
+		DWORD n = 0;
+		while (ReadFile(outR, b, sizeof(b), &n, nullptr) && n > 0) {
+			std::lock_guard<std::mutex> lk(mu);
+			got.append(b, n);
+		}
+		done = true;
+	});
+	if (!in.empty()) {
+		DWORD w = 0;
+		WriteFile(inW, in.data(), (DWORD)in.size(), &w, nullptr);
+	}
+	CloseHandle(inW);
+
+	const bool exited = WaitForSingleObject(pi.hProcess, 300000) == WAIT_OBJECT_0;
+	if (!exited) { TerminateProcess(pi.hProcess, 1); WaitForSingleObject(pi.hProcess, 3000); }
+	for (int i = 0; i < 60 && !done; i++) Sleep(50);
+	if (!done) {
+		CancelSynchronousIo(t.native_handle());
+		for (int i = 0; i < 40 && !done; i++) Sleep(50);
+	}
+	t.join();
+	CloseHandle(outR);
+	o.code = 1;
+	GetExitCodeProcess(pi.hProcess, &o.code);
+	CloseHandle(pi.hProcess);
+	if (!exited) { err = "pobtools.exe 逾時 300 秒"; return false; }
+
+	o.out = got;
+	std::string tr = got;
+	while (!tr.empty() && isspace((unsigned char)tr.back())) tr.pop_back();
+	o.jsonOk = false;
+	if (!tr.empty() && tr.find('\n') == std::string::npos) {
+		o.j = json::parse(tr, nullptr, false);
+		o.jsonOk = !o.j.is_discarded();
+	}
+	return true;
+}
+
+// pobtools.exe --session <sess> --pob <POB> <args...>
+bool Cli(const Ctx& c, const std::wstring& sess, const std::vector<std::wstring>& args, CliOut& o, std::string& err, const std::string& in = std::string())
+{
+	std::vector<std::wstring> full = {L"--session", sess, L"--pob", c.pobDir};
+	full.insert(full.end(), args.begin(), args.end());
+	return RunCliRaw(full, in, o, err);
+}
+
+// 結束碼 0、stdout 單行 JSON 物件、沒有 error 鍵才算成功;sc 取 JSON 本體。
+bool CliTool(const Ctx& c, const std::wstring& sess, const std::vector<std::wstring>& args, json& sc, std::string& err, const std::string& in = std::string())
+{
+	CliOut o;
+	if (!Cli(c, sess, args, o, err, in)) return false;
+	const std::string what = narrow(args[0]);
+	if (o.code != 0) { err = what + " 結束碼 " + std::to_string(o.code) + ": " + Cut(o.out, 160); return false; }
+	if (!o.jsonOk || !o.j.is_object()) { err = what + " stdout 不是單行 JSON 物件: " + Cut(o.out, 160); return false; }
+	if (o.j.contains("error")) { err = what + " 回錯: " + Cut(o.j.dump(), 160); return false; }
+	sc = o.j;
+	return true;
+}
+
+// 工具回錯的樣子:結束碼 1、stdout 單行含 error 鍵的 JSON。符合回空字串,否則回原因。
+std::string ExpectCliError(const CliOut& o)
+{
+	if (o.code != 1) return "結束碼 " + std::to_string(o.code) + "(應為 1)";
+	if (!o.jsonOk || !o.j.is_object() || !o.j.contains("error")) return "stdout 不是含 error 的單行 JSON: " + Cut(o.out, 120);
+	return {};
+}
+
+std::wstring CliSessName(const char* suffix) { return L"st" + std::to_wstring(GetCurrentProcessId()) + widen(suffix); }
+
+// 離開時(含失敗路徑)stop 這個 session。
+struct CliSession {
+	const Ctx& c;
+	std::wstring name;
+	~CliSession()
+	{
+		try {
+			CliOut o;
+			std::string e;
+			Cli(c, name, {L"stop"}, o, e);
+		} catch (...) {}
+	}
+};
+
+std::string CliJsonArgs(const json& j) { return j.dump(-1, ' ', false, json::error_handler_t::replace); }
+
+// 目前流派 build_summary 的 stats。
+bool CliStats(const Ctx& c, const std::wstring& sess, json& stats, std::string& err)
+{
+	json sc;
+	if (!CliTool(c, sess, {L"build_summary"}, sc, err)) return false;
+	if (!sc.contains("stats") || !sc["stats"].is_object()) { err = "build_summary 沒有 stats 物件"; return false; }
+	stats = sc["stats"];
+	return true;
+}
+
+// stats 的 Life、CombinedDPS 前後都要是數字且相等;不符時填 bad。
+void CompareLifeDps(const json& a, const json& b, std::vector<std::string>& bad, std::string& d)
+{
+	for (const char* k : {"Life", "CombinedDPS"}) {
+		double x = 0, y = 0;
+		if (!NumOf(a, k, x) || !NumOf(b, k, y)) { bad.push_back(std::string("stats 缺數字 ") + k); continue; }
+		if (x != y) bad.push_back(std::string(k) + " 前=" + Num(x) + " 後=" + Num(y));
+		else d += std::string(d.empty() ? "" : ", ") + k + "=" + Num(x);
+	}
+}
+
+// C1 CLI 列出的工具與 MCP 相同
+void TestC1(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	CliSession ss{c, CliSessName("c1")};
+	McpProc p;
+	do {
+		std::string err;
+		CliOut o;
+		if (!Cli(c, ss.name, {L"tools"}, o, err)) { bad.push_back(err); break; }
+		if (o.code != 0) { bad.push_back("tools 結束碼 " + std::to_string(o.code) + ": " + Cut(o.out, 120)); break; }
+		if (!o.jsonOk || !o.j.is_object() || !o.j.contains("tools") || !o.j["tools"].is_array()) {
+			bad.push_back("tools 輸出不是 {\"tools\":[...]} 單行 JSON: " + Cut(o.out, 160));
+			break;
+		}
+		std::set<std::string> cli, mcp;
+		for (const auto& t : o.j["tools"]) if (NonEmptyStr(t, "name")) cli.insert(t["name"].get<std::string>());
+		if (cli.empty() || cli.size() != o.j["tools"].size()) { bad.push_back("CLI 工具清單為空,或有缺 name / 重複名稱"); break; }
+
+		if (!StartMcpEx(p, c.exeDir, c.pobDir, false, err)) { bad.push_back("MCP " + err); break; }
+		json resp;
+		if (!p.Request("tools/list", json::object(), 30000, resp, err)) { bad.push_back("tools/list: " + err); break; }
+		if (!resp.contains("result") || !resp["result"].contains("tools") || !resp["result"]["tools"].is_array()) { bad.push_back("tools/list 沒有 tools 陣列"); break; }
+		for (const auto& t : resp["result"]["tools"]) if (NonEmptyStr(t, "name")) mcp.insert(t["name"].get<std::string>());
+
+		std::vector<std::string> onlyCli, onlyMcp;
+		for (const auto& n : cli) if (!mcp.count(n)) onlyCli.push_back(n);
+		for (const auto& n : mcp) if (!cli.count(n)) onlyMcp.push_back(n);
+		if (!onlyCli.empty()) bad.push_back("只有 CLI 有: " + JoinFirst(onlyCli, 4));
+		if (!onlyMcp.empty()) bad.push_back("只有 MCP 有: " + JoinFirst(onlyMcp, 4));
+		if (bad.empty()) d = "兩邊都是 " + std::to_string(cli.size()) + " 個工具,名稱相同";
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(52, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// C2 兩次指令之間流派保留
+void TestC2(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	CliSession ss{c, CliSessName("c2")};
+	do {
+		std::string err;
+		json sc;
+		if (!CliTool(c, ss.name, {L"new_build", L"class=Witch"}, sc, err)) { bad.push_back(err); break; }
+		if (!CliTool(c, ss.name, {L"build_summary"}, sc, err)) { bad.push_back("另一次執行的 " + err); break; }
+		const std::string cls = NameOf(sc, "class");
+		if (cls != "Witch") bad.push_back("第二次 build_summary.class=" + cls + "(應為 Witch,流派沒有保留)");
+		else d = "第二次執行回報職業 Witch";
+	} while (false);
+	Record(53, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// C3 三種參數寫法結果相同
+void TestC3(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	CliSession ss{c, CliSessName("c3")};
+	const std::wstring file = c.exeDir + L"pobtools_selftest_c3_" + std::to_wstring(GetCurrentProcessId()) + L".json";
+	DeleteFileW(file.c_str());
+	do {
+		std::string err;
+		json sc;
+		if (!CliTool(c, ss.name, {L"new_build", L"class=Witch"}, sc, err)) { bad.push_back(err); break; }
+		const std::string body = CliJsonArgs(json{{"query", "life"}, {"limit", 3}});
+		if (!WriteFileA(file, body)) { bad.push_back("寫不出參數檔"); break; }
+
+		CliOut a, b, s;
+		if (!Cli(c, ss.name, {L"search_nodes", L"query=life", L"limit=3"}, a, err)) { bad.push_back(err); break; }
+		if (!Cli(c, ss.name, {L"search_nodes", L"@" + file}, b, err)) { bad.push_back(err); break; }
+		if (!Cli(c, ss.name, {L"search_nodes", L"-"}, s, err, body)) { bad.push_back(err); break; }
+		const std::pair<const char*, const CliOut*> runs[3] = {{"key=value", &a}, {"@file", &b}, {"stdin", &s}};
+		bool allOk = true;
+		for (const auto& r : runs) {
+			if (r.second->code != 0 || !r.second->jsonOk || !r.second->j.is_object() || r.second->j.contains("error")) {
+				bad.push_back(std::string(r.first) + " 失敗(結束碼 " + std::to_string(r.second->code) + "): " + Cut(r.second->out, 120));
+				allOk = false;
+			}
+		}
+		if (!allOk) break;
+		if (a.out != b.out) bad.push_back("key=value 與 @file 的 stdout 不同");
+		if (a.out != s.out) bad.push_back("key=value 與 stdin 的 stdout 不同");
+		if (bad.empty()) d = "三種寫法 stdout 相同(" + std::to_string(a.out.size()) + " 位元組)";
+	} while (false);
+	DeleteFileW(file.c_str());
+	Record(54, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// C4 參數錯誤回結束碼 1
+void TestC4(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	CliSession ss{c, CliSessName("c4")};
+	do {
+		std::string err;
+		json sc;
+		if (!CliTool(c, ss.name, {L"new_build", L"class=Witch"}, sc, err)) { bad.push_back(err); break; }
+		CliOut u, m;
+		if (!Cli(c, ss.name, {L"no_such_tool_xyz"}, u, err)) { bad.push_back(err); break; }
+		if (!Cli(c, ss.name, {L"search_nodes"}, m, err)) { bad.push_back(err); break; }
+		const std::string wu = ExpectCliError(u), wm = ExpectCliError(m);
+		if (!wu.empty()) bad.push_back("未知工具名: " + wu);
+		if (!wm.empty()) bad.push_back("缺必填參數: " + wm);
+		if (bad.empty()) d = "未知工具與缺必填都是結束碼 1 + error JSON";
+	} while (false);
+	Record(55, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// C5 另存後重新載入數值一致
+void TestC5(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	CliSession ss{c, CliSessName("c5")};
+	const std::string name = "pobtools_selftest_" + std::to_string(GetCurrentProcessId()) + "_c5";
+	const std::wstring aiDir = c.pobDir + L"\\Builds\\AI";
+	const std::wstring file = aiDir + L"\\" + widen(name) + L".xml";
+	const bool aiExisted = IsDir(aiDir);
+	DeleteFileW(file.c_str());
+	do {
+		std::string err;
+		json sc, before, after;
+		if (c.sample.empty()) { bad.push_back("Builds 資料夾找不到範例建置"); break; }
+		if (!CliTool(c, ss.name, {L"load_build", L"-"}, sc, err, CliJsonArgs(json{{"source", c.sample}}))) { bad.push_back(err); break; }
+		if (!sc.value("ok", false)) { bad.push_back("load_build 範例沒有 ok:true"); break; }
+		if (!CliStats(c, ss.name, before, err)) { bad.push_back("存檔前 " + err); break; }
+		if (!CliTool(c, ss.name, {L"save_build", L"name=" + widen(name)}, sc, err)) { bad.push_back(err); break; }
+		if (!sc.value("saved", false) || sc.value("file", std::string()) != "AI/" + name + ".xml") { bad.push_back("save_build 回傳不符: " + Cut(sc.dump(), 120)); break; }
+		if (!file_exists(file)) { bad.push_back("save_build 說成功但檔案不在 Builds\\AI\\"); break; }
+		// 先換成別的流派,才分得出「讀回」有沒有真的做事
+		if (!CliTool(c, ss.name, {L"new_build", L"class=Marauder"}, sc, err)) { bad.push_back(err); break; }
+		if (!CliTool(c, ss.name, {L"load_build", L"-"}, sc, err, CliJsonArgs(json{{"source", "AI/" + name + ".xml"}}))) { bad.push_back("讀回 " + err); break; }
+		if (!sc.value("ok", false)) { bad.push_back("讀回的 load_build 沒有 ok:true"); break; }
+		if (!CliStats(c, ss.name, after, err)) { bad.push_back("讀回後 " + err); break; }
+		CompareLifeDps(before, after, bad, d);
+	} while (false);
+	DeleteFileW(file.c_str());
+	if (!aiExisted) RemoveDirectoryW(aiDir.c_str());
+	Record(56, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// C6 同名已存在時拒絕且原檔不變
+void TestC6(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	CliSession ss{c, CliSessName("c6")};
+	const std::string name = "pobtools_selftest_" + std::to_string(GetCurrentProcessId()) + "_c6";
+	const std::wstring aiDir = c.pobDir + L"\\Builds\\AI";
+	const std::wstring file = aiDir + L"\\" + widen(name) + L".xml";
+	const bool aiExisted = IsDir(aiDir);
+	DeleteFileW(file.c_str());
+	do {
+		std::string err;
+		json sc;
+		if (!CliTool(c, ss.name, {L"new_build", L"class=Witch"}, sc, err)) { bad.push_back(err); break; }
+		if (!CliTool(c, ss.name, {L"save_build", L"name=" + widen(name)}, sc, err)) { bad.push_back("第一次存檔 " + err); break; }
+		const std::string first = ReadFileA(file);
+		if (first.empty()) { bad.push_back("第一次存檔後檔案不存在或是空的"); break; }
+		if (!CliTool(c, ss.name, {L"new_build", L"class=Marauder"}, sc, err)) { bad.push_back(err); break; }
+		CliOut o;
+		if (!Cli(c, ss.name, {L"save_build", L"name=" + widen(name)}, o, err)) { bad.push_back(err); break; }
+		const std::string why = ExpectCliError(o);
+		if (!why.empty()) bad.push_back("同名再存: " + why);
+		if (ReadFileA(file) != first) bad.push_back("同名再存後原檔位元組被改");
+		if (bad.empty()) d = "第二次回錯,原檔 " + std::to_string(first.size()) + " 位元組不變";
+	} while (false);
+	DeleteFileW(file.c_str());
+	if (!aiExisted) RemoveDirectoryW(aiDir.c_str());
+	Record(57, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// C7 檔名含路徑時拒絕
+void TestC7(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	CliSession ss{c, CliSessName("c7")};
+	const std::wstring builds = c.pobDir + L"\\Builds";
+	const std::wstring aiDir = builds + L"\\AI";
+	const bool aiExisted = IsDir(aiDir);
+	// 跳出 Builds 的寫法會落在 POB 資料夾或 C:\ 根目錄,Builds 清單看不到,另外盯這兩個檔
+	const std::wstring outside[2] = {c.pobDir + L"\\x.xml", L"C:\\x.xml"};
+	bool outsideBefore[2] = {file_exists(outside[0]), file_exists(outside[1])};
+	do {
+		std::string err;
+		json sc;
+		if (!CliTool(c, ss.name, {L"new_build", L"class=Witch"}, sc, err)) { bad.push_back(err); break; }
+		Snap before, after;
+		Snapshot(builds, L"", before, false);
+		for (const wchar_t* nm : {L"..\\x", L"C:\\x", L"a/b"}) {
+			CliOut o;
+			if (!Cli(c, ss.name, {L"save_build", std::wstring(L"name=") + nm}, o, err)) { bad.push_back(err); break; }
+			const std::string why = ExpectCliError(o);
+			if (!why.empty()) bad.push_back("name=" + narrow(nm) + ": " + why);
+		}
+		if (!bad.empty() && bad[0].find("pobtools.exe") != std::string::npos) break;
+		Snapshot(builds, L"", after, false);
+		auto inAi = [](const std::wstring& k) { return k == L"AI" || k.compare(0, 3, L"AI\\") == 0; };
+		std::vector<std::string> added, removed, changed, aiNew;
+		for (const auto& [k, v] : after) {
+			auto it = before.find(k);
+			if (inAi(k)) { if (it == before.end() && !v.dir) aiNew.push_back(narrow(k)); continue; }
+			if (it == before.end()) added.push_back(narrow(k));
+			else if (it->second.dir != v.dir || it->second.size != v.size || it->second.mtime != v.mtime) changed.push_back(narrow(k));
+		}
+		for (const auto& [k, v] : before) if (!inAi(k) && !after.count(k)) removed.push_back(narrow(k));
+		if (!added.empty()) bad.push_back("Builds 新增: " + JoinFirst(added, 3));
+		if (!removed.empty()) bad.push_back("Builds 刪除: " + JoinFirst(removed, 3));
+		if (!changed.empty()) bad.push_back("Builds 變更: " + JoinFirst(changed, 3));
+		if (!aiNew.empty()) bad.push_back("AI\\ 內新增: " + JoinFirst(aiNew, 3));
+		if (bad.empty()) d = "三種名稱都回錯,Builds 共 " + std::to_string(before.size()) + " 項前後相同";
+	} while (false);
+	for (int i = 0; i < 2; i++) {
+		if (!outsideBefore[i] && file_exists(outside[i])) {
+			bad.push_back("跳出 Builds 寫出了 " + narrow(outside[i]));
+			DeleteFileW(outside[i].c_str());
+		}
+	}
+	// AI\ 是這個測試造成的才清;有東西就留著(RemoveDirectory 對非空資料夾會失敗)
+	if (!aiExisted) RemoveDirectoryW(aiDir.c_str());
+	Record(58, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// C8 stop 後行程與沙盒都清掉
+void TestC8(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	CliSession ss{c, CliSessName("c8")};
+	do {
+		std::string err;
+		json sc;
+		if (!CliTool(c, ss.name, {L"new_build", L"class=Witch"}, sc, err)) { bad.push_back(err); break; }
+		CliOut st;
+		if (!Cli(c, ss.name, {L"status"}, st, err)) { bad.push_back(err); break; }
+		DWORD pid = 0;
+		if (st.code != 0 || !st.jsonOk || !st.j.is_object() || !st.j.value("running", false) ||
+		    !st.j.contains("pid") || !st.j["pid"].is_number_integer() || (pid = st.j["pid"].get<DWORD>()) == 0) {
+			bad.push_back("工具執行後 status 不是 running:true 且 pid>0: " + Cut(st.out, 120));
+			break;
+		}
+		const std::wstring sb = SandboxPidDir(c.exeDir, pid);
+		if (!IsDir(sb)) { bad.push_back("stop 前沙盒就不存在(" + narrow(sb) + "),無法驗證清理"); break; }
+
+		CliOut sp;
+		if (!Cli(c, ss.name, {L"stop"}, sp, err)) { bad.push_back(err); break; }
+		if (sp.code != 0 || !sp.jsonOk || !sp.j.is_object() || !sp.j.value("stopped", false)) { bad.push_back("stop 沒回 stopped:true: " + Cut(sp.out, 120)); break; }
+		// stop 回傳時行程與沙盒都該已經沒了,不給寬限
+		HANDLE h = OpenProcess(SYNCHRONIZE, FALSE, pid);
+		if (h) {
+			if (WaitForSingleObject(h, 0) == WAIT_TIMEOUT) bad.push_back("stop 回傳時 pid " + std::to_string(pid) + " 還活著");
+			CloseHandle(h);
+		}
+		if (IsDir(sb)) bad.push_back("stop 回傳時沙盒還在: " + narrow(sb));
+
+		CliOut s2;
+		if (!Cli(c, ss.name, {L"status"}, s2, err)) { bad.push_back(err); break; }
+		if (!s2.jsonOk || !s2.j.is_object() || s2.j.value("running", true) != false) bad.push_back("stop 後 status 不是 running:false: " + Cut(s2.out, 120));
+		if (bad.empty()) d = "pid " + std::to_string(pid) + " 已結束,沙盒已刪,status running:false";
+	} while (false);
+	Record(59, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// C9 兩個 session 互不影響
+void TestC9(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	CliSession sa{c, CliSessName("c9a")};
+	CliSession sb{c, CliSessName("c9b")};
+	do {
+		std::string err;
+		json sc;
+		if (!CliTool(c, sa.name, {L"new_build", L"class=Witch"}, sc, err)) { bad.push_back("A " + err); break; }
+		if (!CliTool(c, sb.name, {L"new_build", L"class=Marauder"}, sc, err)) { bad.push_back("B " + err); break; }
+		if (!CliTool(c, sa.name, {L"build_summary"}, sc, err)) { bad.push_back("A " + err); break; }
+		const std::string ca = NameOf(sc, "class");
+		if (!CliTool(c, sb.name, {L"build_summary"}, sc, err)) { bad.push_back("B " + err); break; }
+		const std::string cb = NameOf(sc, "class");
+		if (ca != "Witch") bad.push_back("session A 職業=" + ca + "(應為 Witch)");
+		if (cb != "Marauder") bad.push_back("session B 職業=" + cb + "(應為 Marauder)");
+		if (bad.empty()) d = "A=Witch、B=Marauder 各自保留";
+	} while (false);
+	Record(60, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -3290,7 +3776,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	auto failAll = [&](const std::string& why) {
 		for (int n = 1; n <= 11; n++) Record(n, false, why); // M12 是純函式,不受影響
-		for (int n = 13; n <= 51; n++) Record(n, false, why);
+		for (int n = 13; n <= 60; n++) Record(n, false, why);
 	};
 
 	std::wstring sampleRel;
@@ -3398,6 +3884,15 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			Guard(49, [&] { TestR5(c2); });
 			Guard(50, [&] { TestR6(c2); });
 			Guard(51, [&] { TestR7(c2); });
+			Guard(52, [&] { TestC1(c2); });
+			Guard(53, [&] { TestC2(c2); });
+			Guard(54, [&] { TestC3(c2); });
+			Guard(55, [&] { TestC4(c2); });
+			Guard(56, [&] { TestC5(c2); });
+			Guard(57, [&] { TestC6(c2); });
+			Guard(58, [&] { TestC7(c2); });
+			Guard(59, [&] { TestC8(c2); });
+			Guard(60, [&] { TestC9(c2); });
 		}
 
 		std::vector<std::string> all = mainLines;
@@ -3410,7 +3905,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// 報告:每項一行,最後一行總計
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 51; n++) {
+	for (int n = 1; n <= 60; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";

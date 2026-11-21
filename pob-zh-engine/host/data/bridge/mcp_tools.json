@@ -1,5 +1,5 @@
 {
-  "instructions": "Path of Building (PoE1) through PobTools. Call build_guide once first: it explains how to read a build (keystones such as Chaos Inoculation change what a \"bad\" number means). Every number comes from Path of Building's own calculation. The server works on ONE build in a private sandbox: load_build or new_build first, change it with the tools, read numbers with build_summary, and hand the result to the user with export_code (a share code they paste into Path of Building). Nothing is ever written to the user's own Path of Building folder. Use what_if to compare changes without keeping them. Names come in English (name) and Traditional Chinese (nameZh); arguments accept either. DPS depends heavily on the configuration (enemy type, charges, buffs): check get_config before trusting it. Rare items are calculated exactly as written, whether or not they could be crafted in game.",
+  "instructions": "Path of Building (PoE1) through PobTools. Call build_guide once first: it explains how to read a build (keystones such as Chaos Inoculation change what a \"bad\" number means). Every number comes from Path of Building's own calculation. The server works on ONE build in a private sandbox: load_build or new_build first, change it with the tools, read numbers with build_summary, and hand the result to the user with export_code (a share code they paste into Path of Building). Nothing is written to the user's own Path of Building folder, except a new file in Builds\\AI\\ when you call save_build. Use what_if to compare changes without keeping them. Names come in English (name) and Traditional Chinese (nameZh); arguments accept either. DPS depends heavily on the configuration (enemy type, charges, buffs): check get_config before trusting it. Rare items are calculated exactly as written, whether or not they could be crafted in game.",
   "tools": [
     {
       "name": "build_guide",
@@ -67,6 +67,22 @@
       "inputSchema": {
         "type": "object",
         "properties": {}
+      }
+    },
+    {
+      "name": "save_build",
+      "description": "Save a copy of the current build as a new file in the user's Path of Building Builds\\AI\\ folder, so they can open it there. Never overwrites: an existing name is an error. load_build accepts the returned file afterwards.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "File name only (no folders); .xml is added"
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     },
     {

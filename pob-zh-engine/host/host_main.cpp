@@ -804,6 +804,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--mcp") { // --mcp [--pob <dir>]
 		return RunMcpServer(dir, arg2 == L"--pob" ? arg3 : L"");
 	}
+	// The same tools for pobtools.exe, kept running between its commands.
+	if (arg1 == L"--agent-serve") { // --agent-serve [--session <name>] [--pob <dir>]
+		std::wstring session = L"default", pob;
+		const std::wstring* opts[4] = { &arg2, &arg3, &arg4, &arg5 };
+		for (int i = 0; i + 1 < 4; i += 2) {
+			if (*opts[i] == L"--session") session = *opts[i + 1];
+			else if (*opts[i] == L"--pob") pob = *opts[i + 1];
+		}
+		return RunAgentDaemon(dir, pob, session);
+	}
 	// One-shot AI report (the launcher's "AI analysis report" row runs this).
 	if (arg1 == L"--report") { // --report <source> [--pob <dir>] [--out <file>]
 		std::wstring pob, out;

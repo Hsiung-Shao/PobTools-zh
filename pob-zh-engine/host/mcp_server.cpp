@@ -12,8 +12,10 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shlobj.h>
+#include <sddl.h>
 #include "win_util.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -145,6 +147,7 @@ public:
 
 	HeadlessProc::Child* Child() { return child_.get(); }
 	const std::wstring& PobDir() const { return pobDir_; }
+	std::wstring SandboxBuilds() const { return sandbox_ + L"\\Builds"; }
 
 	void Kill()
 	{
@@ -192,14 +195,9 @@ private:
 			LinkTree(pobDir_, sandbox_, st);
 			// An installed POB (installed.cfg, left out of the sandbox) keeps its
 			// builds under Documents\Path of Building\Builds: bring those along.
-			if (GetFileAttributesW((pobDir_ + L"\\installed.cfg").c_str()) != INVALID_FILE_ATTRIBUTES) {
-				PWSTR docs = nullptr;
-				if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &docs))) {
-					const std::wstring userBuilds = std::wstring(docs) + L"\\Path of Building\\Builds";
-					if (IsDir(userBuilds)) CopyTree(userBuilds, sandbox_ + L"\\Builds", st, true);
-				}
-				CoTaskMemFree(docs);
-			}
+			const std::wstring userBuilds = PobBuildsDir(pobDir_);
+			if (_wcsicmp(userBuilds.c_str(), (pobDir_ + L"\\Builds").c_str()) != 0 && IsDir(userBuilds))
+				CopyTree(userBuilds, sandbox_ + L"\\Builds", st, true);
 			if (st.errors > 0 || (st.junctions == 0 && st.files < 100)) {
 				err = "Could not prepare the sandbox copy of Path of Building (" + std::to_string(st.errors) + " errors).";
 				return false;
@@ -492,6 +490,33 @@ json ReportProblem(const Engine& eng)
 	}, false);
 }
 
+// save_build wrote <sandbox>\Builds\AI\<name>.xml; the user's Builds\AI\ gets
+// a copy unless a file of that name is there (failIfExists decides, no check
+// first). On failure the sandbox file goes too, so both folders agree.
+// Returns the error, or empty.
+std::string CopySavedBuildOut(const Engine& eng, const json& sc)
+{
+	const json f = sc.value("file", json());
+	const std::string rel = f.is_string() ? f.get<std::string>() : std::string();
+	const std::wstring name = rel.size() > 3 ? widen(rel.substr(3)) : std::wstring();
+	if (rel.compare(0, 3, "AI/") != 0 || name.empty() || name.find_first_of(L"\\/:") != std::wstring::npos ||
+	    name.find(L"..") != std::wstring::npos)
+		return "save_build returned an unexpected file name: " + rel + kReportHint;
+	const std::wstring src = eng.SandboxBuilds() + L"\\AI\\" + name;
+	const std::wstring builds = PobBuildsDir(eng.PobDir());
+	DWORD e = ERROR_PATH_NOT_FOUND;
+	if (!builds.empty() && PobSandbox::MkdirP(builds + L"\\AI")) {
+		if (CopyFileW(src.c_str(), (builds + L"\\AI\\" + name).c_str(), TRUE)) return {};
+		e = GetLastError();
+	}
+	DeleteFileW(src.c_str());
+	if (e == ERROR_FILE_EXISTS) return "already exists: Builds\\AI\\" + narrow(name) + "; pick another name";
+	const std::string msg = "could not write Builds\\AI\\" + narrow(name) + " in the user's Path of Building folder (Windows error " +
+	                        std::to_string(e) + ")";
+	PobLog::Error("mcp", msg);
+	return msg + kReportHint;
+}
+
 json CallTool(Engine& eng, const std::string& name, const json& args, bool debug)
 {
 	if (name == "report_problem") return ReportProblem(eng);
@@ -533,6 +558,10 @@ json CallTool(Engine& eng, const std::string& name, const json& args, bool debug
 		return ToolError(msg, restarted);
 	}
 	json sc = out.is_object() ? out : json{{"result", out}};
+	if (name == "save_build") {
+		const std::string why = CopySavedBuildOut(eng, sc);
+		if (!why.empty()) return ToolError(why, restarted);
+	}
 	if (restarted) {
 		sc["engineRestarted"] = true;
 		sc["notice"] = "The Path of Building engine was restarted; the build was reset.";
@@ -573,6 +602,104 @@ std::wstring ResolvePobDir(const std::wstring& exeDir, const std::wstring& pobDi
 	}
 	while (!pobDir.empty() && pobDir.back() == L'\\') pobDir.pop_back();
 	return pobDir;
+}
+
+// Data\bridge\mcp_tools.json, plus the test-only tools under POB_ZH_MCP_DEBUG=1.
+struct Tools {
+	json doc, list;
+	bool debug = false;
+	explicit Tools(const std::wstring& exeDir)
+	{
+		wchar_t dbg[8] = {};
+		debug = GetEnvironmentVariableW(L"POB_ZH_MCP_DEBUG", dbg, 8) > 0 && dbg[0] == L'1';
+		doc = json::parse(ReadAll(exeDir + L"Data\\bridge\\mcp_tools.json"), nullptr, false);
+		if (!doc.is_object()) {
+			PobLog::Error("mcp", "Data\\bridge\\mcp_tools.json missing or invalid");
+			doc = json{{"tools", json::array()}};
+		}
+		list = doc.value("tools", json::array());
+		if (debug) {
+			list.push_back(json{{"name", "debug_kill_engine"}, {"description", "Test only: kill the headless engine."},
+			                    {"inputSchema", {{"type", "object"}, {"properties", json::object()}}}});
+			list.push_back(json{{"name", "debug_lua_error"}, {"description", "Test only: raise a Lua runtime error."},
+			                    {"inputSchema", {{"type", "object"}, {"properties", json::object()}}}});
+		}
+	}
+};
+
+// A DACL granting this process's user, and nobody else, full access.
+// sa.lpSecurityDescriptor is LocalFree'd by the caller.
+bool OwnerOnlySecurity(SECURITY_ATTRIBUTES& sa)
+{
+	HANDLE tok = nullptr;
+	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &tok)) return false;
+	BYTE buf[256];
+	DWORD n = 0;
+	const bool got = GetTokenInformation(tok, TokenUser, buf, sizeof(buf), &n);
+	CloseHandle(tok);
+	LPWSTR sid = nullptr;
+	if (!got || !ConvertSidToStringSidW(((TOKEN_USER*)buf)->User.Sid, &sid)) return false;
+	const std::wstring sddl = L"D:P(A;;GA;;;" + std::wstring(sid) + L")";
+	LocalFree(sid);
+	return ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.c_str(), SDDL_REVISION_1, &sa.lpSecurityDescriptor, nullptr) != FALSE;
+}
+
+// Requests on g_in until EOF, answered on g_out. A daemon client may also send
+// `agent/stop`: answered, then true is returned.
+bool ServeLoop(Engine& eng, const Tools& tl, bool daemon)
+{
+	const json& toolsDoc = tl.doc;
+	const json& tools = tl.list;
+	const bool debug = tl.debug;
+	std::string carry, line;
+	while (ReadLine(carry, line)) {
+		if (line.find_first_not_of(" \t") == std::string::npos) continue;
+		json msg = json::parse(line, nullptr, false);
+		if (msg.is_discarded() || !msg.is_object()) {
+			WriteMessage(RpcError(nullptr, -32700, "parse error"));
+			continue;
+		}
+		const bool isRequest = msg.contains("id") && !msg["id"].is_null();
+		if (!isRequest) continue; // notifications (initialized, cancelled) need no answer
+		const json id = msg["id"];
+		// A field of the wrong type (params as an array, a numeric name...) makes
+		// nlohmann throw; answer "invalid params" instead of terminating.
+		try {
+			const std::string method = msg.value("method", "");
+			const json params = msg.value("params", json::object());
+
+			if (method == "initialize") {
+				std::string want = params.value("protocolVersion", "");
+				if (want != "2024-11-05" && want != "2025-03-26" && want != "2025-06-18") want = kDefaultProtocol;
+				if (params.contains("clientInfo") && params["clientInfo"].is_object()) g_clientInfo = params["clientInfo"];
+				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", {
+					{"protocolVersion", want},
+					{"capabilities", {{"tools", json::object()}}},
+					{"serverInfo", {{"name", "pobtools"}, {"version", POBTOOLS_VERSION_STRING}}},
+					{"instructions", toolsDoc.value("instructions", "")},
+				}}});
+			} else if (method == "ping") {
+				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", json::object()}});
+			} else if (method == "tools/list") {
+				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"tools", tools}}}});
+			} else if (method == "tools/call") {
+				const std::string name = params.value("name", "");
+				bool known = false;
+				for (const auto& t : tools) if (t.value("name", "") == name) known = true;
+				json result = known ? CallTool(eng, name, params.value("arguments", json::object()), debug)
+				                    : ToolError("unknown tool " + name);
+				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", result}});
+			} else if (daemon && method == "agent/stop") {
+				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"stopping", true}}}});
+				return true;
+			} else {
+				WriteMessage(RpcError(id, -32601, "method not found: " + method));
+			}
+		} catch (const std::exception& ex) {
+			WriteMessage(RpcError(id, -32602, std::string("invalid params: ") + ex.what()));
+		}
+	}
+	return false;
 }
 
 } // namespace
@@ -642,71 +769,90 @@ int RunMcpServer(const std::wstring& exeDir, const std::wstring& pobDirOverride)
 	if (err && err != INVALID_HANDLE_VALUE) SetHandleInformation(err, HANDLE_FLAG_INHERIT, 0);
 	KillEngineWithThisProcess();
 
-	const std::wstring pobDir = ResolvePobDir(exeDir, pobDirOverride);
+	Tools t(exeDir);
+	Engine eng(exeDir, ResolvePobDir(exeDir, pobDirOverride));
+	eng.StartAsync();
+	ServeLoop(eng, t, false);
+	return 0;
+}
 
-	wchar_t dbg[8] = {};
-	const bool debug = GetEnvironmentVariableW(L"POB_ZH_MCP_DEBUG", dbg, 8) > 0 && dbg[0] == L'1';
+int RunAgentDaemon(const std::wstring& exeDir, const std::wstring& pobDirOverride, const std::wstring& session)
+{
+	if (!ValidAgentSession(session)) return 2;
+	g_exeDir = exeDir;
+	KillEngineWithThisProcess();
+	// Only this Windows account may open the pipe (the default DACL also lets
+	// in LocalSystem and Administrators); remote clients are refused below.
+	SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, FALSE};
+	if (!OwnerOnlySecurity(sa)) return 2;
+	HANDLE pipe = CreateNamedPipeW(AgentPipeName(session).c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+	                               PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, 1, 65536,
+	                               65536, 0, &sa);
+	LocalFree(sa.lpSecurityDescriptor);
+	if (pipe == INVALID_HANDLE_VALUE) return 2; // another daemon (or something else) holds this session's name
 
-	json toolsDoc = json::parse(ReadAll(exeDir + L"Data\\bridge\\mcp_tools.json"), nullptr, false);
-	if (!toolsDoc.is_object()) {
-		PobLog::Error("mcp", "Data\\bridge\\mcp_tools.json missing or invalid");
-		toolsDoc = json{{"tools", json::array()}};
-	}
-	json tools = toolsDoc.value("tools", json::array());
-	if (debug) {
-		tools.push_back(json{{"name", "debug_kill_engine"}, {"description", "Test only: kill the headless engine."},
-		                     {"inputSchema", {{"type", "object"}, {"properties", json::object()}}}});
-		tools.push_back(json{{"name", "debug_lua_error"}, {"description", "Test only: raise a Lua runtime error."},
-		                     {"inputSchema", {{"type", "object"}, {"properties", json::object()}}}});
-	}
-
-	Engine eng(exeDir, pobDir);
+	Tools t(exeDir);
+	Engine eng(exeDir, ResolvePobDir(exeDir, pobDirOverride));
 	eng.StartAsync();
 
-	std::string carry, line;
-	while (ReadLine(carry, line)) {
-		if (line.find_first_not_of(" \t") == std::string::npos) continue;
-		json msg = json::parse(line, nullptr, false);
-		if (msg.is_discarded() || !msg.is_object()) {
-			WriteMessage(RpcError(nullptr, -32700, "parse error"));
-			continue;
+	// Idle = waiting for a client. ConnectNamedPipe blocks, so the watchdog
+	// cancels it; it keeps cancelling in case the cancel lands before the call.
+	std::mutex mu;
+	std::condition_variable cv;
+	bool waiting = false, exiting = false, quit = false;
+	auto last = std::chrono::steady_clock::now();
+	HANDLE self = nullptr;
+	DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &self, 0, FALSE, DUPLICATE_SAME_ACCESS);
+	std::thread dog([&] {
+		std::unique_lock<std::mutex> lk(mu);
+		while (!quit) {
+			cv.wait_for(lk, std::chrono::seconds(1));
+			if (waiting && std::chrono::steady_clock::now() - last >= std::chrono::minutes(30)) exiting = true;
+			if (exiting && waiting) CancelSynchronousIo(self);
 		}
-		const bool isRequest = msg.contains("id") && !msg["id"].is_null();
-		if (!isRequest) continue; // notifications (initialized, cancelled) need no answer
-		const json id = msg["id"];
-		// A field of the wrong type (params as an array, a numeric name...) makes
-		// nlohmann throw; answer "invalid params" instead of terminating.
-		try {
-			const std::string method = msg.value("method", "");
-			const json params = msg.value("params", json::object());
-
-			if (method == "initialize") {
-				std::string want = params.value("protocolVersion", "");
-				if (want != "2024-11-05" && want != "2025-03-26" && want != "2025-06-18") want = kDefaultProtocol;
-				if (params.contains("clientInfo") && params["clientInfo"].is_object()) g_clientInfo = params["clientInfo"];
-				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", {
-					{"protocolVersion", want},
-					{"capabilities", {{"tools", json::object()}}},
-					{"serverInfo", {{"name", "pobtools"}, {"version", POBTOOLS_VERSION_STRING}}},
-					{"instructions", toolsDoc.value("instructions", "")},
-				}}});
-			} else if (method == "ping") {
-				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", json::object()}});
-			} else if (method == "tools/list") {
-				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"tools", tools}}}});
-			} else if (method == "tools/call") {
-				const std::string name = params.value("name", "");
-				bool known = false;
-				for (const auto& t : tools) if (t.value("name", "") == name) known = true;
-				json result = known ? CallTool(eng, name, params.value("arguments", json::object()), debug)
-				                    : ToolError("unknown tool " + name);
-				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", result}});
-			} else {
-				WriteMessage(RpcError(id, -32601, "method not found: " + method));
-			}
-		} catch (const std::exception& ex) {
-			WriteMessage(RpcError(id, -32602, std::string("invalid params: ") + ex.what()));
+	});
+	for (;;) {
+		{
+			std::lock_guard<std::mutex> lk(mu);
+			if (exiting) break;
+			waiting = true;
 		}
+		const bool connected = ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED;
+		{
+			std::lock_guard<std::mutex> lk(mu);
+			waiting = false;
+			if (exiting) break;
+		}
+		bool stop = false;
+		if (connected) {
+			g_in = g_out = pipe;
+			stop = ServeLoop(eng, t, true);
+			FlushFileBuffers(pipe); // the client reads the last answer before the disconnect drops it
+		}
+		DisconnectNamedPipe(pipe);
+		std::lock_guard<std::mutex> lk(mu);
+		last = std::chrono::steady_clock::now();
+		if (stop) break;
 	}
-	return 0;
+	{
+		std::lock_guard<std::mutex> lk(mu);
+		quit = true;
+	}
+	cv.notify_all();
+	dog.join();
+	CloseHandle(self);
+	CloseHandle(pipe);
+	return 0; // ~Engine stops POB and removes the sandbox before the process exits
+}
+
+std::wstring PobBuildsDir(const std::wstring& pobDir)
+{
+	if (GetFileAttributesW((pobDir + L"\\installed.cfg").c_str()) != INVALID_FILE_ATTRIBUTES) {
+		PWSTR docs = nullptr;
+		std::wstring dir;
+		if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &docs))) dir = std::wstring(docs) + L"\\Path of Building\\Builds";
+		CoTaskMemFree(docs);
+		return dir;
+	}
+	return pobDir + L"\\Builds";
 }

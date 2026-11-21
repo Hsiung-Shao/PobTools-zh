@@ -81,6 +81,8 @@ Many "bad looking" numbers are the plan, not a flaw:
 - Rare items are calculated exactly as written; do not invent mods that cannot
   roll on that base or item level, and say when an item is hypothetical.
 - Hand the result to the user with `export_code`; nothing is saved to their files.
+  Only when the user asks to keep it as a file, call `save_build` with a new name:
+  it lands in their `Builds\AI\` folder and never overwrites an existing file.
 
 ## 5. When a tool fails
 - An error about your arguments (unknown gem, node, config key): fix the call.

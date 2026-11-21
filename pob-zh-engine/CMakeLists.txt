@@ -654,6 +654,17 @@ if (WIN32)
     # engine and the launcher both pick it up as a glyph fallback, the default
     # face stays Noto Sans TC.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/fonts/NotoSansKR-Regular.ttf" DESTINATION "Fonts")
+
+    # pobtools.exe: console client of `pob-zh.exe --agent-serve` (host/agent_cli.cpp)
+    # for AI agents that run shell commands. pob-zh.exe is a GUI-subsystem exe, so
+    # a shell neither waits for it nor gets its output. Static CRT like pob-zh.
+    add_executable(pobtools host/agent_cli.cpp)
+    target_compile_definitions(pobtools PRIVATE "UNICODE" "_UNICODE")
+    target_compile_options(pobtools PRIVATE "/utf-8")
+    target_include_directories(pobtools PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/deps/nlohmann)
+    set_property(TARGET pobtools PROPERTY
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    install(TARGETS pobtools RUNTIME DESTINATION ".")
 endif ()
 
 

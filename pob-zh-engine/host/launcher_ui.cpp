@@ -23,6 +23,7 @@
 #include "pob_launch.h"
 #include "pob_protocol.h"     // the "Open in PoB" link switch on the settings page
 #include "mcp_config.h"       // the "AI assistants (MCP)" copy buttons
+#include "mcp_server.h"       // PobBuildsDir
 #include "bridge_gate.h"
 #include "modern_ui_window.h"  // ModernUiAvailable: whether the new-interface button exists
 #include "modern_ui_browser.h" // ModernUiBrowserAvailable: the system-browser fallback
@@ -1022,20 +1023,6 @@ static std::wstring OpenImageDialog(void* owner)
 	ofn.nMaxFile = MAX_PATH;
 	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
 	return GetOpenFileNameW(&ofn) ? std::wstring(buf) : std::wstring();
-}
-
-// Where the user's PoE1 POB keeps its builds: an installed POB (installed.cfg)
-// uses Documents\Path of Building\Builds, as mcp_server.cpp's sandbox does.
-static std::wstring PobBuildsDir(const std::wstring& pobDir)
-{
-	if (GetFileAttributesW((pobDir + L"\\installed.cfg").c_str()) != INVALID_FILE_ATTRIBUTES) {
-		PWSTR docs = nullptr;
-		std::wstring dir;
-		if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &docs))) dir = std::wstring(docs) + L"\\Path of Building\\Builds";
-		CoTaskMemFree(docs);
-		return dir;
-	}
-	return pobDir + L"\\Builds";
 }
 
 // "Choose build file" on the AI report row: a path relative to the Builds

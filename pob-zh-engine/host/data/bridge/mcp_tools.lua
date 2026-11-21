@@ -268,6 +268,25 @@ return function(M, ctx)
 		return { code = M.export_code().code }
 	end
 
+	-- save_build{name}: a copy of the build to the sandbox's Builds\AI\<name>.xml;
+	-- mcp_server.cpp then copies it into the user's Builds\AI\ without overwriting.
+	-- The build keeps its own file and name, so nothing else about it changes.
+	function T.save_build(a)
+		local name = a and a.name
+		if type(name) ~= "string" or name == "" then argerr("name required: a file name for Builds\\AI\\ (no folders)") end
+		name = name:gsub("%.[xX][mM][lL]$", "")
+		if name == "" or name:find("[\\/:%c]") or name:find("..", 1, true) then
+			argerr("bad name %q: a plain file name, without folders, \"..\" or \":\"", a.name)
+		end
+		local b = ensure_build()
+		local keep = { b.dbFileName, b.buildName, b.dbFileSubPath, b.unsaved }
+		local ok, r = pcall(M.save_build_as, { path = main().buildPath .. "AI\\" .. name .. ".xml" })
+		b.dbFileName, b.buildName, b.dbFileSubPath, b.unsaved = keep[1], keep[2], keep[3], keep[4]
+		if not ok then error(r, 0) end
+		if r.exists then argerr("already exists: Builds\\AI\\%s.xml; pick another name", name) end
+		return { saved = true, file = "AI/" .. name .. ".xml" }
+	end
+
 	-- ---- overview --------------------------------------------------------
 
 	function T.build_summary()
