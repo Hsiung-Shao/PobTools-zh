@@ -50,6 +50,7 @@ set(SIMPLEGRAPHIC_SOURCES
     "engine/core/core_video.h"
     "engine/render/r_font.cpp"
     "engine/render/r_font.h"
+    "engine/render/font_policy.h"
     "engine/render/r_main.cpp"
     "engine/render/r_main.h"
     "engine/render/r_texture.cpp"
@@ -313,6 +314,8 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/bridge.lua"
 # user who updated POB in place lacks them. package.path prefers the POB
 # folder's own copy (engine/lua is appended last in ui_api.cpp InitAPI).
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runtime_lua/sha2.lua" DESTINATION "engine/lua")
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/github_mirror.lua" DESTINATION "engine/lua")
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runtime_lua/lcurl/safe.lua" DESTINATION "engine/lua/lcurl")
 
 # Microsoft's redistributable HLSL compiler, vendored in host/data/redist/.
 # ANGLE loads d3dcompiler_47.dll by name to compile the HLSL it generates. POB
@@ -654,6 +657,15 @@ if (WIN32)
     # engine and the launcher both pick it up as a glyph fallback, the default
     # face stays Noto Sans TC.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/fonts/NotoSansKR-Regular.ttf" DESTINATION "Fonts")
+    # Optional built-in monospace font; keep its complete attribution alongside it.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/fonts/Pico-Regular.ttf" DESTINATION "Fonts")
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/host/data/fonts/Pico" DESTINATION "Fonts")
+    # MiSans and MiSans TC are unmodified optional faces under Xiaomi's license.
+    install(FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/host/data/fonts/MiSans-Regular.ttf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/host/data/fonts/MiSansTC-Regular.ttf"
+        DESTINATION "Fonts")
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/host/data/fonts/MiSans" DESTINATION "Fonts")
 endif ()
 
 
@@ -769,3 +781,6 @@ if (WIN32)
     set_property(TARGET github_token_test PROPERTY
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif ()
+
+# Pico must preserve the engine font policy for non-Pico selections.
+add_executable(font_policy_selftest EXCLUDE_FROM_ALL tests/font_policy_selftest.cpp)

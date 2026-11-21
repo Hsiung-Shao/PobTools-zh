@@ -168,7 +168,8 @@ struct LauncherConfig {
 	int            uiMode = 0;
 	std::wstring   fontFile;                // CJK font under Fonts\; empty = default
 	// Also draw ASCII in the POB window from the selected font (engine env
-	// POB_ZH_FONT_ALL). Default on; the monospaced face is always exempt.
+	// POB_ZH_FONT_ALL). Default on; Pico also replaces the monospaced face
+	// and always uses its own ASCII, even when this legacy switch is off.
 	bool           fontApplyAll = true;
 	// Parallel to kOptionalDicts: 1 = the engine loads that file (default).
 	std::vector<char> optionalDictOn = std::vector<char>(kOptionalDictCount, 1);
@@ -199,6 +200,8 @@ struct LauncherConfig {
 	// HTTP proxy for the launcher's own downloads, "host:port". Empty = follow the system proxy.
 	// Applied via HttpSetManualProxy (http_client.h).
 	std::wstring   proxy;
+	bool           githubMirror = false;
+	int            githubMirrorStation = 0; // 0 auto, 1 gh-proxy.com, 2 gh-proxy.org
 	// The hang/crash watchdog (hang_watch.h), passed to POB as POB_ZH_HANGWATCH. On by default and
 	// deliberately not in the UI; the ini key lets a machine where suspending threads is a problem opt out.
 	bool           hangWatch = true;

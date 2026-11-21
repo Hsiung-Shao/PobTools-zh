@@ -188,6 +188,9 @@
               options={[{ value: "", label: t("look.fontLauncher", { name: fontName(prefs.launcherFont) || "Noto Sans TC" }) }, ...prefs.fonts.map((f) => ({ value: f, label: fontName(f) }))]}
               onchange={(v) => prefs.set({ font: String(v) })}
             />
+            {#if /^misans(?:tc)?-regular\.ttf$/i.test(prefs.effectiveFont)}
+              <span class="dim hint">MiSans / MiSans TC — Xiaomi · Fonts/MiSans/LICENSE.pdf</span>
+            {/if}
           </div>
         </div>
         <div class="srow">

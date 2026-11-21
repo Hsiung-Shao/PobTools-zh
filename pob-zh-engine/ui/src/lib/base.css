@@ -1,5 +1,10 @@
 /* 兩主題逐字相同的規則。與各主題 token 區塊同特異度、得排在其後的(--panel-pct、背景圖的實色覆寫)與有差異的規則,留在各主題 app.css。 */
 
+/* Pico is monospaced; share it across text, numbers and editors in both themes. */
+:root[data-font="pico"] {
+  --font-mono: var(--font-ui);
+}
+
 :root[data-theme="light"] .pob-dark {
   color: var(--ink-0);
 }

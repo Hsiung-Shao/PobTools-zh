@@ -55,7 +55,7 @@ private:
 	struct FtCache;
 	std::unique_ptr<FtCache> ftCache;
 	// POB_ZH_FONT_ALL: route ASCII (cp < numGlyph) through the selected TTF as
-	// well, so Latin/digits and CJK share one typeface. Never set for the
-	// monospaced face — console and raw-item editing need fixed columns.
+	// well, so Latin/digits and CJK share one typeface. Pico also replaces the
+	// monospaced face because it already preserves fixed columns.
 	bool ftForAll = false;
 };

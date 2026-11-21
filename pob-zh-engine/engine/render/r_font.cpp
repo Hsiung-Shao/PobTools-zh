@@ -9,6 +9,7 @@
 #include "translation_manager.h"
 #include "startup_trace.h"
 #include "r_font_fallback.h"
+#include "font_policy.h"
 
 #include <fmt/format.h>
 #include <iostream>
@@ -425,6 +426,7 @@ r_font_c::r_font_c(r_renderer_c* renderer, const char* fontName)
 	ttfCandidates.push_back(CFG_DATAPATH "Fonts/FZ_ZY.ttf");
 	ttfCandidates.push_back(CFG_DATAPATH "Fonts/CJKFallback.ttf");
 
+	std::string loadedFont;
 	const double ftStart = startup_trace_now_ms();
 	for (size_t i = 0; i < ttfCandidates.size(); i++) {
 		std::ifstream test(ttfCandidates[i]);
@@ -432,6 +434,7 @@ r_font_c::r_font_c(r_renderer_c* renderer, const char* fontName)
 			test.close();
 			ftCache = std::make_unique<FtCache>();
 			if (ftCache->Init(renderer, ttfCandidates[i].c_str())) {
+				loadedFont = ttfCandidates[i];
 				// Every OTHER candidate that exists becomes a fallback, in the
 				// same priority order.
 				ftCache->fallback.CollectFallbacks(ttfCandidates, i, [](const std::string& path) {
@@ -449,16 +452,15 @@ r_font_c::r_font_c(r_renderer_c* renderer, const char* fontName)
 	// POB_ZH_FONT_ALL: also draw ASCII from the selected TTF so Latin/digits
 	// and CJK share one typeface. "0" disables; absent/other enables (the host
 	// always writes it explicitly, absent only means a bare-engine run). The
-	// monospaced face is exempt — POB uses it exactly where fixed columns
-	// matter (console, protected edits, the raw-item editor). The Bold face
-	// gets synthetic emboldening, gated on the same switch so the default-off
-	// path renders byte-identically to before.
+	// monospaced face is exempt unless Pico was loaded: Pico already preserves
+	// fixed columns (console, protected edits, the raw-item editor). The Bold face
+	// gets synthetic emboldening. Other selected fonts retain the ASCII switch.
 	if (ftCache) {
 		char allBuf[8];
 		const char* all = translation_win_env("POB_ZH_FONT_ALL", allBuf, sizeof(allBuf));
 		const bool allEnabled = !(all && all[0] == '0' && all[1] == '\0');
-		ftForAll = allEnabled && strcmp(fontName, "Bitstream Vera Sans Mono") != 0;
-		ftCache->embolden = allEnabled && strstr(fontName, "Bold") != nullptr;
+		ftForAll = FontPolicy::UseSelectedAscii(loadedFont, fontName, allEnabled);
+		ftCache->embolden = (allEnabled || FontPolicy::IsPico(loadedFont)) && strstr(fontName, "Bold") != nullptr;
 	}
 }
 

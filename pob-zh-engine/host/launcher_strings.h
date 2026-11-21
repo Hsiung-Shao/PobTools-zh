@@ -124,6 +124,14 @@
 	                     u8"not stamped (installed before v0.19.0)")                                  \
 	/* 大陸使用者連 GitHub 常需代理;空值＝自動跟隨系統代理 */                                \
 	X(proxyLabel,        u8"HTTP 代理",                    u8"HTTP proxy")                            \
+	X(githubMirrorLabel, u8"啟用 GitHub 加速",             u8"Enable GitHub acceleration")            \
+	X(githubMirrorHint, u8"軟體及 PoB 更新經鏡像下載；失敗時切換其他站點或直連", u8"Use mirrors for app and PoB updates; fall back to another site or a direct connection") \
+	X(githubMirrorStation, u8"鏡像站",                     u8"Mirror site")                           \
+	X(githubMirrorStationHint, u8"選擇 GitHub 反向代理；延遲僅供參考", u8"Choose a GitHub reverse proxy; latency is approximate") \
+	X(githubMirrorAuto, u8"自動",                          u8"Automatic")                            \
+	X(githubMirrorRefresh, u8"測試站點",                    u8"Test sites")                           \
+	X(githubMirrorTesting, u8"測試中…",                    u8"Testing...")                           \
+	X(githubMirrorUnavailable, u8"無法連線",               u8"Unavailable")                          \
 	X(proxyEmptyHint,    u8"留空＝自動跟隨系統代理",       u8"empty = follow the system proxy")       \
 	/* 選填 GitHub Token,繞開未登入 API 每小時 60 次的限制 */                         \
 	X(githubTokenLabel,  u8"GitHub Token",                u8"GitHub Token")                          \
@@ -168,9 +176,9 @@
 	/* font: apply the selected TTF to ASCII in the POB window too */                      \
 	X(fontApplyAllChk,   u8"POB 視窗的英文與數字也用此字型",                                          \
 	                     u8"Use this font for letters & digits in POB too")                          \
-	X(fontApplyAllTip,   u8"開啟後 POB 視窗內中英數共用同一個字型。等寬欄位（主控台、物品原文編輯）一律維持原生等寬字型。切換後需重新啟動 POB 視窗才會生效。", \
-	                     u8"When on, Chinese, letters and digits in the POB window share the selected font. Monospaced fields (console, raw item editing) keep the native fixed-width font. Takes effect the next time the POB window starts.") \
-	/* launcher-only zoom + remembered window size. ASCII 'x' between the  \
+	X(fontApplyAllTip,   u8"開啟後 POB 視窗內中英數共用同一個字型。等寬欄位（主控台、物品原文編輯）維持原生等寬字型。Pico 本身為等寬字型，選用後不受此開關限制，所有文字欄位皆使用 Pico。切換後需重新啟動 POB 視窗才會生效。", \
+	                     u8"When on, Chinese, letters and digits in the POB window share the selected font. Monospaced fields (console, raw item editing) keep the native fixed-width font. Pico is monospaced and always applies to all text fields, regardless of this switch. Takes effect the next time the POB window starts.") \
+	/* launcher-only zoom + remembered window size (v1.3.0). ASCII 'x' between the  \
 	   width and height fields on purpose: U+00D7 is not in every shipped font. */    \
 	X(fontSizeLabel,     u8"字體大小",                       u8"Font size")                              \
 	X(fontSizeHint,      u8"整個啟動器與工具視窗一起縮放，POB 不受影響",                                    \

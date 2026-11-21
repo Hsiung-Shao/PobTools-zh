@@ -21,6 +21,23 @@ placed at the same level:
 - The status bar at the bottom switches the **UI language** (Traditional Chinese /
   Simplified Chinese / Korean / English) and the **font**.
 
+### GitHub mirrors
+
+Open **Settings → Network and updates** in the launcher, enable **GitHub acceleration**,
+then choose **Automatic**, `gh-proxy.com`, or `gh-proxy.org`. Mirrors handle PobTools
+version checks, application/translation downloads, and PoB updates for both PoE1 and
+PoE2. Both interfaces share this setting. It is saved immediately; open PoB instances
+read it again when starting the next download.
+
+**Test sites** checks connectivity in the background and displays approximate latency.
+Automatic mode reuses a working site. Connection failures, HTTP errors and
+HTML error pages trigger a retry through the other mirror, then a direct GitHub connection.
+Existing application signature/hash verification and PoB file integrity checks remain active.
+
+GitHub tokens are sent only to the official GitHub API on a direct connection, never
+to a mirror. The HTTP forward proxy is a separate setting and can be used together
+with mirrors. Trade APIs and other unrelated services keep their original routes.
+
 ### Switching the language
 
 The language dropdown at the bottom switches the launcher and the POB UI language on the

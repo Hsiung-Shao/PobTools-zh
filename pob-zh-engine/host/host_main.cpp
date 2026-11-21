@@ -355,7 +355,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
 	// Proxy for every WinHTTP session, set before any dispatch (tool children re-enter here too).
 	// Empty follows the system proxy.
-	HttpSetManualProxy(LoadLauncherConfig(dir + L"pob-zh.ini").proxy);
+	const auto networkCfg = LoadLauncherConfig(dir + L"pob-zh.ini");
+	HttpSetManualProxy(networkCfg.proxy);
+	HttpSetGitHubMirror(networkCfg.githubMirror, networkCfg.githubMirrorStation);
 	// The token is watched, not read once: a tool child must pick up the settings page saving/clearing it.
 	GitHubToken::Init(dir);
 

@@ -5,6 +5,8 @@
      accent colour, keystones named, the jewel's radius as a ring. -->
 <script lang="ts">
   import type { TreeModel } from "$lib/tree/model";
+  import { onMount } from "svelte";
+  import { prefs } from "$lib/prefs.svelte";
 
   let {
     model,
@@ -16,7 +18,17 @@
 
   let canvas = $state<HTMLCanvasElement | null>(null);
 
+  let fontRevision = $state(0);
+  onMount(() => {
+    const loaded = () => fontRevision++;
+    document.fonts.addEventListener("loadingdone", loaded);
+    return () => document.fonts.removeEventListener("loadingdone", loaded);
+  });
+
   $effect(() => {
+    // Canvas labels must redraw when the selected face changes or finishes loading.
+    void prefs.rev;
+    void fontRevision;
     const cv = canvas;
     const centre = model.nodes.get(nodeId);
     if (!cv) return;

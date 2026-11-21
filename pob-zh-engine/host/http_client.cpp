@@ -8,6 +8,9 @@
 #include "win_util.h"
 
 #include <mutex>
+#include <algorithm>
+#include <chrono>
+#include <cctype>
 
 #pragma comment(lib, "winhttp.lib")
 
@@ -20,6 +23,65 @@
 // settings page writes it on the UI thread while workers open sessions.
 static std::mutex g_proxyMx;
 static std::wstring g_manualProxy; // normalized "host:port"; empty = automatic
+
+namespace {
+std::mutex mirrorMutex;
+bool mirrorEnabled = false;
+int mirrorStation = 0, mirrorPreferred = 0;
+const wchar_t* const mirrorHosts[] = { L"gh-proxy.com", L"gh-proxy.org" };
+
+bool githubHost(const std::wstring& host)
+{
+	for (const wchar_t* allowed : { L"github.com", L"api.github.com", L"raw.githubusercontent.com",
+	                              L"codeload.github.com", L"objects.githubusercontent.com",
+	                              L"release-assets.githubusercontent.com" })
+		if (_wcsicmp(host.c_str(), allowed) == 0) return true;
+	return false;
+}
+
+bool usableMirrorBody(const std::wstring& host, const std::vector<unsigned char>& bytes)
+{
+	std::string head(bytes.begin(), bytes.begin() + (std::min)(bytes.size(), size_t(256)));
+	std::transform(head.begin(), head.end(), head.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+	const auto start = head.find_first_not_of(" \r\n\t");
+	if (start == std::string::npos) return false;
+	if (head.compare(start, 5, "<html") == 0 || head.compare(start, 9, "<!doctype") == 0) return false;
+	return !GitHubToken::IsApiHost(host) || head[start] == '{' || head[start] == '[';
+}
+}
+
+void HttpSetGitHubMirror(bool enabled, int station)
+{
+	std::lock_guard<std::mutex> lock(mirrorMutex);
+	mirrorEnabled = enabled;
+	mirrorStation = station >= 0 && station <= 2 ? station : 0;
+	mirrorPreferred = 0;
+}
+
+void HttpResetGitHubMirror()
+{
+	std::lock_guard<std::mutex> lock(mirrorMutex);
+	mirrorPreferred = 0;
+}
+
+std::vector<int> HttpProbeGitHubMirrors()
+{
+	std::vector<int> timings;
+	for (const auto* host : mirrorHosts) {
+		const auto start = std::chrono::steady_clock::now();
+		HttpsClient client(host, 3000);
+		std::vector<unsigned char> bytes;
+		const bool ok = client.Get(L"/https://api.github.com/repos/PathOfBuildingCommunity/PathOfBuilding/releases/latest", bytes, nullptr)
+		                && usableMirrorBody(L"api.github.com", bytes);
+		timings.push_back(ok ? (int)std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - start).count() : -1);
+	}
+	{
+		std::lock_guard<std::mutex> lock(mirrorMutex);
+		if (!mirrorStation) mirrorPreferred = timings[1] >= 0 && (timings[0] < 0 || timings[1] < timings[0]) ? 1 : 0;
+	}
+	return timings;
+}
 
 void HttpSetManualProxy(const std::wstring& proxy)
 {
@@ -63,13 +125,14 @@ void* HttpOpenSession(const wchar_t* userAgent)
 	return s;
 }
 
-HttpsClient::HttpsClient(const std::wstring& host) : host_(host)
+HttpsClient::HttpsClient(const std::wstring& host, int timeoutMs) : host_(host)
 {
 	// GitHub's API rejects requests without a User-Agent; keep the product UA.
 	HINTERNET s = (HINTERNET)HttpOpenSession(L"PobTools/1.0");
 	if (!s) return;
 	// resolve / connect / send / receive timeouts: keep Shutdown-time joins short
-	WinHttpSetTimeouts(s, 10000, 10000, 15000, 30000);
+	if (timeoutMs > 0) WinHttpSetTimeouts(s, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
+	else WinHttpSetTimeouts(s, 10000, 10000, 15000, 30000);
 	HINTERNET c = WinHttpConnect(s, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, 0);
 	if (!c) {
 		WinHttpCloseHandle(s);
@@ -137,6 +200,35 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
 	// first attempt's message behind.
 	if (err) err->clear();
 	if (g_testSource) return g_testSource(host_, path, out, err, cancel);
+	out.clear();
+	if (cancel && cancel->load()) { if (err) *err = u8"已取消"; return false; }
+	int first = 0;
+	bool enabled;
+	{
+		std::lock_guard<std::mutex> lock(mirrorMutex);
+		enabled = mirrorEnabled;
+		first = mirrorStation ? mirrorStation - 1 : mirrorPreferred;
+	}
+	if (enabled && githubHost(host_) && !path.empty() && path.front() == L'/') {
+		for (int i = 0; i < 2; ++i) {
+			const int station = (first + i) % 2;
+			if (cancel && cancel->load()) { if (err) *err = u8"已取消"; return false; }
+			// Separate anonymous connection: a PAT can never reach a reverse proxy.
+			HttpsClient mirror(mirrorHosts[station], 5000);
+			if (onProgress) onProgress(0, 0);
+			if (mirror.getOnce(L"/https://" + host_ + path, out, nullptr, cancel, onProgress, false, nullptr, nullptr)
+			    && usableMirrorBody(host_, out)) {
+				std::lock_guard<std::mutex> lock(mirrorMutex);
+				mirrorPreferred = station;
+				if (err) err->clear();
+				return true;
+			}
+			out.clear();
+		}
+		if (onProgress) onProgress(0, 0);
+	}
+	if (cancel && cancel->load()) { if (err) *err = u8"已取消"; return false; }
+
 	unsigned tokenGen = 0;
 	int status = 0;
 	if (getOnce(path, out, err, cancel, onProgress, true, &tokenGen, &status)) return true;
@@ -265,6 +357,7 @@ bool HttpsClient::getOnce(const std::wstring& path, std::vector<unsigned char>& 
 bool HttpsClient::GetString(const std::wstring& path, std::string& out, std::string* err,
                             const std::atomic<bool>* cancel)
 {
+	out.clear();
 	std::vector<unsigned char> bytes;
 	if (!Get(path, bytes, err, cancel)) return false;
 	out.assign((const char*)bytes.data(), bytes.size());
