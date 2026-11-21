@@ -27844,7 +27844,11 @@
     "every_10_seconds_physical_damage_%_to_add_as_fire_for_3_seconds|#|stat_descriptions.txt|0": true,
     "gain_adrenaline_for_x_ms_per_100_ms_stun_duration_on_you|1|#|stat_descriptions.txt|0": true,
     "is_blighted_map|#|stat_descriptions.txt|0@3.29.3": true,
-    "is_blighted_map|1|stat_descriptions.txt|0@3.29.3": true
+    "is_blighted_map|1|stat_descriptions.txt|0@3.29.3": true,
+    "additional_block_%_with_5_or_more_nearby_enemies|#|stat_descriptions.txt|0": true,
+    "guardian_with_5_nearby_allies_you_and_allies_have_onslaught|#|stat_descriptions.txt|0": true,
+    "guardian_with_nearby_ally_damage_+%_final_for_you_and_allies|#|-1|stat_descriptions.txt|0": true,
+    "guardian_with_nearby_ally_damage_+%_final_for_you_and_allies|1|#|stat_descriptions.txt|0": true
   },
   "name_slots": {
     "blightcore_granted_passive_hash_1|#|stat_descriptions.txt|0": {
