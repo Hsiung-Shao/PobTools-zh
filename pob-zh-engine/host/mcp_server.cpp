@@ -14,6 +14,9 @@
 #include <shlobj.h>
 #include "win_util.h"
 
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <algorithm>
 #include <condition_variable>
 #include <memory>
@@ -584,7 +587,16 @@ int RunReport(const std::wstring& exeDir, const std::wstring& source, const std:
 		CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
 		out = exeDir + L"PobTools\\ai_report.md";
 	}
-	if (source.empty()) return 1;
+	DeleteFileW(out.c_str()); // a failed run must not leave the previous report behind
+	// "@<file>": the source is that file's text (a share code can outgrow a command line).
+	std::string src = narrow(source);
+	if (!src.empty() && src[0] == '@') {
+		std::ifstream f(std::filesystem::path(source.substr(1)), std::ios::binary);
+		src.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+		src.erase(0, src.find_first_not_of(" \t\r\n"));
+		src.erase(src.find_last_not_of(" \t\r\n") + 1);
+	}
+	if (src.empty()) return 1;
 	Engine eng(exeDir, ResolvePobDir(exeDir, pobDirOverride));
 	eng.StartAsync();
 	std::string err;
@@ -593,7 +605,7 @@ int RunReport(const std::wstring& exeDir, const std::wstring& source, const std:
 		PobLog::Error("report", err);
 		return 2;
 	}
-	const json loaded = CallTool(eng, "load_build", json{{"source", narrow(source)}}, false);
+	const json loaded = CallTool(eng, "load_build", json{{"source", src}}, false);
 	if (loaded.value("isError", true)) return 1;
 	const json rep = CallTool(eng, "build_report", json::object(), false);
 	const json sc = rep.value("structuredContent", json::object());

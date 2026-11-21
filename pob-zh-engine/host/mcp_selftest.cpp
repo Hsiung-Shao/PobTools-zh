@@ -2989,11 +2989,15 @@ void CheckSummaryNum(const std::string& text, const json& stats, const char* key
 	double want = 0;
 	if (!NumOf(stats, key, want)) { bad.push_back(std::string("build_summary.stats 沒有數字 ") + key); return; }
 	std::string raw;
-	long long got = 0;
+	double got = 0;
 	if (!SummaryField(text, key, raw)) { bad.push_back(std::string("Build summary 段找不到「- ") + key + ": 數字」行"); return; }
-	if (!ParseReportInt(raw, got)) { bad.push_back(std::string(key) + " 不是不帶千分位的整數: " + Cut(raw, 40)); return; }
-	if (got != std::llround(want)) { bad.push_back(std::string(key) + " 報告=" + std::to_string(got) + " 摘要=" + Num(want)); return; }
-	d += std::string(d.empty() ? "" : ", ") + key + "=" + std::to_string(got);
+	// 報告:整數值或 ≥100 印整數,其餘印兩位小數;一律不帶千分位
+	char* endp = nullptr;
+	got = strtod(raw.c_str(), &endp);
+	if (endp == raw.c_str() || *endp == ',') { bad.push_back(std::string(key) + " 不是不帶千分位的數字: " + Cut(raw, 40)); return; }
+	const double tol = std::fabs(want) >= 100 ? 0.5 : 0.005;
+	if (std::fabs(got - want) > tol + 1e-9) { bad.push_back(std::string(key) + " 報告=" + Num(got) + " 摘要=" + Num(want)); return; }
+	d += std::string(d.empty() ? "" : ", ") + key + "=" + Num(got);
 }
 
 // 跑 `pob-zh.exe --report <source> --pob <pob> --out <out>`,等到結束(最多 300 秒)。

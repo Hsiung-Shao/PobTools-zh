@@ -59,6 +59,9 @@
 #include <imgui_impl_opengl3.h>
 #include <misc/cpp/imgui_stdlib.h> // InputText over std::string (the data-folder field)
 
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -1203,12 +1206,14 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const st
 	} reportKillAtExit{ reportRun };
 	const std::wstring reportOut = exeDir + L"PobTools\\ai_report.md";
 	auto startReport = [&]() {
-		std::wstring src = widen(reportSrc), pob = installs.poe1Dir;
-		src.erase(std::remove(src.begin(), src.end(), L'"'), src.end());
+		std::wstring pob = installs.poe1Dir;
 		// A trailing backslash would escape the closing quote on the command line.
 		while (!pob.empty() && pob.back() == L'\\') pob.pop_back();
 		CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
-		const std::wstring tail = L"--report \"" + src + L"\" --pob \"" + pob + L"\" --out \"" + reportOut + L"\"";
+		// Through a file: a share code can be longer than a command line allows.
+		const std::wstring srcFile = exeDir + L"PobTools\\ai_report_src.txt";
+		std::ofstream(std::filesystem::path(srcFile), std::ios::binary | std::ios::trunc) << reportSrc;
+		const std::wstring tail = L"--report \"@" + srcFile + L"\" --pob \"" + pob + L"\" --out \"" + reportOut + L"\"";
 		reportJob = std::async(std::launch::async, [r = reportRun, exeDir, tail]() { return RunReportChild(*r, exeDir, tail); });
 	};
 	// Test aid for the off-screen screenshot: POBTOOLS_LAUNCHER_REPORT=<source> runs it once.

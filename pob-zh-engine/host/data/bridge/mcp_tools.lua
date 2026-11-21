@@ -454,7 +454,8 @@ return function(M, ctx)
 		local metric = (a and a.metric) or "offence"
 		if metric ~= "offence" and metric ~= "defence" then argerr("metric must be \"offence\" or \"defence\"") end
 		local top = math.max(1, math.min(50, tonumber(a and a.top) or 10))
-		local r = M.node_power({})
+		-- reusePower (build_report only): POB's one power pass scores both metrics.
+		if not (a and a.reusePower) then M.node_power({}) end
 		local list = {}
 		for id, n in pairs(b.spec.nodes) do
 			local pw = (not n.alloc) and n.power and n.power[metric]
@@ -967,17 +968,26 @@ return function(M, ctx)
 		local b = ensure_build()
 		return measured(function()
 			local byVar = config_items()
-			local s = { current = key_stats(b) }
+			local s, minion = { current = key_stats(b) }, {}
+			-- A minion skill's damage is not in the player's stats.
+			local function snap_minion(k)
+				local m = b.calcsTab.mainOutput.Minion
+				if type(m) == "table" then minion[k] = m.CombinedDPS end
+			end
+			snap_minion("current")
 			-- Flasks first, so the boss option never has to be put back by hand.
 			local flasks = active_flasks(b)
 			flasks_active(flasks, false)
 			s.flasksOff = key_stats(b)
+			snap_minion("flasksOff")
 			flasks_active(flasks, true)
 			local boss = set_boss(byVar.enemyIsBoss.value, "Pinnacle")
 			s.pinnacle = key_stats(b)
+			snap_minion("pinnacle")
 			set_boss(boss, "Uber")
 			s.uber = key_stats(b)
-			return { scenarios = obj(s), reverted = true }
+			snap_minion("uber")
+			return { scenarios = obj(s), minionDps = next(minion) and minion or nil, reverted = true }
 		end)
 	end
 
@@ -1054,7 +1064,7 @@ return function(M, ctx)
 			local top = {}
 			for i = 1, math.min(15, #list) do top[i] = list[i] end
 			return { current = current, baseline = baseline, diff = stat_diff(current, baseline),
-				contributors = top, configChanged = #changed, partyAudited = false, reverted = true }
+				contributors = top, dpsNow = dps0, dpsBaseline = dps_now(), configChanged = #changed, partyAudited = false, reverted = true }
 		end)
 	end
 
@@ -1136,6 +1146,8 @@ return function(M, ctx)
 		local function try(fn, ...)
 			local ok, r = pcall(fn, ...)
 			if ok then return r end
+			-- Every later number would be measured on a build left changed.
+			if tostring(r):find("RESTORING THE BUILD FAILED", 1, true) then error(r, 0) end
 			return nil, (tostring(r):gsub(ARG_MARK, ""):gsub(" %-%- the build was restored$", ""))
 		end
 		local L = {}
@@ -1163,11 +1175,11 @@ return function(M, ctx)
 		if #sm.immuneTo > 0 then add("- Immune to (Path of Building rates these hits as unable to kill): " .. table.concat(sm.immuneTo, ", ")) end
 		add("Key numbers:")
 		for _, k in ipairs(KEY_STATS) do
-			if sm.stats[k] then add("- " .. k .. ": " .. int(sm.stats[k])) end
+			if sm.stats[k] then add("- " .. k .. ": " .. num(sm.stats[k])) end
 		end
 		if sm.minionStats then
 			for _, k in ipairs(MINION_STATS) do
-				if sm.minionStats[k] then add("- Minion " .. k .. ": " .. int(sm.minionStats[k])) end
+				if sm.minionStats[k] then add("- Minion " .. k .. ": " .. num(sm.minionStats[k])) end
 			end
 		end
 		add("")
@@ -1186,13 +1198,15 @@ return function(M, ctx)
 						pct((au.baseline[k] or 0) - (au.current[k] or 0), au.current[k])))
 				end
 			end
+			add(string.format("- Main skill DPS (the minion's for a minion skill): now %s, baseline %s%s", num(au.dpsNow), num(au.dpsBaseline),
+				pct(au.dpsBaseline - au.dpsNow, au.dpsNow)))
 			if #au.contributors == 0 then
 				add("- No setting, flask or custom modifier changes the main skill DPS or effective HP.")
 			else
-				add("Largest contributors (CombinedDPS / TotalEHP each one adds):")
+				add("Largest contributors (main skill DPS / TotalEHP each one adds):")
 				for _, c in ipairs(au.contributors) do
 					add(string.format("- [%s] %s (%s): DPS %s%s, EHP %s%s", c.kind, nm(c.label, c.labelZh), tostring(c.key),
-						signed(c.dps), pct(c.dps, au.current.CombinedDPS), signed(c.ehp), pct(c.ehp, au.current.TotalEHP)))
+						signed(c.dps), pct(c.dps, au.dpsNow), signed(c.ehp), pct(c.ehp, au.current.TotalEHP)))
 				end
 			end
 		end
@@ -1210,7 +1224,8 @@ return function(M, ctx)
 			for _, n in ipairs(names) do
 				local s, row = sc.scenarios[n[1]] or {}, {}
 				for i, k in ipairs(cols) do row[i] = num(s[k]) end
-				add("| " .. n[2] .. " | " .. table.concat(row, " | ") .. " |")
+				add("| " .. n[2] .. " | " .. table.concat(row, " | ") .. " |" ..
+					(sc.minionDps and (" minion CombinedDPS " .. num(sc.minionDps[n[1]])) or ""))
 			end
 		end
 		add("")
@@ -1292,7 +1307,7 @@ return function(M, ctx)
 					num(n.pathDist), (n.power or 0) * 100))
 			end
 		end
-		local sd, sdErr = try(T.suggest_nodes, { metric = "defence", top = tops })
+		local sd, sdErr = try(T.suggest_nodes, { metric = "defence", top = tops, reusePower = sn ~= nil })
 		add("### Passive nodes for defence (Path of Building's combined defence score)")
 		if not sd then add("- Not available: " .. sdErr)
 		elseif #sd.nodes == 0 then add("- No unallocated node raises defence.") else
