@@ -45,7 +45,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[45] = {
+const char* const kTitles[52] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -91,6 +91,13 @@ const char* const kTitles[45] = {
 	"A3 去水分後流派不變",
 	"A4 非預設設定會被列為來源",
 	"A5 預設設定時不誤報設定項",
+	"R1 報告包含全部固定段落",
+	"R2 報告數值與 POB 摘要相同",
+	"R3 產生報告後流派不變",
+	"R4 報告長度不超過上限",
+	"R5 一次性指令寫出報告檔",
+	"R6 來源無效回 1 且不留檔",
+	"R7 產生報告不寫回使用者資料夾",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -522,8 +529,8 @@ bool FindSampleBuild(const std::wstring& buildsDir, std::wstring& rel, std::stri
 struct FileInfo { ULONGLONG size = 0; ULONGLONG mtime = 0; bool dir = false; };
 using Snap = std::map<std::wstring, FileInfo>;
 
-// 跳過 junction 與大型資料夾(TreeData、Data、TimelessJewelData)。
-void Snapshot(const std::wstring& dir, const std::wstring& rel, Snap& out)
+// 跳過 junction 與大型資料夾(TreeData、Data、TimelessJewelData);skipBig=false 時只跳過 junction。
+void Snapshot(const std::wstring& dir, const std::wstring& rel, Snap& out, bool skipBig = true)
 {
 	WIN32_FIND_DATAW fd{};
 	HANDLE h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
@@ -534,12 +541,12 @@ void Snapshot(const std::wstring& dir, const std::wstring& rel, Snap& out)
 		const std::wstring r = rel.empty() ? n : rel + L"\\" + n;
 		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
 			if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue;
-			if (_wcsicmp(n.c_str(), L"TimelessJewelData") == 0) continue;
-			if (rel.empty() && (_wcsicmp(n.c_str(), L"TreeData") == 0 || _wcsicmp(n.c_str(), L"Data") == 0)) continue;
+			if (skipBig && _wcsicmp(n.c_str(), L"TimelessJewelData") == 0) continue;
+			if (skipBig && rel.empty() && (_wcsicmp(n.c_str(), L"TreeData") == 0 || _wcsicmp(n.c_str(), L"Data") == 0)) continue;
 			FileInfo fi;
 			fi.dir = true;
 			out[r] = fi;
-			Snapshot(dir + L"\\" + n, r, out);
+			Snapshot(dir + L"\\" + n, r, out, skipBig);
 		} else {
 			FileInfo fi;
 			ULARGE_INTEGER s, t;
@@ -2890,6 +2897,9 @@ void TestA5(const Ctx& c)
 		for (const auto& it : r.sc["contributors"])
 			if (it.is_object() && it.value("kind", std::string()) == "config") cfg.push_back(it.value("key", std::string("?")));
 		if (!cfg.empty()) bad.push_back("全新流派卻列出設定項: " + JoinFirst(cfg, 4));
+		// 影響為 0 的項目不進 contributors,所以要直接看被判成「非預設」的數量
+		if (!r.sc.contains("configChanged") || r.sc["configChanged"] != 0)
+			bad.push_back("configChanged 不是 0: " + (r.sc.contains("configChanged") ? r.sc["configChanged"].dump() : std::string("缺")));
 		if (!r.sc.contains("partyAudited") || !r.sc["partyAudited"].is_boolean() || r.sc["partyAudited"].get<bool>())
 			bad.push_back("partyAudited 不是 false: " + (r.sc.contains("partyAudited") ? r.sc["partyAudited"].dump() : std::string("缺")));
 		if (bad.empty()) d = "全新流派沒有 config 項,partyAudited=false(contributors " + std::to_string(r.sc["contributors"].size()) + " 筆)";
@@ -2897,6 +2907,295 @@ void TestA5(const Ctx& c)
 	p.Close();
 	KeepLines(p);
 	Record(44, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// M45-M51(R1-R7):build_report 與 `pob-zh.exe --report`。每項自己起行程,互不影響流派狀態。
+
+constexpr unsigned kReportMs = 300000;
+constexpr size_t kReportMaxChars = 24000;
+const char* const kReportHeads[7] = {
+	"## 1. Instructions", "## 2. Build summary", "## 3. Inflation audit", "## 4. Scenarios",
+	"## 5. Issues and gaps", "## 6. Build details", "## 7. Tested candidates",
+};
+
+// 七個標題行(行首相符)依序出現;缺或亂序時回傳說明,正常回傳空字串。
+std::string CheckReportHeadings(const std::string& text)
+{
+	size_t h = 0, pos = 0;
+	while (h < 7 && pos <= text.size()) {
+		if (text.compare(pos, std::string(kReportHeads[h]).size(), kReportHeads[h]) == 0) h++;
+		const size_t nl = text.find('\n', pos);
+		if (nl == std::string::npos) break;
+		pos = nl + 1;
+	}
+	return h == 7 ? std::string() : std::string("找不到或順序錯: ") + kReportHeads[h];
+}
+
+// 「## 2. Build summary」段內第一行「- <key>: <值>」的值(去掉前導空白)。
+bool SummaryField(const std::string& text, const std::string& key, std::string& val)
+{
+	const std::string want = "- " + key + ":";
+	bool in = false;
+	size_t pos = 0;
+	while (pos < text.size()) {
+		const size_t nl = text.find('\n', pos);
+		std::string ln = text.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+		pos = nl == std::string::npos ? text.size() : nl + 1;
+		if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+		if (ln.rfind("## ", 0) == 0) { in = ln.rfind("## 2. Build summary", 0) == 0; continue; }
+		if (in && ln.rfind(want, 0) == 0) {
+			val = ln.substr(want.size());
+			val.erase(0, val.find_first_not_of(" \t"));
+			return true;
+		}
+	}
+	return false;
+}
+
+// 開頭必須是整數(可帶負號),後面不能接千分位或小數。
+bool ParseReportInt(const std::string& s, long long& v)
+{
+	size_t i = 0;
+	const bool neg = !s.empty() && s[0] == '-';
+	if (neg) i++;
+	const size_t st = i;
+	long long x = 0;
+	while (i < s.size() && isdigit((unsigned char)s[i]) && i - st < 18) x = x * 10 + (s[i++] - '0');
+	if (i == st || (i < s.size() && (s[i] == ',' || s[i] == '.' || isdigit((unsigned char)s[i])))) return false;
+	v = neg ? -x : x;
+	return true;
+}
+
+// UTF-8 字元數(不計接續位元組)。
+size_t Utf8Chars(const std::string& s)
+{
+	size_t n = 0;
+	for (unsigned char ch : s) if ((ch & 0xC0) != 0x80) n++;
+	return n;
+}
+
+bool CallReport(McpProc& p, std::string& text, std::string& err)
+{
+	ToolRes r = p.Call("build_report", json::object(), kReportMs);
+	if (!r.Ok()) { err = "build_report 失敗: " + Cut(r.Why(), 200); return false; }
+	if (!r.sc.contains("text") || !r.sc["text"].is_string()) { err = "build_report 沒有字串 text: " + Cut(r.sc.dump(), 160); return false; }
+	text = r.sc["text"].get<std::string>();
+	return true;
+}
+
+// 摘要段的 key 行要等於 stats[key] 四捨五入;不符時填 bad。
+void CheckSummaryNum(const std::string& text, const json& stats, const char* key, std::vector<std::string>& bad, std::string& d)
+{
+	double want = 0;
+	if (!NumOf(stats, key, want)) { bad.push_back(std::string("build_summary.stats 沒有數字 ") + key); return; }
+	std::string raw;
+	long long got = 0;
+	if (!SummaryField(text, key, raw)) { bad.push_back(std::string("Build summary 段找不到「- ") + key + ": 數字」行"); return; }
+	if (!ParseReportInt(raw, got)) { bad.push_back(std::string(key) + " 不是不帶千分位的整數: " + Cut(raw, 40)); return; }
+	if (got != std::llround(want)) { bad.push_back(std::string(key) + " 報告=" + std::to_string(got) + " 摘要=" + Num(want)); return; }
+	d += std::string(d.empty() ? "" : ", ") + key + "=" + std::to_string(got);
+}
+
+// 跑 `pob-zh.exe --report <source> --pob <pob> --out <out>`,等到結束(最多 300 秒)。
+bool RunReportExe(const std::wstring& source, const std::wstring& pob, const std::wstring& out, DWORD& code, std::string& err)
+{
+	wchar_t exeBuf[MAX_PATH * 4] = {};
+	GetModuleFileNameW(nullptr, exeBuf, (DWORD)(sizeof(exeBuf) / sizeof(exeBuf[0])));
+	const std::wstring exe = exeBuf;
+	std::wstring cmd = L"\"" + exe + L"\" --report \"" + source + L"\" --pob \"" + pob + L"\" --out \"" + out + L"\"";
+	if (cmd.size() >= 32000) { err = "命令列太長(" + std::to_string(cmd.size()) + " 字元),無法用分享碼當來源"; return false; }
+	std::vector<wchar_t> buf(cmd.begin(), cmd.end());
+	buf.push_back(0);
+	STARTUPINFOW si{};
+	si.cb = sizeof(si);
+	PROCESS_INFORMATION pi{};
+	const std::wstring dir = exe.substr(0, exe.find_last_of(L'\\') + 1);
+	if (!CreateProcessW(exe.c_str(), buf.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, dir.c_str(), &si, &pi)) {
+		err = "CreateProcess 失敗 (" + std::to_string(GetLastError()) + ")";
+		return false;
+	}
+	CloseHandle(pi.hThread);
+	const bool done = WaitForSingleObject(pi.hProcess, 300000) == WAIT_OBJECT_0;
+	if (!done) { TerminateProcess(pi.hProcess, 1); WaitForSingleObject(pi.hProcess, 3000); }
+	code = 1;
+	GetExitCodeProcess(pi.hProcess, &code);
+	CloseHandle(pi.hProcess);
+	if (!done) { err = "--report 逾時 300 秒"; return false; }
+	return true;
+}
+
+// 自己起行程載入範例,取分享碼後關掉。
+bool ShareCodeOfSample(const Ctx& c, std::string& code, std::string& err)
+{
+	McpProc p;
+	Ctx oc;
+	bool ok = BootSampleProc(p, oc, c, err);
+	if (ok) { code = ExportCodeOf(p, err); ok = !code.empty(); }
+	p.Close();
+	KeepLines(p);
+	return ok;
+}
+
+std::wstring ReportOutPath(const Ctx& c) { return c.exeDir + L"report_selftest_out.md"; }
+
+// R1 報告包含全部固定段落
+void TestR1(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	Ctx oc;
+	do {
+		std::string err, text;
+		if (!BootSampleProc(p, oc, c, err)) { bad.push_back(err); break; }
+		if (!CallReport(p, text, err)) { bad.push_back(err); break; }
+		const std::string why = CheckReportHeadings(text);
+		if (!why.empty()) bad.push_back(why);
+		else d = "七個標題依序齊全(" + std::to_string(Utf8Chars(text)) + " 字元)";
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(45, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// R2 報告數值與 POB 摘要相同
+void TestR2(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	Ctx oc;
+	do {
+		std::string err, text;
+		if (!BootSampleProc(p, oc, c, err)) { bad.push_back(err); break; }
+		json stats;
+		if (!GetStats(p, stats, err)) { bad.push_back(err); break; }
+		if (!CallReport(p, text, err)) { bad.push_back(err); break; }
+		CheckSummaryNum(text, stats, "Life", bad, d);
+		CheckSummaryNum(text, stats, "CombinedDPS", bad, d);
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(46, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// R3 產生報告後流派不變
+void TestR3(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	Ctx oc;
+	do {
+		std::string err, text;
+		if (!BootSampleProc(p, oc, c, err)) { bad.push_back(err); break; }
+		const std::string before = ExportCodeOf(p, err);
+		if (before.empty()) { bad.push_back("呼叫前 " + err); break; }
+		if (!CallReport(p, text, err)) { bad.push_back(err); break; }
+		const std::string after = ExportCodeOf(p, err);
+		if (after.empty()) bad.push_back("呼叫後 " + err);
+		else if (after != before) bad.push_back("build_report 後 export_code 不同(流派被動到)");
+		else d = "前後 code 相同(" + std::to_string(before.size()) + " 字元)";
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(47, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// R4 報告長度不超過上限
+void TestR4(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	Ctx oc;
+	do {
+		std::string err, text;
+		if (!BootSampleProc(p, oc, c, err)) { bad.push_back(err); break; }
+		if (!CallReport(p, text, err)) { bad.push_back(err); break; }
+		const size_t n = Utf8Chars(text);
+		if (n == 0) bad.push_back("text 是空的");
+		else if (n > kReportMaxChars) bad.push_back("text 有 " + std::to_string(n) + " 字元(上限 " + std::to_string(kReportMaxChars) + ")");
+		else d = "text " + std::to_string(n) + " 字元(上限 " + std::to_string(kReportMaxChars) + ")";
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(48, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// R5 一次性指令寫出報告檔
+void TestR5(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	const std::wstring out = ReportOutPath(c);
+	DeleteFileW(out.c_str());
+	do {
+		std::string err, code;
+		if (!ShareCodeOfSample(c, code, err)) { bad.push_back(err); break; }
+		DWORD ec = 0;
+		if (!RunReportExe(widen(code), c.pobDir, out, ec, err)) { bad.push_back(err); break; }
+		if (ec != 0) { bad.push_back("結束碼 " + std::to_string(ec) + "(應為 0)"); break; }
+		if (!file_exists(out)) { bad.push_back("結束碼 0 但沒有輸出檔"); break; }
+		const std::string text = ReadFileA(out);
+		const std::string why = CheckReportHeadings(text);
+		if (!why.empty()) bad.push_back("輸出檔 " + why);
+		else d = "結束碼 0,檔案 " + std::to_string(text.size()) + " 位元組,七個標題齊全";
+	} while (false);
+	DeleteFileW(out.c_str());
+	Record(49, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// R6 來源無效回 1 且不留檔
+void TestR6(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	const std::wstring out = ReportOutPath(c);
+	DeleteFileW(out.c_str());
+	do {
+		std::string err;
+		DWORD ec = 0;
+		if (!RunReportExe(L"not-a-build", c.pobDir, out, ec, err)) { bad.push_back(err); break; }
+		if (ec != 1) bad.push_back("結束碼 " + std::to_string(ec) + "(應為 1)");
+		if (file_exists(out)) bad.push_back("來源無效卻留下輸出檔");
+		if (bad.empty()) d = "結束碼 1,沒有輸出檔";
+	} while (false);
+	DeleteFileW(out.c_str());
+	Record(50, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// R7 產生報告不寫回使用者資料夾
+void TestR7(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	const std::wstring out = ReportOutPath(c);
+	DeleteFileW(out.c_str());
+	do {
+		std::string err, code;
+		if (!ShareCodeOfSample(c, code, err)) { bad.push_back(err); break; }
+		Snap before, after;
+		Snapshot(c.pobDir, L"", before, false);
+		if (before.empty()) { bad.push_back("POB 資料夾快照為空"); break; }
+		DWORD ec = 0;
+		if (!RunReportExe(widen(code), c.pobDir, out, ec, err)) { bad.push_back(err); break; }
+		if (ec != 0) { bad.push_back("--report 結束碼 " + std::to_string(ec) + ",無法判定"); break; }
+		Snapshot(c.pobDir, L"", after, false);
+		std::vector<std::string> added, removed, changed;
+		for (const auto& [k, v] : after) {
+			auto it = before.find(k);
+			if (it == before.end()) added.push_back(narrow(k));
+			else if (it->second.dir != v.dir || it->second.size != v.size || it->second.mtime != v.mtime) changed.push_back(narrow(k));
+		}
+		for (const auto& [k, v] : before) if (!after.count(k)) removed.push_back(narrow(k));
+		if (!added.empty()) bad.push_back("新增: " + JoinFirst(added, 3));
+		if (!removed.empty()) bad.push_back("刪除: " + JoinFirst(removed, 3));
+		if (!changed.empty()) bad.push_back("變更: " + JoinFirst(changed, 3));
+		if (bad.empty()) d = "共 " + std::to_string(before.size()) + " 項,前後相同";
+	} while (false);
+	DeleteFileW(out.c_str());
+	Record(51, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
 }
 
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
@@ -2987,7 +3286,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	auto failAll = [&](const std::string& why) {
 		for (int n = 1; n <= 11; n++) Record(n, false, why); // M12 是純函式,不受影響
-		for (int n = 13; n <= 44; n++) Record(n, false, why);
+		for (int n = 13; n <= 51; n++) Record(n, false, why);
 	};
 
 	std::wstring sampleRel;
@@ -3088,6 +3387,13 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			Guard(42, [&] { TestA3(c2); });
 			Guard(43, [&] { TestA4(c2); });
 			Guard(44, [&] { TestA5(c2); });
+			Guard(45, [&] { TestR1(c2); });
+			Guard(46, [&] { TestR2(c2); });
+			Guard(47, [&] { TestR3(c2); });
+			Guard(48, [&] { TestR4(c2); });
+			Guard(49, [&] { TestR5(c2); });
+			Guard(50, [&] { TestR6(c2); });
+			Guard(51, [&] { TestR7(c2); });
 		}
 
 		std::vector<std::string> all = mainLines;
@@ -3100,7 +3406,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// 報告:每項一行,最後一行總計
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 44; n++) {
+	for (int n = 1; n <= 51; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";

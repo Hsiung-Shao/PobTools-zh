@@ -350,6 +350,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	std::wstring arg2 = (argvW && argc >= 3) ? argvW[2] : L"";
 	std::wstring arg3 = (argvW && argc >= 4) ? argvW[3] : L"";
 	std::wstring arg4 = (argvW && argc >= 5) ? argvW[4] : L"";
+	std::wstring arg5 = (argvW && argc >= 6) ? argvW[5] : L"";
+	std::wstring arg6 = (argvW && argc >= 7) ? argvW[6] : L"";
 	const int argCount = argvW ? argc : 0;
 	if (argvW) LocalFree(argvW);
 
@@ -801,6 +803,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// MCP server on stdio for AI clients (Claude Desktop / Claude Code / Codex).
 	if (arg1 == L"--mcp") { // --mcp [--pob <dir>]
 		return RunMcpServer(dir, arg2 == L"--pob" ? arg3 : L"");
+	}
+	// One-shot AI report (the launcher's "AI analysis report" row runs this).
+	if (arg1 == L"--report") { // --report <source> [--pob <dir>] [--out <file>]
+		std::wstring pob, out;
+		const std::wstring* opts[4] = { &arg3, &arg4, &arg5, &arg6 };
+		for (int i = 0; i + 1 < 4; i += 2) {
+			if (*opts[i] == L"--pob") pob = *opts[i + 1];
+			else if (*opts[i] == L"--out") out = *opts[i + 1];
+		}
+		return RunReport(dir, arg2, pob, out);
 	}
 	// MCP server end-to-end check (spawns `pob-zh.exe --mcp` and talks JSON-RPC).
 	if (arg1 == L"--mcp-selftest") { // --mcp-selftest [pobDir]

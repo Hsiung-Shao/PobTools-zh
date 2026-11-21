@@ -43,6 +43,8 @@
 #endif
 #include <windows.h>
 #include <shellapi.h>
+#include <shlobj.h>              // the Documents folder of an installed POB (AI report row)
+#undef small                     // rpcndr.h's `#define small char` breaks WidgetFonts::small
 #include "win_util.h"
 #include <commdlg.h>             // "add an image" on the appearance page
 #pragma comment(lib, "comdlg32.lib")
@@ -62,6 +64,7 @@
 #include <cmath>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -1018,6 +1021,76 @@ static std::wstring OpenImageDialog(void* owner)
 	return GetOpenFileNameW(&ofn) ? std::wstring(buf) : std::wstring();
 }
 
+// Where the user's PoE1 POB keeps its builds: an installed POB (installed.cfg)
+// uses Documents\Path of Building\Builds, as mcp_server.cpp's sandbox does.
+static std::wstring PobBuildsDir(const std::wstring& pobDir)
+{
+	if (GetFileAttributesW((pobDir + L"\\installed.cfg").c_str()) != INVALID_FILE_ATTRIBUTES) {
+		PWSTR docs = nullptr;
+		std::wstring dir;
+		if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &docs))) dir = std::wstring(docs) + L"\\Path of Building\\Builds";
+		CoTaskMemFree(docs);
+		return dir;
+	}
+	return pobDir + L"\\Builds";
+}
+
+// "Choose build file" on the AI report row: a path relative to the Builds
+// folder (what load_build takes), or empty when cancelled; `outside` when the
+// file picked is not under it.
+static std::wstring OpenBuildDialog(void* owner, const std::wstring& buildsDir, bool& outside)
+{
+	outside = false;
+	wchar_t buf[MAX_PATH] = L"";
+	OPENFILENAMEW ofn{};
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = (HWND)owner;
+	ofn.lpstrFilter = L"Path of Building (*.xml)\0*.xml\0\0";
+	ofn.lpstrFile = buf;
+	ofn.nMaxFile = MAX_PATH;
+	ofn.lpstrInitialDir = buildsDir.c_str();
+	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+	if (!GetOpenFileNameW(&ofn)) return {};
+	const std::wstring path = buf, base = buildsDir + L"\\";
+	if (buildsDir.empty() || path.size() <= base.size() || _wcsnicmp(path.c_str(), base.c_str(), base.size()) != 0) {
+		outside = true;
+		return {};
+	}
+	return path.substr(base.size());
+}
+
+// Runs `pob-zh.exe --report ...` and waits; the exit code (2 if it could not
+// start). `proc` holds the child while it runs so the launcher can end it on exit.
+struct ReportRun {
+	std::mutex mu;
+	HANDLE proc = nullptr;
+	bool closing = false;
+};
+static int RunReportChild(ReportRun& r, const std::wstring& exeDir, const std::wstring& cmdTail)
+{
+	wchar_t exe[MAX_PATH * 2] = {};
+	GetModuleFileNameW(nullptr, exe, MAX_PATH * 2);
+	std::wstring cmd = L"\"" + std::wstring(exe) + L"\" " + cmdTail;
+	std::vector<wchar_t> buf(cmd.begin(), cmd.end());
+	buf.push_back(0);
+	STARTUPINFOW si{};
+	si.cb = sizeof(si);
+	PROCESS_INFORMATION pi{};
+	{
+		std::lock_guard<std::mutex> lk(r.mu);
+		if (r.closing || !CreateProcessW(exe, buf.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, exeDir.c_str(), &si, &pi)) return 2;
+		CloseHandle(pi.hThread);
+		r.proc = pi.hProcess;
+	}
+	WaitForSingleObject(pi.hProcess, INFINITE);
+	DWORD code = 2;
+	GetExitCodeProcess(pi.hProcess, &code);
+	std::lock_guard<std::mutex> lk(r.mu);
+	CloseHandle(pi.hProcess);
+	r.proc = nullptr;
+	return (int)code;
+}
+
 static int ClampOpacityThunk(int v, int /*fallback*/) { return ClampWindowOpacity(v); }
 
 LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const std::wstring& exeDir,
@@ -1112,6 +1185,40 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const st
 		if (n > 0 && n < MAX_PATH) startPobDl(wcscmp(buf, L"poe2") == 0);
 		n = GetEnvironmentVariableW(L"POBTOOLS_LAUNCHER_IMPORT", buf, MAX_PATH);
 		if (n > 0 && n < MAX_PATH) startImport(buf);
+	}
+	// "AI analysis report" (settings page): one `--report` child at a time. The
+	// guard is declared after the future so it ends the child before the
+	// future's destructor waits on the worker; the child's job takes POB along.
+	std::string reportSrc;
+	auto reportRun = std::make_shared<ReportRun>();
+	std::future<int> reportJob;
+	struct ReportKillAtExit {
+		std::shared_ptr<ReportRun>& r;
+		~ReportKillAtExit()
+		{
+			std::lock_guard<std::mutex> lk(r->mu);
+			r->closing = true;
+			if (r->proc) TerminateProcess(r->proc, 2);
+		}
+	} reportKillAtExit{ reportRun };
+	const std::wstring reportOut = exeDir + L"PobTools\\ai_report.md";
+	auto startReport = [&]() {
+		std::wstring src = widen(reportSrc), pob = installs.poe1Dir;
+		src.erase(std::remove(src.begin(), src.end(), L'"'), src.end());
+		// A trailing backslash would escape the closing quote on the command line.
+		while (!pob.empty() && pob.back() == L'\\') pob.pop_back();
+		CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
+		const std::wstring tail = L"--report \"" + src + L"\" --pob \"" + pob + L"\" --out \"" + reportOut + L"\"";
+		reportJob = std::async(std::launch::async, [r = reportRun, exeDir, tail]() { return RunReportChild(*r, exeDir, tail); });
+	};
+	// Test aid for the off-screen screenshot: POBTOOLS_LAUNCHER_REPORT=<source> runs it once.
+	{
+		wchar_t buf[4096] = L"";
+		const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_LAUNCHER_REPORT", buf, 4096);
+		if (n > 0 && n < 4096) {
+			reportSrc = narrow(buf);
+			startReport();
+		}
 	}
 	// The remembered compatibility verdict (PobTools\bridge_gate.json, written
 	// by the new-interface window). Re-read every couple of seconds: the
@@ -3337,6 +3444,30 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const st
 					}
 					PobUi::RowEnd();
 				}
+				// The same tools in one go, as a text to paste into any AI chat.
+				{
+					const bool running = reportJob.valid();
+					const float fw = std::floor(D(200.0f));
+					const float pickW = PobUi::ButtonWidth(S.reportPickFile, PobUi::BtnSize::Sm);
+					const float runW = std::max(PobUi::ButtonWidth(S.reportRun, PobUi::BtnSize::Sm), PobUi::ButtonWidth(S.reportRunning, PobUi::BtnSize::Sm));
+					PobUi::RowBegin(S.reportRow, S.reportHint, fw + gapRow + pickW + gapRow + runW);
+					PobUi::PushControlFrame();
+					ImGui::SetNextItemWidth(fw);
+					ImGui::InputTextWithHint("##reportsrc", S.reportSrcHint, &reportSrc);
+					PobUi::PopControlFrame();
+					ImGui::SameLine(0, gapRow);
+					if (PobUi::Button(S.reportPickFile, PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, nullptr, 0.0f, !running)) {
+						bool outside = false;
+						const std::wstring rel = OpenBuildDialog(glfwGetWin32Window(win), PobBuildsDir(installs.poe1Dir), outside);
+						if (outside) PobUi::ShowToast(S.reportOutsideBuilds, PobUi::Tone::Warn);
+						else if (!rel.empty()) reportSrc = narrow(rel);
+					}
+					ImGui::SameLine(0, gapRow);
+					const bool canRun = !running && reportSrc.find_first_not_of(" \t\r\n") != std::string::npos;
+					if (PobUi::Button(running ? S.reportRunning : S.reportRun, PobUi::BtnKind::Primary, PobUi::BtnSize::Sm, nullptr, runW, canRun))
+						startReport();
+					PobUi::RowEnd();
+				}
 			}
 			PobUi::CardEnd();
 
@@ -3955,6 +4086,17 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const st
 		if (tabbed && tabsOk) ImGui::EndTabBar();
 
 		ImGui::End();
+		// Checked every frame, whichever page is showing: the report may finish anywhere.
+		if (reportJob.valid() && reportJob.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+			const int code = reportJob.get();
+			std::string text;
+			if (code == 0 && read_file_utf8(reportOut, text) && !text.empty()) {
+				ImGui::SetClipboardText(text.c_str());
+				PobUi::ShowToast(S.reportCopied);
+			} else {
+				PobUi::ShowToast(code == 1 ? S.reportBadSource : S.reportFailed, PobUi::Tone::Bad);
+			}
+		}
 		PobUi::DrawToast();
 
 		// Docked windows: reap, adopt, position, z-order. After ImGui::End so the
@@ -4067,7 +4209,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const st
 		            closingTabs || closingPanels || sizeDirty || updaterBusy ||
 		            ust.phase == AppUpdatePhase::Checking ||
 		            ust.phase == AppUpdatePhase::TransUpdating ||
-		            PobUi::ToastVisible() || relaunchRequested || pobDlJob.valid() || importJob.valid() ||
+		            PobUi::ToastVisible() || relaunchRequested || pobDlJob.valid() || importJob.valid() || reportJob.valid() ||
 		            std::any_of(bgThumbs.begin(), bgThumbs.end(), [](const BgThumb& t) { return t.job != nullptr; }) ||
 		            (tabbed && !dock.Empty());
 		pace.forceRender = g_launcherRedraw || !shotPath.empty();

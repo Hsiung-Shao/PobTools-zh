@@ -110,7 +110,15 @@
     },
     {
       "name": "audit_inflation",
-      "description": "Find what props up the sheet numbers: compares the build as configured (current) with a conservative baseline (Pinnacle boss, flasks off, custom modifiers cleared, every other changed configuration option back to its default), and lists the configuration options, flasks and custom modifiers that each add the most DPS / EHP on their own (contributors, largest first). Party (teammate auras) is not audited in this version (partyAudited=false). Does not change the build. / 找出撐高面板數字的來源:比較現況(current)與保守基準(baseline:巔峰首領、藥劑全關、自訂詞綴清空、其他改過的設定還原預設),並列出單獨貢獻最多 DPS / EHP 的設定項、藥劑與自訂詞綴(contributors,由大到小)。隊友光環(Party)此版不納入(partyAudited=false)。不會改動流派。",
+      "description": "Find what props up the sheet numbers: compares the build as configured (current) with a conservative baseline (Pinnacle boss, flasks off, custom modifiers cleared, every other changed configuration option back to its default), and lists the configuration options, flasks and custom modifiers that each add the most DPS / EHP on their own (contributors, largest first; a negative value means the option lowers the number; dps is the minion's for a minion skill). Bandit, pantheon and resistance penalty are the character's own choices and are left as they are. Party (teammate auras) is not audited in this version (partyAudited=false). Does not change the build. / 找出撐高面板數字的來源:比較現況(current)與保守基準(baseline:巔峰首領、藥劑全關、自訂詞綴清空、其他改過的設定還原預設),並列出單獨貢獻最多 DPS / EHP 的設定項、藥劑與自訂詞綴(contributors,由大到小;負值代表該項壓低數值;召喚物技能的 dps 取召喚物的)。盜賊任務、萬神殿與抗性懲罰屬角色本身的選擇,不列入也不還原。隊友光環(Party)此版不納入(partyAudited=false)。不會改動流派。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "build_report",
+      "description": "The whole analysis in one Markdown text (at most 24,000 characters): instructions for the reader, build summary, inflation audit, scenarios, issues, tree / skills / configuration / items, and tested candidates (passive nodes, support gems, anoints, top 10 each with their measured change). Slow (several minutes). Does not change the build. / 一次產生完整分析的 Markdown(上限 24,000 字元):給讀者的說明、流派摘要、去水分、多情境、問題、天賦/技能/設定/裝備,以及已試算候選(天賦、輔助寶石、塗油,各前 10 並附變化量)。耗時數分鐘。不會改動流派。",
       "inputSchema": {
         "type": "object",
         "properties": {}

@@ -12,3 +12,10 @@
 #include <string>
 
 int RunMcpServer(const std::wstring& exeDir, const std::wstring& pobDirOverride);
+
+// `pob-zh.exe --report <source> [--pob <dir>] [--out <file>]`: load_build +
+// build_report in the same sandboxed engine, the Markdown written as UTF-8 to
+// <file> (default <exeDir>PobTools\ai_report.md). 0 written, 1 the source did
+// not load, 2 anything else; on failure no output file is left behind.
+int RunReport(const std::wstring& exeDir, const std::wstring& source, const std::wstring& pobDirOverride,
+              const std::wstring& outOverride);

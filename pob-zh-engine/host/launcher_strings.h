@@ -235,6 +235,16 @@
 	X(mcpRow,            u8"AI 串接(MCP)",                u8"AI assistants (MCP)") \
 	X(mcpHint,           u8"複製設定貼到 AI 工具,讓它用 POB 的計算讀取與試算建置。", u8"Copy the setup into an AI tool so it can read and try out builds with POB's own numbers.") \
 	X(mcpHintLong,       u8"Claude Desktop:貼進 claude_desktop_config.json。Claude Code／CLI:在終端機執行複製的指令。Codex:貼進 ~/.codex/config.toml。AI 只在暫存複本上操作,不會改動你的 POB 建置,成品以分享碼交給你。", u8"Claude Desktop: paste into claude_desktop_config.json. Claude Code / CLI: run the copied command in a terminal. Codex: paste into ~/.codex/config.toml. The AI works on a private copy and never changes your POB builds; it hands results over as share codes.") \
+	X(reportRow,         u8"AI 分析報告",                  u8"AI analysis report")                    \
+	X(reportHint,        u8"用 POB 的計算產生完整分析,貼到任何 AI 聊天(免費版也可)。", u8"A full analysis with POB's own numbers, to paste into any AI chat (free ones too).") \
+	X(reportSrcHint,     u8"分享碼或流派連結",             u8"Share code or build link")              \
+	X(reportPickFile,    u8"選擇流派檔",                   u8"Choose build file")                     \
+	X(reportRun,         u8"產生並複製",                   u8"Generate and copy")                     \
+	X(reportRunning,     u8"產生中…",                      u8"Generating…")                           \
+	X(reportCopied,      u8"已複製,貼到任何 AI 聊天即可", u8"Copied. Paste it into any AI chat.")   \
+	X(reportBadSource,   u8"來源無效",                     u8"Invalid source")                        \
+	X(reportFailed,      u8"產生失敗",                     u8"Could not generate the report")         \
+	X(reportOutsideBuilds, u8"請選擇 POB Builds 資料夾內的檔案", u8"Choose a file inside POB's Builds folder") \
 	/* header, banners, cards, settings side navigation, appearance thumbnails, about card. */          \
 	X(appSubtitle,       u8"Path of Building 繁體中文化", u8"Path of Building in Traditional Chinese") \
 	X(updateTo,          u8"更新到 v%s",                   u8"Update to v%s")                         \

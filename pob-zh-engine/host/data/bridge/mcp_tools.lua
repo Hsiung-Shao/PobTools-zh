@@ -983,6 +983,8 @@ return function(M, ctx)
 
 	-- One POB recalculation per switch (twice per contributor, once more for the
 	-- baseline): the slowest read-only tool, hence its longer host timeout.
+	local CHARACTER_CHOICE = { bandit = true, pantheonMajorGod = true, pantheonMinorGod = true, resistancePenalty = true }
+
 	function T.audit_inflation()
 		local b = ensure_build()
 		local tab = b.configTab
@@ -991,18 +993,29 @@ return function(M, ctx)
 			local byVar, order, custom = config_items()
 			local current = key_stats(b)
 			local list = {}
+			-- A minion skill's damage is the minion's: the player's own is 0.
+			local function dps_now()
+				local o = b.calcsTab.mainOutput
+				return (type(o.Minion) == "table" and o.Minion.CombinedDPS) or o.CombinedDPS or 0
+			end
+			local dps0 = dps_now()
 			local function measure(kind, key, label, labelZh)
-				local s = key_stats(b)
 				local e = { kind = kind, key = key, label = label, labelZh = labelZh,
-					dps = (current.CombinedDPS or 0) - (s.CombinedDPS or 0), ehp = (current.TotalEHP or 0) - (s.TotalEHP or 0) }
+					dps = dps0 - dps_now(), ehp = (current.TotalEHP or 0) - (b.calcsTab.mainOutput.TotalEHP or 0) }
 				if e.dps ~= 0 or e.ehp ~= 0 then list[#list + 1] = e end
 			end
 			-- POB's own "changed" rule (the highlight in ConfigTab): set, and not
 			-- its GetDefaultState (placeholder, else the option's default).
+			-- Left alone: the character's own choices, and a list value this POB
+			-- no longer offers (old builds), which set_config could not put back.
 			local changed = {}
 			for _, it in ipairs(order) do
 				local cur = it.value
-				if cur ~= nil and cur ~= tab:GetDefaultState(it.var, type(cur)) then changed[#changed + 1] = it end
+				local offered = not it.list
+				for _, o in ipairs(it.list or {}) do offered = offered or o.val == cur end
+				if cur ~= nil and offered and not CHARACTER_CHOICE[it.var] and cur ~= tab:GetDefaultState(it.var, type(cur)) then
+					changed[#changed + 1] = it
+				end
 			end
 			for _, it in ipairs(changed) do
 				M.reset_config({ var = it.var })
@@ -1041,8 +1054,304 @@ return function(M, ctx)
 			local top = {}
 			for i = 1, math.min(15, #list) do top[i] = list[i] end
 			return { current = current, baseline = baseline, diff = stat_diff(current, baseline),
-				contributors = top, partyAudited = false, reverted = true }
+				contributors = top, configChanged = #changed, partyAudited = false, reverted = true }
 		end)
+	end
+
+	-- ---- one-shot report -------------------------------------------------
+
+	-- Pasted into free AI chats, whose input boxes take about this much.
+	local REPORT_LIMIT = 24000
+
+	local function u8len(s) return #s - select(2, s:gsub("[\128-\191]", "")) end
+	-- The first n characters, never splitting a multi-byte one.
+	local function u8cut(s, n)
+		local count = 0
+		for i = 1, #s do
+			local c = s:byte(i)
+			if c < 128 or c >= 192 then
+				count = count + 1
+				if count > n then return s:sub(1, i - 1) end
+			end
+		end
+		return s
+	end
+
+	-- Rounded half away from zero, as std::llround; "+ 0" turns -0 into 0.
+	local function int(v)
+		local r = v >= 0 and math.floor(v + 0.5) or -math.floor(-v + 0.5)
+		return string.format("%.0f", r + 0)
+	end
+	local function num(v)
+		if type(v) ~= "number" or v ~= v then return "n/a" end
+		if v == math.huge then return "inf" elseif v == -math.huge then return "-inf" end
+		if v == math.floor(v) or math.abs(v) >= 100 then return int(v) end
+		return string.format("%.2f", v)
+	end
+	local function signed(v) return (type(v) == "number" and v > 0 and "+" or "") .. num(v) end
+	local function pct(part, whole)
+		if type(part) ~= "number" or type(whole) ~= "number" or whole == 0 then return "" end
+		return string.format(" (%+.1f%%)", part / whole * 100)
+	end
+	local function nm(name, zh)
+		if type(name) ~= "string" or name == "" then return "?" end
+		-- POB colour codes (^xRRGGBB, ^7) are noise outside its own window.
+		local function plain(s) return (s:gsub("%^x%x%x%x%x%x%x", ""):gsub("%^%d", "")) end
+		name, zh = plain(name), type(zh) == "string" and plain(zh) or nil
+		if type(zh) == "string" and zh ~= "" and zh ~= name then return name .. " / " .. zh end
+		return name
+	end
+
+	-- The item's lines as POB uses them: other variants' lines, the internal id
+	-- and the name lines already in the heading dropped, mod-range tags stripped.
+	-- shortcut: "Selected Alt Variant" (two-variant uniques) is not resolved; add it if such items mislead.
+	local function item_lines(it)
+		local text = it.text or ""
+		local sel = tonumber(text:match("Selected Variant: (%d+)"))
+		local out, i = {}, 0
+		for ln in text:gmatch("[^\r\n]+") do
+			i = i + 1
+			local keep = not (ln:match("^Rarity:") or ln:match("^Unique ID:") or ln:match("^Variant:") or
+				ln:match("^Selected Variant:") or ln:match("^Selected Alt Variant:") or ln:match("^Has Alt Variant") or
+				ln:match("^%a+BasePercentile:") or ln:match("^Item Level:") or ln:match("^LevelReq:"))
+			local vars = ln:match("^{variant:([%d,]+)}")
+			if keep and vars and sel then
+				keep = false
+				for v in vars:gmatch("%d+") do if tonumber(v) == sel then keep = true end end
+			end
+			if keep and i <= 3 and (it.name or ""):find(ln, 1, true) then keep = false end
+			if keep then
+				ln = ln:gsub("{variant:[^}]*}", ""):gsub("{range:[^}]*}", ""):gsub("{tags:[^}]*}", "")
+				out[#out + 1] = "    " .. ln
+			end
+		end
+		return out
+	end
+
+	function T.build_report()
+		local b = ensure_build()
+		local snap = M.export_code().code
+		local viewMode = b.viewMode
+		-- One part failing (no amulet to anoint, an old POB) costs one line, not the report.
+		local function try(fn, ...)
+			local ok, r = pcall(fn, ...)
+			if ok then return r end
+			return nil, (tostring(r):gsub(ARG_MARK, ""):gsub(" %-%- the build was restored$", ""))
+		end
+		local L = {}
+		local function add(s) L[#L + 1] = s end
+
+		local sm = summary()
+		add("# Path of Building build report")
+		add("")
+		add("## 1. Instructions / 給 AI 的說明")
+		add("- Every number in this report was calculated by Path of Building (PoE1) through PobTools; none is an estimate.")
+		add("- Your knowledge of the current league may be out of date (skills, uniques and mechanics change every league). Where it disagrees with this report, trust the report.")
+		add("- You cannot recalculate this build. Prefer the candidates in section 7, which were tested here with their measured effect; mark any other idea as untested.")
+		add("- Section 3 shows how much each condition the player switched on adds. That is not proof it is wrong: ask whether it holds in their play.")
+		add("- Answer in the user's language.")
+		add("")
+		add("## 2. Build summary / 流派摘要")
+		if sm.buildName and sm.buildName ~= "" then add("- Name: " .. sm.buildName) end
+		add("- Class: " .. nm(sm.class, sm.classZh) .. ((sm.ascendancy and sm.ascendancy ~= "None") and (", ascendancy " .. nm(sm.ascendancy, sm.ascendancyZh)) or ""))
+		add("- Level: " .. num(sm.level))
+		add(string.format("- Passive points: %s / %s, ascendancy %s / %s", num(sm.points.used), num(sm.points.max), num(sm.points.ascUsed), num(sm.points.ascMax)))
+		if sm.mainSkill then add("- Main skill: " .. nm(sm.mainSkill.name, sm.mainSkill.nameZh)) end
+		local ksn = {}
+		for _, k in ipairs(sm.keystones) do ksn[#ksn + 1] = nm(k.name, k.nameZh) .. (k.fromItem and " (from an item)" or "") end
+		add("- Keystones: " .. (#ksn > 0 and table.concat(ksn, ", ") or "none"))
+		if #sm.immuneTo > 0 then add("- Immune to (Path of Building rates these hits as unable to kill): " .. table.concat(sm.immuneTo, ", ")) end
+		add("Key numbers:")
+		for _, k in ipairs(KEY_STATS) do
+			if sm.stats[k] then add("- " .. k .. ": " .. int(sm.stats[k])) end
+		end
+		if sm.minionStats then
+			for _, k in ipairs(MINION_STATS) do
+				if sm.minionStats[k] then add("- Minion " .. k .. ": " .. int(sm.minionStats[k])) end
+			end
+		end
+		add("")
+
+		add("## 3. Inflation audit / 去水分")
+		add("How much each setting the player switched on, each active flask and the custom modifiers add, measured by switching off only that one. This is the impact of each, not a verdict that it is inflated.")
+		add("Party members' auras and buffs (Party tab) were not audited (partyAudited=false).")
+		local au, auErr = try(T.audit_inflation)
+		if not au then
+			add("- Not available: " .. auErr)
+		else
+			add("Conservative baseline (Pinnacle boss, flasks off, custom modifiers cleared, every changed setting back to its default):")
+			for _, k in ipairs({ "CombinedDPS", "FullDPS", "TotalEHP", "Life", "EnergyShield" }) do
+				if au.current[k] or au.baseline[k] then
+					add(string.format("- %s: now %s, baseline %s%s", k, num(au.current[k]), num(au.baseline[k]),
+						pct((au.baseline[k] or 0) - (au.current[k] or 0), au.current[k])))
+				end
+			end
+			if #au.contributors == 0 then
+				add("- No setting, flask or custom modifier changes the main skill DPS or effective HP.")
+			else
+				add("Largest contributors (CombinedDPS / TotalEHP each one adds):")
+				for _, c in ipairs(au.contributors) do
+					add(string.format("- [%s] %s (%s): DPS %s%s, EHP %s%s", c.kind, nm(c.label, c.labelZh), tostring(c.key),
+						signed(c.dps), pct(c.dps, au.current.CombinedDPS), signed(c.ehp), pct(c.ehp, au.current.TotalEHP)))
+				end
+			end
+		end
+		add("")
+
+		add("## 4. Scenarios / 多情境")
+		local sc, scErr = try(T.scenarios)
+		if not sc then
+			add("- Not available: " .. scErr)
+		else
+			local cols = { "CombinedDPS", "FullDPS", "TotalEHP", "Life", "EnergyShield", "PhysicalMaximumHitTaken" }
+			add("| Scenario | " .. table.concat(cols, " | ") .. " |")
+			add("|---" .. string.rep("|---", #cols) .. "|")
+			local names = { { "current", "As configured" }, { "pinnacle", "Pinnacle boss" }, { "uber", "Uber pinnacle boss" }, { "flasksOff", "All flasks off" } }
+			for _, n in ipairs(names) do
+				local s, row = sc.scenarios[n[1]] or {}, {}
+				for i, k in ipairs(cols) do row[i] = num(s[k]) end
+				add("| " .. n[2] .. " | " .. table.concat(row, " | ") .. " |")
+			end
+		end
+		add("")
+
+		add("## 5. Issues and gaps / 問題與缺口")
+		local ck, ckErr = try(T.check_build)
+		if not ck then
+			add("- Not available: " .. ckErr)
+		elseif #ck.issues == 0 then
+			add("- The standard checks found nothing.")
+		else
+			for _, it in ipairs(ck.issues) do add("- [" .. it.severity .. "] " .. it.message) end
+		end
+		add("")
+
+		add("## 6. Build details / 天賦、技能、設定、裝備")
+		local tree, tErr = try(T.tree_summary)
+		add("### Passive tree")
+		if not tree then add("- Not available: " .. tErr) else
+			add("- Allocated nodes: " .. num(tree.allocatedCount))
+			local nt = {}
+			for _, n in ipairs(tree.notables) do nt[#nt + 1] = nm(n.name, n.nameZh) end
+			add("- Notables: " .. (#nt > 0 and table.concat(nt, ", ") or "none"))
+			for _, s in ipairs(tree.jewelSockets) do
+				add("- Jewel socket " .. tostring(s.id) .. ": " .. (s.jewel and nm(s.jewel.name, s.jewel.nameZh) or "empty"))
+			end
+		end
+		local sk, skErr = try(T.list_skills)
+		add("### Skill groups")
+		if not sk then add("- Not available: " .. skErr) else
+			for _, g in ipairs(sk.groups) do
+				local gems = {}
+				for _, gem in ipairs(g.gems) do
+					gems[#gems + 1] = nm(gem.name, gem.nameZh) .. " " .. num(gem.level) .. "/" .. num(gem.quality) ..
+						(gem.enabled == false and " (disabled)" or "")
+				end
+				add(string.format("- Group %d%s (%s%s): %s%s", g.index, g.isMain and " [main]" or "", tostring(g.slot or "no slot"),
+					g.label and (", " .. g.label) or "", table.concat(gems, ", "),
+					g.active and "" or (" -- not counted: " .. tostring(g.inactiveReason))))
+			end
+		end
+		local cf, cfErr = try(T.get_config)
+		add("### Configuration (options that are set)")
+		if not cf then add("- Not available: " .. cfErr) else
+			local n = 0
+			for _, o in ipairs(cf.options) do
+				if o.value ~= nil and o.value ~= false and o.value ~= "" then
+					n = n + 1
+					add("- " .. nm(o.label, o.labelZh) .. " (" .. o.key .. "): " .. tostring(o.value))
+				end
+			end
+			if n == 0 then add("- Nothing set (all defaults).") end
+		end
+		-- Items go last: when the report is too long their mod lines are what is cut.
+		local items = {}
+		local li, liErr = try(T.list_items)
+		if li then
+			for _, s in ipairs(li.slots) do
+				if s.item then
+					items[#items + 1] = { head = string.format("- %s: %s (%s, %s)", s.slot, nm(s.item.name, s.item.nameZh),
+						tostring(s.item.base), tostring(s.item.rarity)), lines = item_lines(s.item) }
+				end
+			end
+		end
+		local before = table.concat(L, "\n") .. "\n### Items\n"
+		if not li then before = before .. "- Not available: " .. liErr .. "\n" end
+		L = {}
+
+		add("")
+		add("## 7. Tested candidates / 已試算候選")
+		add("Each candidate below was applied by Path of Building one at a time and measured against the build as it is.")
+		local tops = 10
+		local sn, snErr = try(T.suggest_nodes, { metric = "offence", top = tops })
+		add("### Passive nodes for damage (not allocated, reachable)")
+		if not sn then add("- Not available: " .. snErr)
+		elseif #sn.nodes == 0 then add("- No unallocated node raises the main skill DPS.") else
+			for _, n in ipairs(sn.nodes) do
+				add(string.format("- %s (%s, id %s, %s points away): DPS %+.1f%%", nm(n.name, n.nameZh), tostring(n.type), tostring(n.id),
+					num(n.pathDist), (n.power or 0) * 100))
+			end
+		end
+		local sd, sdErr = try(T.suggest_nodes, { metric = "defence", top = tops })
+		add("### Passive nodes for defence (Path of Building's combined defence score)")
+		if not sd then add("- Not available: " .. sdErr)
+		elseif #sd.nodes == 0 then add("- No unallocated node raises defence.") else
+			for _, n in ipairs(sd.nodes) do
+				add(string.format("- %s (%s, id %s, %s points away): defence score %.3f", nm(n.name, n.nameZh), tostring(n.type), tostring(n.id),
+					num(n.pathDist), n.power or 0))
+			end
+		end
+		local rs, rsErr = try(T.rank_supports, { top = tops })
+		add("### Support gems for the main skill group")
+		if not rs then add("- Not available: " .. rsErr) else
+			add("Each gem added to group " .. tostring(rs.group) .. " as an extra gem (" .. tostring(rs.dpsField) ..
+				", now " .. num(rs.baseDps) .. "); in a full group it has to replace a support.")
+			if #rs.supports == 0 then add("- No support gem raises the DPS.") end
+			for _, g in ipairs(rs.supports) do
+				add("- " .. nm(g.name, g.nameZh) .. ": " .. signed(g.delta) .. (g.pct and string.format(" (%+.1f%%)", g.pct) or ""))
+			end
+		end
+		local ra, raErr = try(T.rank_anoints, { metric = "CombinedDPS", top = tops })
+		add("### Amulet anoints")
+		if not ra then add("- Not available: " .. raErr) else
+			add("CombinedDPS each anoint adds against the same amulet with no anoint (so the current anoint is ranked too).")
+			if #ra.notables == 0 then add("- No anoint raises the DPS.") end
+			for _, n in ipairs(ra.notables) do add("- " .. nm(n.name, n.nameZh) .. ": " .. signed(n.power)) end
+		end
+		local after = table.concat(L, "\n") .. "\n"
+
+		-- Ranking leaves nothing behind by design; put the build back if anything did.
+		if M.export_code().code ~= snap then
+			local okRestore, restoreErr = pcall(M.import_code, { code = snap, mode = "replace" })
+			if not okRestore then
+				error("RESTORING THE BUILD FAILED (" .. tostring(restoreErr) .. "): load the build again before trusting any number", 0)
+			end
+			ensure_build().viewMode = viewMode
+		end
+
+		-- Over the limit: drop item mod lines from the last item backwards, then
+		-- cut the end of section 6 (section 7 is what the reader is told to use).
+		local function render(full, note)
+			local p = {}
+			for i, it in ipairs(items) do
+				p[#p + 1] = it.head
+				if i <= full then for _, ln in ipairs(it.lines) do p[#p + 1] = ln end end
+			end
+			if note then p[#p + 1] = note end
+			return before .. table.concat(p, "\n") .. (#p > 0 and "\n" or "")
+		end
+		local room = REPORT_LIMIT - u8len(after)
+		local mid, full = render(#items), #items
+		while u8len(mid) > room and full > 0 do
+			full = full - 1
+			mid = render(full, string.format("(Mod lines of the last %d items were left out to keep this report under %d characters.)",
+				#items - full, REPORT_LIMIT))
+		end
+		if u8len(mid) > room then
+			local note = string.format("\n(Section 6 was cut to keep this report under %d characters.)\n", REPORT_LIMIT)
+			mid = u8cut(mid, math.max(0, room - u8len(note))) .. note
+		end
+		return { text = u8cut(mid .. after, REPORT_LIMIT) }
 	end
 
 	-- ---- entry -----------------------------------------------------------

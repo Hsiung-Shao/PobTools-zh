@@ -315,6 +315,7 @@ unsigned TimeoutFor(const std::string& tool)
 {
 	if (tool == "suggest_nodes" || tool == "what_if" || tool == "load_build" || tool == "rank_anoints" || tool == "rank_supports" ||
 	    tool == "scenarios" || tool == "audit_inflation") return 180000;
+	if (tool == "build_report") return 280000;
 	return 60000;
 }
 
@@ -541,7 +542,79 @@ json RpcError(const json& id, int code, const std::string& message)
 	return json{{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", code}, {"message", message}}}};
 }
 
+// Whoever kills this process must take the engine child with it: an orphaned
+// POB exits later and writes Settings.xml into a sandbox that has already been
+// cleaned up. The job handle closes when this process dies.
+void KillEngineWithThisProcess()
+{
+	if (HANDLE job = CreateJobObjectW(nullptr, nullptr)) {
+		JOBOBJECT_EXTENDED_LIMIT_INFORMATION li{};
+		li.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+		SetInformationJobObject(job, JobObjectExtendedLimitInformation, &li, sizeof(li));
+		AssignProcessToJobObject(job, GetCurrentProcess());
+	}
+}
+
+std::wstring ResolvePobDir(const std::wstring& exeDir, const std::wstring& pobDirOverride)
+{
+	std::wstring pobDir = pobDirOverride;
+	if (pobDir.empty()) pobDir = DetectInstalls(exeDir).poe1Dir;
+	// A hand-written client config often says --pob D:/... : the sandbox's
+	// junctions take this path verbatim, and an NT junction target with '/' in
+	// it resolves to nothing (POB then fails on require "xml"). Canonicalise.
+	for (wchar_t& ch : pobDir) if (ch == L'/') ch = L'\\';
+	if (!pobDir.empty()) {
+		wchar_t full[MAX_PATH * 2] = {};
+		const DWORD n = GetFullPathNameW(pobDir.c_str(), MAX_PATH * 2, full, nullptr);
+		if (n > 0 && n < MAX_PATH * 2) pobDir = full;
+	}
+	while (!pobDir.empty() && pobDir.back() == L'\\') pobDir.pop_back();
+	return pobDir;
+}
+
 } // namespace
+
+int RunReport(const std::wstring& exeDir, const std::wstring& source, const std::wstring& pobDirOverride,
+              const std::wstring& outOverride)
+{
+	g_exeDir = exeDir;
+	KillEngineWithThisProcess();
+	std::wstring out = outOverride;
+	if (out.empty()) {
+		CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
+		out = exeDir + L"PobTools\\ai_report.md";
+	}
+	if (source.empty()) return 1;
+	Engine eng(exeDir, ResolvePobDir(exeDir, pobDirOverride));
+	eng.StartAsync();
+	std::string err;
+	bool restarted = false;
+	if (!eng.Ensure(err, restarted)) {
+		PobLog::Error("report", err);
+		return 2;
+	}
+	const json loaded = CallTool(eng, "load_build", json{{"source", narrow(source)}}, false);
+	if (loaded.value("isError", true)) return 1;
+	const json rep = CallTool(eng, "build_report", json::object(), false);
+	const json sc = rep.value("structuredContent", json::object());
+	if (rep.value("isError", true) || !sc.contains("text") || !sc["text"].is_string()) {
+		PobLog::Error("report", "build_report failed: " + sc.dump().substr(0, 400));
+		return 2;
+	}
+	// Written beside the target and renamed over it: a failure never leaves half a report.
+	const std::string text = sc["text"].get<std::string>();
+	const std::wstring tmp = out + L".tmp";
+	HANDLE h = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h == INVALID_HANDLE_VALUE) return 2;
+	DWORD w = 0;
+	const bool wrote = WriteFile(h, text.data(), (DWORD)text.size(), &w, nullptr) && w == text.size();
+	CloseHandle(h);
+	if (!wrote || !MoveFileExW(tmp.c_str(), out.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+		DeleteFileW(tmp.c_str());
+		return 2;
+	}
+	return 0;
+}
 
 int RunMcpServer(const std::wstring& exeDir, const std::wstring& pobDirOverride)
 {
@@ -555,28 +628,9 @@ int RunMcpServer(const std::wstring& exeDir, const std::wstring& pobDirOverride)
 	SetHandleInformation(g_out, HANDLE_FLAG_INHERIT, 0);
 	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
 	if (err && err != INVALID_HANDLE_VALUE) SetHandleInformation(err, HANDLE_FLAG_INHERIT, 0);
-	// A client that kills this process must take the engine child with it:
-	// an orphaned POB exits later and writes Settings.xml into a sandbox that
-	// has already been cleaned up. The job handle closes when this process dies.
-	if (HANDLE job = CreateJobObjectW(nullptr, nullptr)) {
-		JOBOBJECT_EXTENDED_LIMIT_INFORMATION li{};
-		li.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-		SetInformationJobObject(job, JobObjectExtendedLimitInformation, &li, sizeof(li));
-		AssignProcessToJobObject(job, GetCurrentProcess());
-	}
+	KillEngineWithThisProcess();
 
-	std::wstring pobDir = pobDirOverride;
-	if (pobDir.empty()) pobDir = DetectInstalls(exeDir).poe1Dir;
-	// A hand-written client config often says --pob D:/... : the sandbox's
-	// junctions take this path verbatim, and an NT junction target with '/' in
-	// it resolves to nothing (POB then fails on require "xml"). Canonicalise.
-	for (wchar_t& ch : pobDir) if (ch == L'/') ch = L'\\';
-	if (!pobDir.empty()) {
-		wchar_t full[MAX_PATH * 2] = {};
-		const DWORD n = GetFullPathNameW(pobDir.c_str(), MAX_PATH * 2, full, nullptr);
-		if (n > 0 && n < MAX_PATH * 2) pobDir = full;
-	}
-	while (!pobDir.empty() && pobDir.back() == L'\\') pobDir.pop_back();
+	const std::wstring pobDir = ResolvePobDir(exeDir, pobDirOverride);
 
 	wchar_t dbg[8] = {};
 	const bool debug = GetEnvironmentVariableW(L"POB_ZH_MCP_DEBUG", dbg, 8) > 0 && dbg[0] == L'1';
