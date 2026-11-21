@@ -48794,6 +48794,8 @@
     "Your Mark Transfers to another Enemy within 3 metres when Marked Enemy dies": "當被印記的敵人死亡時，你的印記轉移至 3 公尺內的其他敵人",
     "Deal {0}% of your maximum Life as Fire Damage to Enemies within 1.8 metres when Hit": "被擊中時對 1.8 公尺內的敵人造成等同你 {0}% 最大生命的火焰傷害",
     "Enemies within 3 metres are Crushed": "3 公尺內的敵人被壓碎",
-    "Enemies within 3 metres have Malediction": "3 公尺內的敵人有惡語術"
+    "Enemies within 3 metres have Malediction": "3 公尺內的敵人有惡語術",
+    "+{0}% to Item Rarity": "+{0}%物品稀有度",
+    "+{0}% to Item Rarity per Mana Burn, up to a maximum of 100%": "每層魔力灼燒會+{0}%物品稀有度，最多 100%"
   }
 }

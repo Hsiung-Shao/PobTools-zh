@@ -23162,6 +23162,8 @@
     "Nightmarish Book of Depravity 2": "夢魘．墮落之書 2",
     "Nightmarish Book of Depravity 3": "夢魘．墮落之書 3",
     "Nightmarish Wings of Lycia 1": "夢魘．利西亞之翼 1",
-    "Nightmarish Wings of Lycia 2": "夢魘．利西亞之翼 2"
+    "Nightmarish Wings of Lycia 2": "夢魘．利西亞之翼 2",
+    "(Overcapped Resistance is the amount by whch Uncapped Resistance is higher than Maximum Resistance)": "（ 超過上限的抗性是指絕對抗性高於最大抗性的值 ）",
+    "(Uncapped Resistance is the value Resistance would have if ignoring Maximum Resistance)": "（不將抗性上限列入計算的抗性絕對值）"
   }
 }
