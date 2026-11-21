@@ -275,12 +275,19 @@ return function(M, ctx)
 		local name = a and a.name
 		if type(name) ~= "string" or name == "" then argerr("name required: a file name for Builds\\AI\\ (no folders)") end
 		name = name:gsub("%.[xX][mM][lL]$", "")
-		if name == "" or name:find("[\\/:%c]") or name:find("..", 1, true) then
+		if name == "" or name:find("[\\/:%c]") or name:find("..", 1, true) or name:find("[%. ]$") then
 			argerr("bad name %q: a plain file name, without folders, \"..\" or \":\"", a.name)
 		end
 		local b = ensure_build()
+		local path = main().buildPath .. "AI\\" .. name .. ".xml"
+		-- Checked here too: save_build_as lets a build loaded from this very file save over it.
+		local f = io.open(path, "r")
+		if f then
+			f:close()
+			argerr("already exists: Builds\\AI\\%s.xml; pick another name", name)
+		end
 		local keep = { b.dbFileName, b.buildName, b.dbFileSubPath, b.unsaved }
-		local ok, r = pcall(M.save_build_as, { path = main().buildPath .. "AI\\" .. name .. ".xml" })
+		local ok, r = pcall(M.save_build_as, { path = path })
 		b.dbFileName, b.buildName, b.dbFileSubPath, b.unsaved = keep[1], keep[2], keep[3], keep[4]
 		if not ok then error(r, 0) end
 		if r.exists then argerr("already exists: Builds\\AI\\%s.xml; pick another name", name) end
@@ -1237,14 +1244,15 @@ return function(M, ctx)
 			add("- Not available: " .. scErr)
 		else
 			local cols = { "CombinedDPS", "FullDPS", "TotalEHP", "Life", "EnergyShield", "PhysicalMaximumHitTaken" }
-			add("| Scenario | " .. table.concat(cols, " | ") .. " |")
-			add("|---" .. string.rep("|---", #cols) .. "|")
+			local nc = #cols + (sc.minionDps and 1 or 0)
+			add("| Scenario | " .. table.concat(cols, " | ") .. (sc.minionDps and " | Minion CombinedDPS" or "") .. " |")
+			add("|---" .. string.rep("|---", nc) .. "|")
 			local names = { { "current", "As configured" }, { "pinnacle", "Pinnacle boss" }, { "uber", "Uber pinnacle boss" }, { "flasksOff", "All flasks off" } }
 			for _, n in ipairs(names) do
 				local s, row = sc.scenarios[n[1]] or {}, {}
 				for i, k in ipairs(cols) do row[i] = num(s[k]) end
-				add("| " .. n[2] .. " | " .. table.concat(row, " | ") .. " |" ..
-					(sc.minionDps and (" minion CombinedDPS " .. num(sc.minionDps[n[1]])) or ""))
+				if sc.minionDps then row[nc] = num(sc.minionDps[n[1]]) end
+				add("| " .. n[2] .. " | " .. table.concat(row, " | ") .. " |")
 			end
 		end
 		add("")

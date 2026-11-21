@@ -6,7 +6,8 @@
 // The work happens in a headless POB child against a sandbox copy of the
 // install (<exeDir>PobTools\mcp_sandbox): Data\bridge\mcp_tools.lua answers
 // `mcp_call`, and Data\bridge\mcp_tools.json lists the tools, so both ship
-// with the data line. Nothing is written to the user's POB folder.
+// with the data line. Nothing is written to the user's POB folder, except a new
+// file in Builds\AI\ by the save_build tool.
 #pragma once
 
 #include <string>

@@ -689,6 +689,8 @@ bool ServeLoop(Engine& eng, const Tools& tl, bool daemon)
 				json result = known ? CallTool(eng, name, params.value("arguments", json::object()), debug)
 				                    : ToolError("unknown tool " + name);
 				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", result}});
+			} else if (daemon && method == "agent/info") {
+				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"pob", narrow(eng.PobDir())}}}});
 			} else if (daemon && method == "agent/stop") {
 				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"stopping", true}}}});
 				return true;

@@ -1199,7 +1199,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const st
 		CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
 		// Through a file: a share code can be longer than a command line allows.
 		const std::wstring srcFile = exeDir + L"PobTools\\ai_report_src.txt";
-		std::ofstream(std::filesystem::path(srcFile), std::ios::binary | std::ios::trunc) << reportSrc;
+		std::ofstream src(std::filesystem::path(srcFile), std::ios::binary | std::ios::trunc);
+		src << reportSrc;
+		src.close();
+		if (!src) DeleteFileW(srcFile.c_str()); // no stale source: the child then fails instead of reporting another build
 		const std::wstring tail = L"--report \"@" + srcFile + L"\" --pob \"" + pob + L"\" --out \"" + reportOut + L"\"";
 		reportJob = std::async(std::launch::async, [r = reportRun, exeDir, tail]() { return RunReportChild(*r, exeDir, tail); });
 	};

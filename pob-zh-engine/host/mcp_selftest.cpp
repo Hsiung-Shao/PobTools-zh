@@ -3536,6 +3536,12 @@ void TestC5(const Ctx& c)
 		if (!sc.value("ok", false)) { bad.push_back("讀回的 load_build 沒有 ok:true"); break; }
 		if (!CliStats(c, ss.name, after, err)) { bad.push_back("讀回後 " + err); break; }
 		CompareLifeDps(before, after, bad, d);
+		// 讀回的流派再存同名:要回錯,而且沙盒那份不能被刪(之後還讀得回來)
+		CliOut o;
+		if (!Cli(c, ss.name, {L"save_build", L"name=" + widen(name)}, o, err)) { bad.push_back(err); break; }
+		const std::string why = ExpectCliError(o);
+		if (!why.empty()) bad.push_back("讀回後同名再存: " + why);
+		if (!CliTool(c, ss.name, {L"load_build", L"-"}, sc, err, CliJsonArgs(json{{"source", "AI/" + name + ".xml"}}))) bad.push_back("同名再存被拒後讀不回: " + err);
 	} while (false);
 	DeleteFileW(file.c_str());
 	if (!aiExisted) RemoveDirectoryW(aiDir.c_str());
@@ -3566,6 +3572,12 @@ void TestC6(const Ctx& c)
 		const std::string why = ExpectCliError(o);
 		if (!why.empty()) bad.push_back("同名再存: " + why);
 		if (ReadFileA(file) != first) bad.push_back("同名再存後原檔位元組被改");
+		// 純數字檔名是字串參數,不能被當成數字(name=3.30 不是 3.3)
+		const std::wstring num = std::to_wstring(GetCurrentProcessId()) + L".30";
+		const std::wstring numFile = aiDir + L"\\" + num + L".xml";
+		if (!CliTool(c, ss.name, {L"save_build", L"name=" + num}, sc, err)) bad.push_back("數字檔名 " + err);
+		else if (!file_exists(numFile)) bad.push_back("數字檔名存檔後找不到 " + narrow(num) + ".xml");
+		DeleteFileW(numFile.c_str());
 		if (bad.empty()) d = "第二次回錯,原檔 " + std::to_string(first.size()) + " 位元組不變";
 	} while (false);
 	DeleteFileW(file.c_str());
@@ -3591,7 +3603,7 @@ void TestC7(const Ctx& c)
 		if (!CliTool(c, ss.name, {L"new_build", L"class=Witch"}, sc, err)) { bad.push_back(err); break; }
 		Snap before, after;
 		Snapshot(builds, L"", before, false);
-		for (const wchar_t* nm : {L"..\\x", L"C:\\x", L"a/b"}) {
+		for (const wchar_t* nm : {L"..\\x", L"C:\\x", L"a/b", L"x."}) {
 			CliOut o;
 			if (!Cli(c, ss.name, {L"save_build", std::wstring(L"name=") + nm}, o, err)) { bad.push_back(err); break; }
 			const std::string why = ExpectCliError(o);

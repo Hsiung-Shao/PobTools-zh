@@ -217,9 +217,18 @@ bool ReadStdin(std::string& out)
 }
 
 // key=value (value parsed as JSON when it is JSON, else a string), @file.json, - (stdin).
-bool ParseArgs(const std::vector<std::wstring>& in, json& args, std::string& err)
+bool ParseArgs(const std::string& tool, const std::vector<std::wstring>& in, json& args, std::string& err)
 {
 	args = json::object();
+	// A string parameter keeps its text: name=3.30 is a file name, not 3.3.
+	json props;
+	std::string list;
+	if (read_file_utf8(g_exeDir + L"Data\\bridge\\mcp_tools.json", list)) {
+		const json d = json::parse(list, nullptr, false);
+		if (d.is_object())
+			for (const auto& t : d.value("tools", json::array()))
+				if (t.value("name", "") == tool) props = t.value("inputSchema", json::object()).value("properties", json::object());
+	}
 	for (const auto& a : in) {
 		std::string text;
 		if (a == L"-" || (!a.empty() && a[0] == L'@')) {
@@ -233,10 +242,20 @@ bool ParseArgs(const std::vector<std::wstring>& in, json& args, std::string& err
 		const size_t eq = a.find(L'=');
 		if (eq == std::wstring::npos || eq == 0) { err = "argument " + narrow(a) + " is not key=value, @file.json or -"; return false; }
 		const std::string v = narrow(a.substr(eq + 1));
+		const std::string k = narrow(a.substr(0, eq));
 		const json j = json::parse(v, nullptr, false);
-		args[narrow(a.substr(0, eq))] = j.is_discarded() ? json(v) : j;
+		const bool asText = props.is_object() && props.contains(k) && props[k].value("type", "") == "string";
+		args[k] = j.is_discarded() || asText ? json(v) : j;
 	}
 	return true;
+}
+
+std::wstring FullPath(std::wstring p)
+{
+	wchar_t buf[MAX_PATH * 4] = {};
+	if (GetFullPathNameW(p.c_str(), MAX_PATH * 4, buf, nullptr)) p = buf;
+	while (!p.empty() && p.back() == L'\\') p.pop_back();
+	return p;
 }
 
 } // namespace
@@ -305,11 +324,20 @@ int wmain(int argc, wchar_t** argv)
 	}
 
 	json args = json::object();
-	if (cmd != L"tools" && cmd != L"report" && !ParseArgs(rest, args, err)) return ToolFail(err);
+	if (cmd != L"tools" && cmd != L"report" && !ParseArgs(narrow(cmd), rest, args, err)) return ToolFail(err);
 	if (cmd == L"report" && rest.size() != 1) return ToolFail("usage: pobtools report <share code | build URL | Builds file name>");
 
 	HANDLE pipe = Open(session, pob, pid, err);
 	if (pipe == INVALID_HANDLE_VALUE) return Fail(err);
+	// --pob only takes effect when the daemon starts: say so rather than work on the other folder.
+	if (!pob.empty()) {
+		json info;
+		const std::string has = Rpc(pipe, "agent/info", json::object(), info, err) ? info.value("result", json::object()).value("pob", "") : "";
+		if (!has.empty() && _wcsicmp(FullPath(widen(has)).c_str(), FullPath(pob).c_str()) != 0) {
+			CloseHandle(pipe);
+			return Fail("session " + narrow(session) + " already runs on " + has + "; run `pobtools stop` first or use another --session");
+		}
+	}
 	int rc = 0;
 	if (cmd == L"tools") {
 		json resp;
@@ -317,7 +345,11 @@ int wmain(int argc, wchar_t** argv)
 		else Out(json{{"tools", resp.value("result", json::object()).value("tools", json::array())}});
 	} else if (cmd == L"report") {
 		json sc;
-		rc = CallAndPrint(pipe, "load_build", json{{"source", narrow(rest[0])}}, nullptr, false);
+		// A share code can be longer than a command line allows: @file or - (stdin).
+		std::string src = narrow(rest[0]);
+		if (rest[0] == L"-") { src.clear(); ReadStdin(src); }
+		else if (rest[0][0] == L'@' && !read_file_utf8(rest[0].substr(1), src)) rc = ToolFail("cannot read " + narrow(rest[0].substr(1)));
+		if (rc == 0) rc = CallAndPrint(pipe, "load_build", json{{"source", src}}, nullptr, false);
 		if (rc == 0) rc = CallAndPrint(pipe, "build_report", json::object(), &sc, false);
 		if (rc == 0) {
 			const json t = sc.value("text", json());
