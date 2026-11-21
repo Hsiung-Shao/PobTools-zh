@@ -129,7 +129,9 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	std::wstring shotPath = ShotEnv(L"POBTOOLS_TOOL_SHOT");
 	const bool shotMode = !shotPath.empty();
 	const double shotSince = glfwGetTime();
-	const double kShotSettle = 3.0;   // icon downloads and the first layout passes
+	// icon downloads and the first layout passes; POBTOOLS_TOOL_SHOT_SETTLE (seconds) waits longer, for a panel that fetches prices
+	const std::wstring settleEnv = ShotEnv(L"POBTOOLS_TOOL_SHOT_SETTLE");
+	const double kShotSettle = settleEnv.empty() ? 3.0 : (std::max)(3.0, _wtof(settleEnv.c_str()));
 	auto showIfDue = [&](bool presented) {
 		if (firstShow.Due(presented, glfwGetTime())) {
 			glfwShowWindow(win);

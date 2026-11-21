@@ -230,6 +230,13 @@
 	X(pobProtocolHint,   u8"讓 poe.ninja / pobb.in 等網站的「Open in PoB」開啟 PobTools(會取代官方安裝版 POB 的連結)。點連結時不顯示啟動器,直接依「預設介面」開啟中文化 POB 並匯入那個建置。只寫入目前使用者的登錄檔;取消勾選只移除指向這個 PobTools 的登記。", \
 	                     u8"Lets the \"Open in PoB\" buttons on poe.ninja, pobb.in and other sites open PobTools (this replaces the official POB install's link handling). A link skips the launcher and opens the localised POB in your default interface with that build imported. Only the current user's registry is written; unticking removes only the registration that points at this PobTools.") \
 	X(pobProtocolFail,   u8"無法變更連結登記(登錄檔寫入失敗),已還原勾選。", u8"Could not change the link registration (registry write failed); the setting was reverted.") \
+	X(pobLinkModeRow,    u8"已開著 POB 時",                u8"When POB is already open") \
+	X(pobLinkNewWindow,  u8"新視窗",                       u8"New window") \
+	X(pobLinkReplace,    u8"取代目前建置",                 u8"Replace current build") \
+	X(pobLinkModeHintShort, u8"連結要另開視窗,還是換掉已開視窗的建置", \
+	                     u8"Open links in another window, or swap the open window's build") \
+	X(pobLinkModeHint,   u8"新視窗:每個連結都開一個新的 POB 視窗,已開的建置不受影響。取代目前建置:新介面直接把建置換進已開的視窗;經典 POB 會先關掉最後使用的視窗(它會問要不要存檔)再開。同一份 POB 開著兩個視窗時(不分介面),最後關掉的那個會把最近開啟清單等設定寫回。", \
+	                     u8"New window: every link opens its own POB window and leaves the open builds alone. Replace current build: the new interface swaps the build into the open window; classic POB first closes the last-used window (it asks whether to save) and then opens the link. With two POB windows open on the same install (either interface), whichever closes last writes back the recent-builds list and other settings.") \
 	/* AI clients over MCP (pob-zh.exe --mcp, host/mcp_server.h): copy the \
 	   registration for this exe into each client. */ \
 	X(mcpRow,            u8"AI 串接(MCP)",                u8"AI assistants (MCP)") \
@@ -285,6 +292,8 @@
 	X(importNeedPoe2,    u8"PoE2 的流派未匯入，請先下載 PoE2 版 POB。", u8" PoE2 builds were not imported: download the PoE2 POB first.") \
 	X(launchBlockedUpdating, u8"更新下載中，完成後即可啟動", u8"An update is downloading; you can launch once it is done") \
 	X(editorName,        u8"翻譯編輯器",                   u8"Translation editor")                    \
+	X(bossProfitTool,    u8"王戰收益",                     u8"Boss profit")                           \
+	X(tipBossProfit,     u8"各王掉落期望值、門票與利潤",   u8"Expected drops, entry cost and profit per boss") \
 	X(warehouseBadge,    u8"PoE1 國際服",                  u8"PoE1 international")                    \
 	X(tipFilter,         u8"編輯 .filter、預覽掉落外觀",   u8"Edit .filter files, preview how drops look") \
 	X(tipAtlas,          u8"配點、地圖格、星盤與每張圖成本", u8"Passives, map device, astrolabes and the cost of each map") \

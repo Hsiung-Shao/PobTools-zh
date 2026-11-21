@@ -16,6 +16,16 @@ class FakeTransport implements Transport {
 }
 
 describe("Bridge", () => {
+  it("重載後的新頁面不收舊頁面遺留的回應", async () => {
+    const t = new FakeTransport();
+    new Bridge(t).call("get_sidebar"); // 舊頁面:請求送出後頁面就重載了
+    const old = JSON.parse(t.sent[0]);
+    const p = new Bridge(t).call("get_build_info");
+    const cur = JSON.parse(t.sent[1]);
+    t.reply({ id: old.id, result: { from: "old" } });
+    t.reply({ id: cur.id, result: { from: "new" } });
+    expect(await p).toEqual({ from: "new" });
+  });
   it("matches responses to requests by id", async () => {
     const t = new FakeTransport();
     const b = new Bridge(t);

@@ -545,6 +545,10 @@ if (WIN32)
         # 輿圖策略 × 倉庫收益：每張圖成本（純資料）+ 共用 poe.ninja 價格來源
         host/atlas_cost.cpp
         host/warehouse_price_feed.cpp
+        # 王戰收益:掉率表 x poe.ninja 價格(純資料 + 面板 + 自檢)
+        host/boss_profit.cpp
+        host/boss_profit_ui.cpp
+        host/boss_profit_selftest.cpp
         dep/miniz/miniz.c
         engine/common/base64.c
         host/http_client.cpp
@@ -631,6 +635,8 @@ if (WIN32)
     # Content.ggpk by tools/ggpk_zh/gen_scarabs.py --verify; unlike the atlas
     # tree it has no online updater, so a new league needs a fresh run.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/scarabs_poe1.json" DESTINATION "Data")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/boss_drops_poe1.json" DESTINATION "Data")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/boss_items_zh.json" DESTINATION "Data")
     # Astrolabe catalogue (3.29 Shaped Regions) and the atlas map list behind the
     # planner's quadrant slots and main-map pick. Regenerated from a local
     # Content.ggpk by tools/ggpk_zh/gen_astrolabes.py --verify and

@@ -81,7 +81,9 @@ type Pending = {
 export class Bridge {
   private pending = new Map<number, Pending>();
   private listeners = new Map<string, Set<(data: unknown) => void>>();
-  private seq = 0;
+  // A reloaded page (browser mode, a theme switch) shares the engine with the old one,
+  // whose answers may still be on the way: start ids at random so they never match ours.
+  private seq = Math.floor(Math.random() * 2 ** 40);
   /** Every raw line received, newest last; for the debug panel and `dump()`. */
   readonly log: string[] = [];
 

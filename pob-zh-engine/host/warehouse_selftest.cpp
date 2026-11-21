@@ -280,6 +280,14 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		rep.check("T3i null-riddled line still priced",
 		          out.size() == 1 && out[0].first == "unique|Survivor|" &&
 		              out[0].second.chaos == 10.0);
+		// Invitations have no baseType: boss_profit looks them up as currency|<name>.
+		out.clear();
+		ok = NinjaPriceSource::ParseItemOverview(
+		    R"json({"lines":[{"name":"Screaming Invitation","chaosValue":40,"listingCount":9}]})json",
+		    "Invitation", &out, &err);
+		rep.check("T3p invitation keys as currency|name",
+		          ok && out.size() == 1 && out[0].first == "currency|Screaming Invitation" &&
+		              out[0].second.chaos == 40.0 && !out[0].second.lowConfidence, err);
 		const char kNullsExch[] = R"json({"items":[{"id":1,"name":null},{"id":2,"name":"Ok"}],
 		  "lines":[{"id":1,"primaryValue":3},{"id":2,"primaryValue":null},{"id":null}]})json";
 		out.clear();

@@ -18,6 +18,14 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.8.13 (2026-11-22)\n"
+	u8"Fixed\n"
+	u8"　·New interface: some text in the light themes was too faint to read.\n"
+	u8"　·New interface: the page went blank after a reload or a theme switch.\n"
+	u8"Added\n"
+	u8"　·Boss profit (PoE1, beta): expected drop value, entry cost and profit for each boss; drop rates and prices can be overridden.\n"
+	u8"　·Site links: when PoB is already open, \"Open in PoB\" can open a new window or replace the current build. (New window by default)\n"
+	u8"\n"
 	u8"v1.8.12 (2026-11-18)\n"
 	u8"Fixed\n"
 	u8"　·PoB trade: the trade site link from \"Search for\" would not open.\n"

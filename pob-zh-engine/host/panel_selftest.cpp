@@ -12,6 +12,7 @@
 #include "filter_editor.h"
 #include "launcher_editor.h"
 #include "warehouse_tool.h"
+#include "boss_profit_tool.h"
 #include "timeless_jewel_ui.h"
 #include "tool_panel.h"
 #include "ui_theme.h"
@@ -145,6 +146,7 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 				{ "tj",     &CreateTimelessJewelPanel },
 				{ "atlas",  &CreateAtlasPlannerPanel },
 				{ "warehouse", &CreateWarehousePanel },
+				{ "bossprofit", &CreateBossProfitPanel },
 			};
 			for (const Entry& ent : kPanels) {
 			std::unique_ptr<IToolPanel> panel(ent.make());

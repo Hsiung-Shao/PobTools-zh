@@ -190,8 +190,8 @@
               {#if row.label}
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                 <span
-                  class="rl"
-                  style:color={pobColor(row.color) ?? "var(--ink-2)"}
+                  class="rl pob-lit"
+                  style:--pc={pobColor(row.color) ?? "var(--ink-2)"}
                   role={lone ? "button" : undefined}
                   class:live={!!lone}
                   class:pinned={!!lone && bd?.pinned && bd.key === loneKey}

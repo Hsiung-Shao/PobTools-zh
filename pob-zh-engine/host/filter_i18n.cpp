@@ -56,6 +56,9 @@ void FilterI18n::Load(const std::wstring& exeDir, const std::string& locale)
 			if (!names_.count(en)) offCatalog_.emplace_back(en, zh);
 		std::sort(offCatalog_.begin(), offCatalog_.end());
 	}
+	// Names the boss-profit panel shows that the catalog file lacks. Kept out of that file on
+	// purpose: every key there becomes a row of the filter item library, and these have no class.
+	load_flat(exeDir + L"Data\\boss_items_zh.json", names_);
 	for (const wchar_t* f : { L"items.json", L"uniques.json", L"gems.json", L"ui.json" })
 		load_entries(dir + f, names_);
 
