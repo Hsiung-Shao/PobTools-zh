@@ -101,6 +101,22 @@
       }
     },
     {
+      "name": "scenarios",
+      "description": "The build's real numbers in harder situations: key numbers as configured now (current), against a Pinnacle boss (pinnacle), against an Uber Pinnacle boss (uber), and with every flask switched off (flasksOff, boss setting unchanged). Does not change the build. / 流派在實戰情境下的真實數值:現況(current)、對巔峰首領(pinnacle)、對超級巔峰首領(uber)、所有藥劑關閉(flasksOff,首領設定不變)。不會改動流派。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "audit_inflation",
+      "description": "Find what props up the sheet numbers: compares the build as configured (current) with a conservative baseline (Pinnacle boss, flasks off, custom modifiers cleared, every other changed configuration option back to its default), and lists the configuration options, flasks and custom modifiers that each add the most DPS / EHP on their own (contributors, largest first). Party (teammate auras) is not audited in this version (partyAudited=false). Does not change the build. / 找出撐高面板數字的來源:比較現況(current)與保守基準(baseline:巔峰首領、藥劑全關、自訂詞綴清空、其他改過的設定還原預設),並列出單獨貢獻最多 DPS / EHP 的設定項、藥劑與自訂詞綴(contributors,由大到小)。隊友光環(Party)此版不納入(partyAudited=false)。不會改動流派。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
       "name": "tree_summary",
       "description": "Allocated passive count, keystones, notables and jewel sockets (with the jewel in each).",
       "inputSchema": {

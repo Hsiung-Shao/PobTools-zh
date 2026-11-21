@@ -45,7 +45,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[40] = {
+const char* const kTitles[45] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -86,6 +86,11 @@ const char* const kTitles[40] = {
 	"rank_supports 依 POB 估算排序",
 	"rank_anoints 依 POB 排序且不動建置",
 	"沒有護身符時回報參數錯誤",
+	"A1 多情境回傳四組數值",
+	"A2 王的情境讓 DPS 不高於無王",
+	"A3 去水分後流派不變",
+	"A4 非預設設定會被列為來源",
+	"A5 預設設定時不誤報設定項",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -2716,6 +2721,184 @@ void TestM39(const Ctx& c)
 	Record(39, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
 }
 
+// M40-M44(A1-A5):scenarios、audit_inflation。每項自己起行程,互不影響流派狀態。
+
+bool NumOf(const json& o, const char* key, double& v)
+{
+	if (!o.is_object() || !o.contains(key) || !o[key].is_number()) return false;
+	v = o[key].get<double>();
+	return true;
+}
+
+// scenarios 回傳四組數值;缺欄位時 err 填原因。
+bool CallScenarios(McpProc& p, json& sc, std::string& err)
+{
+	ToolRes r = p.Call("scenarios", json::object(), kSlowMs);
+	if (!r.Ok()) { err = "scenarios 失敗: " + Cut(r.Why(), 200); return false; }
+	if (!r.sc.contains("scenarios") || !r.sc["scenarios"].is_object()) { err = "scenarios 沒有物件: " + Cut(r.sc.dump(), 200); return false; }
+	sc = r.sc["scenarios"];
+	return true;
+}
+
+// 設 enemyIsBoss=None;失敗時 err 填原因。
+bool SetBossNone(McpProc& p, std::string& err)
+{
+	ToolRes r = p.Call("set_config", {{"key", "enemyIsBoss"}, {"value", "None"}}, kSlowMs);
+	if (!r.Ok()) { err = "set_config(enemyIsBoss=None) 失敗: " + Cut(r.Why(), 200); return false; }
+	return true;
+}
+
+// A1 多情境回傳四組數值
+void TestA1(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	Ctx oc;
+	do {
+		std::string err;
+		if (!BootSampleProc(p, oc, c, err)) { bad.push_back(err); break; }
+		json sc;
+		if (!CallScenarios(p, sc, err)) { bad.push_back(err); break; }
+		for (const char* k : {"current", "pinnacle", "uber", "flasksOff"}) {
+			double v = 0;
+			if (!sc.contains(k) || !sc[k].is_object()) { bad.push_back(std::string("缺 ") + k); continue; }
+			if (!NumOf(sc[k], "CombinedDPS", v)) bad.push_back(std::string(k) + " 沒有數字 CombinedDPS");
+			if (!NumOf(sc[k], "Life", v)) bad.push_back(std::string(k) + " 沒有數字 Life");
+		}
+		if (!bad.empty()) break;
+		json stats;
+		if (!GetStats(p, stats, err)) { bad.push_back(err); break; }
+		const auto diff = StatDiffKeys(sc["current"], stats);
+		if (!diff.empty()) bad.push_back("current 與 build_summary.stats 不同: " + JoinFirst(diff, 4));
+		else d = "四組齊全,current 與 build_summary.stats 逐鍵相同(" + std::to_string(stats.size()) + " 鍵)";
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(40, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// A2 王的情境讓 DPS 不高於無王
+void TestA2(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	Ctx oc;
+	do {
+		std::string err;
+		if (!BootSampleProc(p, oc, c, err)) { bad.push_back(err); break; }
+		if (!SetBossNone(p, err)) { bad.push_back(err); break; }
+		json sc;
+		if (!CallScenarios(p, sc, err)) { bad.push_back(err); break; }
+		double cur = 0, pin = 0, ub = 0;
+		if (!NumOf(sc["current"], "CombinedDPS", cur) || !NumOf(sc["pinnacle"], "CombinedDPS", pin) || !NumOf(sc["uber"], "CombinedDPS", ub)) {
+			bad.push_back("current/pinnacle/uber 缺數字 CombinedDPS: " + Cut(sc.dump(), 160));
+			break;
+		}
+		d = "current=" + Num(cur) + " pinnacle=" + Num(pin) + " uber=" + Num(ub);
+		if (cur <= 0) { bad.push_back("無法判定:樣本流派 CombinedDPS 為 " + Num(cur) + "(需 > 0 才能比大小)"); break; }
+		const double eps = 1e-9 * cur;
+		if (pin > cur + eps) bad.push_back("pinnacle 比無王 current 高");
+		if (ub > pin + eps) bad.push_back("uber 比 pinnacle 高");
+		if (!(ub < cur)) bad.push_back("uber 沒有低於 current(王的設定沒生效?)");
+		p.Call("set_config", {{"key", "enemyIsBoss"}, {"value", "Pinnacle"}}, kSlowMs); // 設回預設
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(41, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5) + (d.empty() ? "" : " (" + d + ")"));
+}
+
+// A3 去水分後流派不變
+void TestA3(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	Ctx oc;
+	do {
+		std::string err;
+		if (!BootSampleProc(p, oc, c, err)) { bad.push_back(err); break; }
+		const std::string before = ExportCodeOf(p, err);
+		if (before.empty()) { bad.push_back("呼叫前 " + err); break; }
+		ToolRes r = p.Call("audit_inflation", json::object(), kSlowMs);
+		if (!r.Ok()) { bad.push_back("audit_inflation 失敗: " + Cut(r.Why(), 200)); break; }
+		if (!r.sc.contains("reverted") || !r.sc["reverted"].is_boolean() || !r.sc["reverted"].get<bool>())
+			bad.push_back("reverted 不是 true: " + (r.sc.contains("reverted") ? r.sc["reverted"].dump() : std::string("缺")));
+		const std::string after = ExportCodeOf(p, err);
+		if (after.empty()) bad.push_back("呼叫後 " + err);
+		else if (after != before) bad.push_back("audit_inflation 後 export_code 不同(流派被動到)");
+		else d = "前後 code 相同(" + std::to_string(before.size()) + " 字元)、reverted=true";
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(42, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// A4 非預設設定會被列為來源
+void TestA4(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	Ctx oc;
+	do {
+		std::string err;
+		if (!BootSampleProc(p, oc, c, err)) { bad.push_back(err); break; }
+		if (!SetBossNone(p, err)) { bad.push_back(err); break; }
+		ToolRes r = p.Call("audit_inflation", json::object(), kSlowMs);
+		if (!r.Ok() || !r.sc.contains("contributors") || !r.sc["contributors"].is_array()) { bad.push_back("audit_inflation 失敗: " + Cut(r.Why(), 200)); break; }
+		const auto& cs = r.sc["contributors"];
+		if (cs.size() > 15) bad.push_back("contributors 有 " + std::to_string(cs.size()) + " 筆(上限 15)");
+		bool found = false;
+		double dps = 0;
+		std::vector<double> mags;
+		bool shapeOk = true;
+		for (const auto& it : cs) {
+			double v = 0;
+			if (!it.is_object() || !NumOf(it, "dps", v)) { shapeOk = false; continue; }
+			mags.push_back(std::fabs(v));
+			if (it.value("kind", std::string()) == "config" && it.value("key", std::string()) == "enemyIsBoss") { found = true; dps = v; }
+		}
+		if (!shapeOk) bad.push_back("有項目不是物件或缺數字 dps");
+		for (size_t i = 1; i < mags.size(); i++)
+			if (mags[i] > mags[i - 1]) { bad.push_back("未依 |dps| 由大到小排序(第" + std::to_string(i) + "筆)"); break; }
+		if (!found) bad.push_back("找不到 kind=config、key=enemyIsBoss 的項目(共 " + std::to_string(cs.size()) + " 筆)");
+		else if (!(dps > 0)) bad.push_back("enemyIsBoss 的 dps 不是正值: " + Num(dps));
+		else d = "enemyIsBoss dps=" + Num(dps) + ",共 " + std::to_string(cs.size()) + " 筆";
+		p.Call("set_config", {{"key", "enemyIsBoss"}, {"value", "Pinnacle"}}, kSlowMs); // 設回預設
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(43, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// A5 預設設定時不誤報設定項
+void TestA5(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	do {
+		std::string err;
+		if (!StartMcpEx(p, c.exeDir, c.pobDir, false, err)) { bad.push_back("啟動失敗: " + err); break; }
+		ToolRes nb = p.Call("new_build", {{"class", "Witch"}}, kSlowMs);
+		if (!nb.Ok()) { bad.push_back("new_build 失敗: " + Cut(nb.Why(), 100)); break; }
+		ToolRes r = p.Call("audit_inflation", json::object(), kSlowMs);
+		if (!r.Ok() || !r.sc.contains("contributors") || !r.sc["contributors"].is_array()) { bad.push_back("audit_inflation 失敗: " + Cut(r.Why(), 200)); break; }
+		std::vector<std::string> cfg;
+		for (const auto& it : r.sc["contributors"])
+			if (it.is_object() && it.value("kind", std::string()) == "config") cfg.push_back(it.value("key", std::string("?")));
+		if (!cfg.empty()) bad.push_back("全新流派卻列出設定項: " + JoinFirst(cfg, 4));
+		if (!r.sc.contains("partyAudited") || !r.sc["partyAudited"].is_boolean() || r.sc["partyAudited"].get<bool>())
+			bad.push_back("partyAudited 不是 false: " + (r.sc.contains("partyAudited") ? r.sc["partyAudited"].dump() : std::string("缺")));
+		if (bad.empty()) d = "全新流派沒有 config 項,partyAudited=false(contributors " + std::to_string(r.sc["contributors"].size()) + " 筆)";
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(44, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -2804,7 +2987,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	auto failAll = [&](const std::string& why) {
 		for (int n = 1; n <= 11; n++) Record(n, false, why); // M12 是純函式,不受影響
-		for (int n = 13; n <= 39; n++) Record(n, false, why);
+		for (int n = 13; n <= 44; n++) Record(n, false, why);
 	};
 
 	std::wstring sampleRel;
@@ -2900,6 +3083,11 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			Guard(37, [&] { TestM37(c2); });
 			Guard(38, [&] { TestM38(c2); });
 			Guard(39, [&] { TestM39(c2); });
+			Guard(40, [&] { TestA1(c2); });
+			Guard(41, [&] { TestA2(c2); });
+			Guard(42, [&] { TestA3(c2); });
+			Guard(43, [&] { TestA4(c2); });
+			Guard(44, [&] { TestA5(c2); });
 		}
 
 		std::vector<std::string> all = mainLines;
@@ -2912,7 +3100,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// 報告:每項一行,最後一行總計
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 39; n++) {
+	for (int n = 1; n <= 44; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";

@@ -861,6 +861,19 @@ return function(M, ctx)
 
 	-- ---- what if ---------------------------------------------------------
 
+	-- after - before for every key that moved (a key gone from after counts as 0).
+	local function stat_diff(before, after)
+		local diff = obj({})
+		for k, v in pairs(after) do
+			local d = v - (before[k] or 0)
+			if d ~= 0 then diff[k] = d end
+		end
+		for k, v in pairs(before) do
+			if after[k] == nil then diff[k] = -v end
+		end
+		return diff
+	end
+
 	local MUTATING = { allocate_nodes = true, deallocate_nodes = true, set_skill_group = true, equip_item = true, unequip_item = true, set_config = true }
 
 	function T.what_if(a)
@@ -890,15 +903,146 @@ return function(M, ctx)
 				"): load the build again before trusting any number", 0)
 		end
 		if failed then error(failed .. " -- the build was restored", 0) end
-		local diff = obj({})
-		for k, v in pairs(after) do
-			local d = v - (before[k] or 0)
-			if d ~= 0 then diff[k] = d end
+		return { before = before, after = after, diff = stat_diff(before, after), reverted = true }
+	end
+
+	-- ---- scenarios / inflation audit -------------------------------------
+
+	-- Run fn on the live build, then always put it back from the share code
+	-- (as what_if does): any step may throw half way through.
+	local function measured(fn)
+		local snap = M.export_code().code
+		local viewMode = ensure_build().viewMode
+		local ok, r = pcall(fn)
+		local okRestore, restoreErr = pcall(M.import_code, { code = snap, mode = "replace" })
+		if not okRestore then
+			error((ok and "" or (tostring(r) .. "; ")) .. "RESTORING THE BUILD FAILED (" .. tostring(restoreErr) ..
+				"): load the build again before trusting any number", 0)
 		end
-		for k, v in pairs(before) do
-			if after[k] == nil then diff[k] = -v end
+		-- POB's import opens the build on the tree tab; the tab is saved in the build.
+		ensure_build().viewMode = viewMode
+		if not ok then error(tostring(r) .. " -- the build was restored", 0) end
+		return r
+	end
+
+	-- list_config's options by var (first entry wins), checking the boss
+	-- option up front: guessing another key would measure the wrong enemy.
+	local function config_items()
+		local r = M.list_config()
+		local byVar, order = {}, {}
+		for _, sec in ipairs(r.sections) do
+			for _, it in ipairs(sec.items) do
+				if not byVar[it.var] then byVar[it.var] = it; order[#order + 1] = it end
+			end
 		end
-		return { before = before, after = after, diff = diff, reverted = true }
+		local choices = {}
+		for _, o in ipairs(byVar.enemyIsBoss and byVar.enemyIsBoss.list or {}) do choices[o.val] = true end
+		if not (choices.Pinnacle and choices.Uber) then
+			error("this Path of Building has no enemyIsBoss setting with Pinnacle and Uber choices", 0)
+		end
+		return byVar, order, r.customMods or {}
+	end
+
+	-- Each M.set_config is a full recalculation: skip the ones that change nothing.
+	local function set_boss(cur, want)
+		if cur ~= want then M.set_config({ var = "enemyIsBoss", value = want }) end
+		return want
+	end
+
+	-- Slots with an "active" tick (the bridge's flask slots), ticked and holding an item.
+	local function active_flasks(b)
+		local tab, list = b.itemsTab, {}
+		for _, slot in ipairs(tab.orderedSlots) do
+			local it = slot.controls and slot.controls.activate and slot.active and tab.items[slot.selItemId or 0]
+			if it then list[#list + 1] = { slot = slot.slotName, item = it } end
+		end
+		return list
+	end
+
+	local function flasks_active(list, on)
+		for _, f in ipairs(list) do M.set_slot_active({ slotName = f.slot, active = on }) end
+	end
+
+	function T.scenarios()
+		local b = ensure_build()
+		return measured(function()
+			local byVar = config_items()
+			local s = { current = key_stats(b) }
+			-- Flasks first, so the boss option never has to be put back by hand.
+			local flasks = active_flasks(b)
+			flasks_active(flasks, false)
+			s.flasksOff = key_stats(b)
+			flasks_active(flasks, true)
+			local boss = set_boss(byVar.enemyIsBoss.value, "Pinnacle")
+			s.pinnacle = key_stats(b)
+			set_boss(boss, "Uber")
+			s.uber = key_stats(b)
+			return { scenarios = obj(s), reverted = true }
+		end)
+	end
+
+	-- One POB recalculation per switch (twice per contributor, once more for the
+	-- baseline): the slowest read-only tool, hence its longer host timeout.
+	function T.audit_inflation()
+		local b = ensure_build()
+		local tab = b.configTab
+		if type(tab.GetDefaultState) ~= "function" then error("this Path of Building has no ConfigTab:GetDefaultState", 0) end
+		return measured(function()
+			local byVar, order, custom = config_items()
+			local current = key_stats(b)
+			local list = {}
+			local function measure(kind, key, label, labelZh)
+				local s = key_stats(b)
+				local e = { kind = kind, key = key, label = label, labelZh = labelZh,
+					dps = (current.CombinedDPS or 0) - (s.CombinedDPS or 0), ehp = (current.TotalEHP or 0) - (s.TotalEHP or 0) }
+				if e.dps ~= 0 or e.ehp ~= 0 then list[#list + 1] = e end
+			end
+			-- POB's own "changed" rule (the highlight in ConfigTab): set, and not
+			-- its GetDefaultState (placeholder, else the option's default).
+			local changed = {}
+			for _, it in ipairs(order) do
+				local cur = it.value
+				if cur ~= nil and cur ~= tab:GetDefaultState(it.var, type(cur)) then changed[#changed + 1] = it end
+			end
+			for _, it in ipairs(changed) do
+				M.reset_config({ var = it.var })
+				measure("config", it.var, it.label, it.labelZh)
+				M.set_config({ var = it.var, value = it.value })
+			end
+			local flasks = active_flasks(b)
+			for _, f in ipairs(flasks) do
+				M.set_slot_active({ slotName = f.slot, active = false })
+				local it = f.item
+				measure("flask", f.slot, it.name, (it.title and it.baseName) and (tr(it.title) .. ", " .. tr(it.baseName)) or tr(it.name))
+				M.set_slot_active({ slotName = f.slot, active = true })
+			end
+			local hasCustom = false
+			for _, blk in ipairs(custom) do
+				if blk.enabled and blk.text:match("%S") then hasCustom = true end
+			end
+			-- From here on nothing is put back by hand: the snapshot does it.
+			if hasCustom then
+				M.set_custom_mods({ list = {} })
+				measure("customMods", "customMods", "Custom Modifiers", tr("Custom Modifiers"))
+			end
+			for _, it in ipairs(changed) do
+				if it.var ~= "enemyIsBoss" then M.reset_config({ var = it.var }) end
+			end
+			flasks_active(flasks, false)
+			set_boss(byVar.enemyIsBoss.value, "Pinnacle")
+			local baseline = key_stats(b)
+			table.sort(list, function(x, y)
+				local dx, dy = math.abs(x.dps), math.abs(y.dps)
+				if dx ~= dy then return dx > dy end
+				local ex, ey = math.abs(x.ehp), math.abs(y.ehp)
+				if ex ~= ey then return ex > ey end
+				return x.key < y.key
+			end)
+			local top = {}
+			for i = 1, math.min(15, #list) do top[i] = list[i] end
+			return { current = current, baseline = baseline, diff = stat_diff(current, baseline),
+				contributors = top, partyAudited = false, reverted = true }
+		end)
 	end
 
 	-- ---- entry -----------------------------------------------------------
