@@ -18,6 +18,10 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.8.14 (2026-11-22)\n"
+	u8"Added\n"
+	u8"　·Boss profit: the league can be picked by hand; \"Auto\" follows the stash revenue setting and moves with each new league.\n"
+	u8"\n"
 	u8"v1.8.13 (2026-11-22)\n"
 	u8"Fixed\n"
 	u8"　·New interface: some text in the light themes was too faint to read.\n"
