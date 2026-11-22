@@ -122,9 +122,12 @@ public:
 			requested_ = true;
 			// The picker's list; a failed fetch just leaves 自動 and the saved league to pick from.
 			leagueTh_ = std::thread([this] {
-				std::string e;
-				FetchNinjaLeagues("poe1", leaguesGot_, &e, &leagueStop_);
-				leaguesDone_ = true;
+				try { // an exception leaving a thread ends the whole program
+					std::string e;
+					FetchNinjaLeagues("poe1", leaguesGot_, &e, &leagueStop_);
+					leaguesDone_ = true;
+				} catch (...) {
+				}
 			});
 		}
 		if (leaguesDone_.exchange(false)) leagues_ = std::move(leaguesGot_);
@@ -251,7 +254,7 @@ private:
 		item(u8"在「擊殺耗時」填你打一場要幾分鐘，就會算出每小時利潤。");
 		item(u8"「掉率」與「單價」都可以直接改成你自己的數字，改過的會換顏色。填 0 恢復預設值。");
 		item(u8"「重置此王修改」會清掉這隻王的手動掉率、單價與擊殺耗時。");
-		item(u8"價格每15分鐘更新一次，也可以按「重新整理價格」。聯盟沿用倉庫收益的設定，沒設定就用目前賽季。");
+		item(u8"價格每15分鐘更新一次，也可以按「重新整理價格」。聯盟可在上方選擇；「自動」沿用倉庫收益的設定，沒設定就用目前賽季，換季時會跟著換。");
 		end();
 
 		section("##h_math", u8"數字怎麼算");
@@ -318,7 +321,10 @@ private:
 			std::vector<std::string> names = leagues_;
 			if (!ov_.league.empty() && std::find(names.begin(), names.end(), ov_.league) == names.end())
 				names.insert(names.begin(), ov_.league);
-			const std::string autoLabel = u8"自動（" + (autoLeague_.empty() ? std::string(u8"目前賽季") : autoLeague_) + u8"）";
+			// 自動 names the league it resolved to once poe.ninja has said which one is current.
+			const std::string autoName = !autoLeague_.empty() ? autoLeague_
+			                             : ov_.league.empty() && !ps.league.empty() ? ps.league : std::string(u8"目前賽季");
+			const std::string autoLabel = u8"自動（" + autoName + u8"）";
 			std::vector<const char*> labels{ autoLabel.c_str() };
 			int sel = 0;
 			for (size_t i = 0; i < names.size(); i++) {
