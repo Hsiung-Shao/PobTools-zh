@@ -65,6 +65,7 @@ std::string SerializeBossOverrides(const BossOverrides& o)
 	j["rate"] = o.rate.empty() ? json::object() : json(o.rate);
 	j["killSeconds"] = o.killSeconds.empty() ? json::object() : json(o.killSeconds);
 	j["sort"] = o.sort;
+	j["league"] = o.league;
 	return j.dump(1);
 }
 
@@ -89,6 +90,7 @@ bool ParseBossOverrides(const std::string& text, BossOverrides* o, std::string* 
 			const int c = e.get<int>();
 			if (c != 0 && c >= -kBossSortCols && c <= kBossSortCols) out.sort.push_back(c);
 		}
+		if (j.contains("league") && j["league"].is_string()) out.league = j["league"].get<std::string>();
 		*o = std::move(out);
 		return true;
 	} catch (const std::exception& e) {

@@ -50,6 +50,7 @@ struct BossOverrides {
 	// The boss list's sort, most significant first: column + 1, negative = descending. A view
 	// preference, kept here because this is the panel's one saved file.
 	std::vector<int> sort;
+	std::string league; // the price league picked here; empty = follow 倉庫收益's (or poe.ninja's current)
 };
 constexpr int kBossSortCols = 7; // columns of the boss list
 std::string SerializeBossOverrides(const BossOverrides& o);
