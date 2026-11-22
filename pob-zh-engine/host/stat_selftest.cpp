@@ -937,7 +937,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	expect("Nearby Enemies have 100% reduced Life Regeneration rate", "passive",
 	       u8"附近敵人減少 100% 生命回復", "E4-1 小寫 rate 取光環檔模板(大小寫完全相同優先)");
 	expect("Nearby Enemies have 50% reduced Life Regeneration Rate", "passive",
-	       u8"附近敵人減少 50% 生命恢復率", "E4-2 大寫 Rate 仍取天賦檔專精模板(同 FR-2)");
+	       u8"附近敵人減少 50% 生命回復率", "E4-2 大寫 Rate 仍取天賦檔專精模板(同 FR-2)");
 	// E5:寶石 stat 行在 gem tier 有 skill_stat 與 active_skill_gem / gem_stat 兩份不同中文 → 歧義回空。
 	// POB scopeList:skill_stat → active_skill_gem → gem_stat → stat(越具體越先),主動技能取 skill_stat。
 	{
@@ -1244,10 +1244,10 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	       u8"插槽中寶石被等級 1 的高階施放迴響輔助", "FR-1c 插槽輔助專屬模板優先於名稱槽(Greater Spell Echo)");
 	// FR-2:passive 優先序 passive_skill → stat_descriptions → passive_skill_aura。
 	//   life_mastery_nearby_enemy_life_regeneration_rate_+%|#|-1|passive_skill_stat_descriptions.txt|0
-	//     → 附近敵人減少 {0}% 生命恢復率
+	//     → 附近敵人減少 {0}% 生命回復率
 	//   (光環檔 life_regeneration_rate_+%|#|-1|passive_skill_aura… 是「附近敵人減少 {0}% 生命回復」,不得採用)
 	expect("Nearby Enemies have 50% reduced Life Regeneration Rate", "passive",
-	       u8"附近敵人減少 50% 生命恢復率", "FR-2 專精行取天賦描述檔，光環檔排在最後");
+	       u8"附近敵人減少 50% 生命回復率", "FR-2 專精行取天賦描述檔，光環檔排在最後");
 
 	// P3:anoint / legion / tattoo 來源字典
 	// 扁平 {source_files,is_base_items,entries},只列 meta source_dicts,只在

@@ -103,7 +103,8 @@ public:
 		if (ReadAll(overridesPath(), &body) && !ParseBossOverrides(body, &ov_, &err)) ov_ = {};
 		if (ov_.sort.empty()) ov_.sort = { -2 }; // profit, highest first
 		i18n_.Load(exeDir_, NarrowUtf8(host.locale));
-		league_ = WarehouseSavedLeague(exeDir_); // empty = poe.ninja's current league
+		autoLeague_ = WarehouseSavedLeague(exeDir_); // empty = poe.ninja's current league
+		league_ = ov_.league.empty() ? autoLeague_ : ov_.league;
 		feed_.Init(exeDir_);                     // no network until the first frame is drawn
 		// Test aid (POBTOOLS_BOSS_PAGE=help, with POBTOOLS_TOOL_SHOT): open on the help page.
 		wchar_t pg[8] = L"";
@@ -119,7 +120,17 @@ public:
 		if (!requested_) {
 			feed_.Request("poe1", league_, false);
 			requested_ = true;
+			// The picker's list; a failed fetch just leaves 自動 and the saved league to pick from.
+			leagueTh_ = std::thread([this] {
+				try { // an exception leaving a thread ends the whole program
+					std::string e;
+					FetchNinjaLeagues("poe1", leaguesGot_, &e, &leagueStop_);
+					leaguesDone_ = true;
+				} catch (...) {
+				}
+			});
 		}
+		if (leaguesDone_.exchange(false)) leagues_ = std::move(leaguesGot_);
 		const NinjaPriceFeed::Status ps = feed_.Poll();
 		if (ps.prices != prices_ || dirty_) {
 			prices_ = ps.prices;
@@ -165,7 +176,12 @@ public:
 	}
 	ToolCloseState CloseState() const override { return close_; }
 	void AbortClose() override { close_ = ToolCloseState::Open; }
-	void Shutdown() override { feed_.Shutdown(); }
+	void Shutdown() override
+	{
+		leagueStop_ = true;
+		if (leagueTh_.joinable()) leagueTh_.join();
+		feed_.Shutdown();
+	}
 	const char* PanelId() const override { return "bossprofit"; }
 
 private:
@@ -238,7 +254,7 @@ private:
 		item(u8"在「擊殺耗時」填你打一場要幾分鐘，就會算出每小時利潤。");
 		item(u8"「掉率」與「單價」都可以直接改成你自己的數字，改過的會換顏色。填 0 恢復預設值。");
 		item(u8"「重置此王修改」會清掉這隻王的手動掉率、單價與擊殺耗時。");
-		item(u8"價格每15分鐘更新一次，也可以按「重新整理價格」。聯盟沿用倉庫收益的設定，沒設定就用目前賽季。");
+		item(u8"價格每15分鐘更新一次，也可以按「重新整理價格」。聯盟可在上方選擇；「自動」沿用倉庫收益的設定，沒設定就用目前賽季，換季時會跟著換。");
 		end();
 
 		section("##h_math", u8"數字怎麼算");
@@ -300,7 +316,30 @@ private:
 		ImGui::AlignTextToFramePadding();
 		ImGui::TextColored(V(Tok::TextMuted), "%s", u8"聯盟");
 		ImGui::SameLine(0, D(8.0f));
-		ImGui::TextUnformatted((ps.league.empty() ? (league_.empty() ? std::string(u8"目前賽季") : league_) : ps.league).c_str());
+		{
+			// 自動 first, then poe.ninja's list; a saved league the list no longer has stays pickable.
+			std::vector<std::string> names = leagues_;
+			if (!ov_.league.empty() && std::find(names.begin(), names.end(), ov_.league) == names.end())
+				names.insert(names.begin(), ov_.league);
+			// 自動 names the league it resolved to once poe.ninja has said which one is current.
+			const std::string autoName = !autoLeague_.empty() ? autoLeague_
+			                             : ov_.league.empty() && !ps.league.empty() ? ps.league : std::string(u8"目前賽季");
+			const std::string autoLabel = u8"自動（" + autoName + u8"）";
+			std::vector<const char*> labels{ autoLabel.c_str() };
+			int sel = 0;
+			for (size_t i = 0; i < names.size(); i++) {
+				labels.push_back(names[i].c_str());
+				if (names[i] == ov_.league) sel = (int)i + 1;
+			}
+			const int was = sel;
+			if (PobUi::Select("##boss_league", &sel, labels.data(), nullptr, (int)labels.size(), D(200.0f)) &&
+			    sel >= 0 && sel != was) {
+				ov_.league = sel == 0 ? std::string() : names[sel - 1];
+				league_ = ov_.league.empty() ? autoLeague_ : ov_.league;
+				feed_.Request("poe1", league_, false);
+				saveDue_ = true;
+			}
+		}
 		ImGui::SameLine(0, D(12.0f));
 		if (ps.busy) PobUi::StatusPill(PobUi::Tone::Run, u8"讀取價格中");
 		else if (!ps.error.empty() && !ps.prices) PobUi::StatusPill(PobUi::Tone::Bad, u8"價格讀取失敗");
@@ -680,7 +719,10 @@ private:
 	FilterI18n i18n_;
 	NinjaPriceFeed feed_;
 	std::shared_ptr<const NinjaPriceFeed::PriceTable> prices_;
-	std::string league_;
+	std::string league_, autoLeague_; // what prices are asked for / what 自動 means
+	std::vector<std::string> leagues_, leaguesGot_; // leaguesGot_: the fetch thread's, until leaguesDone_
+	std::thread leagueTh_;
+	std::atomic<bool> leaguesDone_{ false }, leagueStop_{ false };
 	std::vector<Row> rows_;
 	int page_ = 0; // 0 收益, 1 說明
 	bool requested_ = false, dirty_ = true, saveDue_ = false, sortRestored_ = false;

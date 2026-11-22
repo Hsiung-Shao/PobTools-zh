@@ -602,6 +602,13 @@ int RunBossProfitSelftest(const std::wstring& exeDir)
 		          ParseBossOverrides(R"({"sort":[0,8,"x",-3,1.5,-9]})", &sbad, &jerr) &&
 		              sbad.sort == std::vector<int>{ -3 });
 
+		BossOverrides lo, lback, lbad;
+		lo.league = "Hardcore Mercenaries";
+		rep.check(u8"T14o 手選聯盟存檔後讀回一致",
+		          ParseBossOverrides(SerializeBossOverrides(lo), &lback, &jerr) && lback.league == lo.league);
+		rep.check(u8"T14p 聯盟欄不是字串時當作沒選",
+		          ParseBossOverrides(R"({"league":5})", &lbad, &jerr) && lbad.league.empty());
+
 		// Reset: variant "Regular" is wiped; variant "Regular2" (shares the id prefix) and unrelated
 		// prices stay.
 		const Boss b = MakeBoss("Boss", {MakeVariant("Regular", {Drop("unique|Alpha", "Alpha", 10.0)},
