@@ -48886,7 +48886,6 @@
     "You and Allies within 6 metres have {0:+d}% to Elemental Resistances": "你和 6 公尺內的友方 {0:+d}% 元素抗性",
     "If you've Attacked Recently, you and Allies within 6 metres have {0:+d}% Chance to Block Attack Damage": "若你近期有攻擊，你和\\n 6 公尺內的友方 {0:+d}% 攻擊傷害格擋率",
     "If you've Cast a Spell Recently, you and Allies within 6 metres have {0:+d}% Chance to Block Spell Damage": "若你近期有施放法術，你和\\n 6 公尺內的友方 {0:+d}% 法術傷害格擋率",
-    "{0:+d}% Chance to Block Attack Damage if there are at least 5 Enemies within 6 metres": "若 5 公尺內至少有 5 名敵人，{0:+d}% 攻擊傷害格擋率",
     "Shock Enemies within 3 metres for {0} Seconds when you Focus": "當你專注時，感電 3 公尺內的敵人 {0} 秒",
     "Socketed Gems are Supported by Level {0} More Duration Support": "插槽中的寶石被等級 {0} 的 更多持續時間 輔助",
     "Socketed Gems are Supported by Level {0} Cast On Critical Strike Support": "插槽中的寶石被等級 {0} 的 暴擊時施放 輔助",
