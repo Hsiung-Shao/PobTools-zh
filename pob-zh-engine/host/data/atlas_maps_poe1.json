@@ -3,7 +3,7 @@
  "game": "poe1",
  "source": "GGPK 3.30.0.4",
  "series": "Augury",
- "tierColumn": "AbyssalTier",
+ "tierColumn": "_@116",
  "maps": [
   {
    "id": "MapWorldsCage",
