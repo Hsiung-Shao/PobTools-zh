@@ -27,6 +27,8 @@ const TypePlan kPoe1Exchange[] = {
 	{ "Oil", "currency|" },       { "Essence", "currency|" },     { "Fossil", "currency|" },
 	{ "Resonator", "currency|" }, { "DeliriumOrb", "currency|" }, { "Tattoo", "currency|" },
 	{ "Omen", "currency|" },      { "Runegraft", "currency|" },   { "DivinationCard", "card|" },
+	// boss tickets and drops (王戰收益)
+	{ "Astrolabe", "currency|" }, { "AllflameEmber", "currency|" },
 };
 
 // PoE2: the economy IS the in-game Currency Exchange. Names are the site's own
@@ -44,7 +46,7 @@ const TypePlan kPoe2Exchange[] = {
 
 const char* const kPoe1ItemTypes[] = { "SkillGem", "Map", "UniqueMap", "UniqueWeapon",
 	                                   "UniqueArmour", "UniqueAccessory", "UniqueJewel",
-	                                   "UniqueFlask" };
+	                                   "UniqueFlask", "Invitation" };
 // PoE2 spells these in the plural (and UniqueRelics 404s).
 const char* const kPoe2ItemTypes[] = { "UniqueWeapons", "UniqueArmours", "UniqueAccessories",
 	                                   "UniqueFlasks",  "UniqueCharms",  "UniqueJewels",
@@ -291,6 +293,8 @@ bool NinjaPriceSource::ParseItemOverview(
 				int tier = (int)jnum(l, "mapTier", 0);
 				if (tier <= 0) continue;
 				key = NinjaMapKey(name, tier);
+			} else if (type == "Invitation") {
+				key = NinjaExchangeKey(name); // no baseType: priced by name like a fragment
 			} else if (type == "UniqueMap") {
 				key = NinjaUniqueKey(name, jstr(l, "baseType"), 0);
 			} else {
@@ -505,7 +509,8 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 					// best-evidenced price wins. Exchange prices are never displaced.
 					for (auto& kv : lines) {
 						auto it = fresh.find(kv.first);
-						if (it == fresh.end() || kv.second.listingCount > it->second.listingCount)
+						if (it == fresh.end() || (kv.first.rfind("currency|", 0) != 0 &&
+						                          kv.second.listingCount > it->second.listingCount))
 							fresh[kv.first] = kv.second;
 					}
 					fetchedTypes++;

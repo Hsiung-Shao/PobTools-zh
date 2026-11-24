@@ -34,6 +34,7 @@
 #include "filter_editor.h"
 #include "launcher_editor.h"
 #include "warehouse_tool.h"
+#include "boss_profit_tool.h"
 #include "timeless_jewel_ui.h"
 #include "tool_panel.h"
 #include "../translate/startup_trace.h"
@@ -2689,6 +2690,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const st
 				{ PobIcon::Gem, S.timelessJewel, nullptr, S.tipTimeless, &CreateTimelessJewelPanel, L"--timeless-jewel", PobLaunch::InstanceKind::TimelessJewel, S.timelessJewel },
 				// TEST-channel stash revenue tracker (POESESSID; see warehouse_tool.h).
 				{ PobIcon::ChartColumn, S.warehouseTool, S.warehouseBadge, S.tipWarehouse, &CreateWarehousePanel, L"--warehouse", PobLaunch::InstanceKind::Warehouse, S.warehouseTool },
+				{ PobIcon::TrendingUp, S.bossProfitTool, "PoE1 Beta", S.tipBossProfit, &CreateBossProfitPanel, L"--boss-profit", PobLaunch::InstanceKind::BossProfit, S.bossProfitTool },
 				// Edits dist\Data\{game}\{locale}\*.json in place. Separate mode opens
 				// it IN-PROCESS (openEditor makes ShowLauncher return) so the
 				// launcher's own labels reload on the way back; tabbed mode cannot
@@ -3419,6 +3421,18 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const st
 					protoQueriedAt = -10.0;   // re-read the state on the next frame
 				}
 				PobUi::RowEnd();
+				{
+					const bool linkOn = !wine && cfg.pobProtocol;
+					const char* opts[2] = { S.pobLinkNewWindow, S.pobLinkReplace };
+					PobUi::RowBegin(S.pobLinkModeRow, S.pobLinkModeHintShort, PobUi::SegmentedWidth(opts, 2), 0.0f,
+					                S.pobLinkModeHint, !linkOn);
+					int lm = cfg.pobLinkMode;
+					if (PobUi::Segmented("##linkmode", &lm, opts, 2, linkOn) && linkOn) {
+						cfg.pobLinkMode = lm;
+						saveNow();
+					}
+					PobUi::RowEnd();
+				}
 				// AI clients over MCP: the registration for this exe, per client.
 				{
 					const std::string exeU8 = narrow(exeBuf);
@@ -4004,6 +4018,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, InstallInfo& installs, const st
 			else if (ep.label == S.atlasPlanner) icon = PobIcon::Crosshair;
 			else if (ep.label == S.timelessJewel) icon = PobIcon::Gem;
 			else if (ep.label == S.warehouseTool) icon = PobIcon::ChartColumn;
+			else if (ep.label == S.bossProfitTool) icon = PobIcon::TrendingUp;
 			else if (ep.label == S.editor) icon = PobIcon::Languages;
 			std::string label = ((icon && fonts.icons) ? std::string(icon) + " " : std::string()) + ep.label +
 			                    "###panel" + ep.panel->PanelId();

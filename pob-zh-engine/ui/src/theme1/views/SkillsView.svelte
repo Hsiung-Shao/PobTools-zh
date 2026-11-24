@@ -137,7 +137,7 @@
                     <div class="drop">
                       {#each imbuedHits as h}
                         <button class="hit" onmousedown={(e) => { e.preventDefault(); void setImbued(h.gemId); }}>
-                          <span style:color={gemColor(h)}>{h.nameZh || h.name}</span>
+                          <span class="pob-lit" style:--pc={gemColor(h)}>{h.nameZh || h.name}</span>
                           <span class="dim small">{h.name}</span>
                         </button>
                       {/each}
@@ -181,7 +181,7 @@
                         <div class="drop">
                           {#each editGem.hits as h}
                             <button class="hit" onmousedown={(e) => { e.preventDefault(); void pickGem(g, h); }} onmouseenter={(e) => showCandidateTip(e, g.index, h)} onmouseleave={hideTip}>
-                              <span style:color={gemColor(h)}>{h.nameZh || h.name}</span>
+                              <span class="pob-lit" style:--pc={gemColor(h)}>{h.nameZh || h.name}</span>
                               {#if h.support}<span class="dim small">{t("skills.support")}</span>{/if}
                               {#if h.delta != null}
                                 <span class="small num delta" style:color={dpsDeltaColor(h.delta)}>{dpsDeltaText(h)}</span>
@@ -194,9 +194,9 @@
                   {:else}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <span
-                      class="gemname"
+                      class="gemname pob-lit"
                       class:bad={!!g.errMsg}
-                      style:color={g.errMsg ? "var(--bad)" : gemColor(g)}
+                      style:--pc={g.errMsg ? "var(--bad)" : gemColor(g)}
                       role="button"
                       tabindex="0"
                       title={g.errMsg ?? ""}
@@ -250,7 +250,7 @@
                       {#each addHits as h (h.gemId)}
                         <button class="hit" onmousedown={(e) => { e.preventDefault(); void addGem(h); }} onmouseenter={(e) => showCandidateTip(e, (group?.gems.length ?? 0) + 1, h)} onmouseleave={hideTip}>
                           <span class="hname">
-                            <span style:color={gemColor(h)}>{h.nameZh || h.name}</span>
+                            <span class="pob-lit" style:--pc={gemColor(h)}>{h.nameZh || h.name}</span>
                             <span class="dim small">{h.name}{h.support ? ` · ${t("skills.support")}` : ""}</span>
                           </span>
                           {#if h.delta != null}

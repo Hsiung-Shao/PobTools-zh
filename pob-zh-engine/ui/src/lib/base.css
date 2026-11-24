@@ -24,7 +24,7 @@
   color: var(--pc);
 }
 :root[data-theme="light"] .pob-lit {
-  color: oklch(from var(--pc) min(l, 0.5) c h);
+  color: oklch(from var(--pc) min(l, 0.46) c h);
 }
 :root[data-theme="light"] .pob-dark .pob-lit {
   color: var(--pc);

@@ -57,6 +57,7 @@
 #include "atlas_version_index.h"
 #include "filter_selftest.h"
 #include "warehouse_tool.h"
+#include "boss_profit_tool.h"
 #include "timeless_jewel.h"
 #include "timeless_jewel_abyss.h"
 #include "timeless_jewel_ui.h"
@@ -292,9 +293,10 @@ static int open_pob_link(const std::wstring& dir, const std::wstring& rawUri, bo
 		? ModernUiUsableFor(dir, installs.poe2Dir, installs.poe2Version)
 		: ModernUiUsableFor(dir, installs.poe1Dir, installs.poe1Version));
 	const std::wstring self = exe_path();
+	const bool reuse = ShouldReuseWindow(cfg.pobLinkMode);
 	if (openModern) {
-		// Same game already open in the new interface: hand the link to that window instead of a second one.
-		if (void* mw = PobProtocol::FindModernUiWindow(game, self)) {
+		// Replace mode, same game already open in the new interface: hand the link to that window instead of a second one.
+		if (void* mw = reuse ? PobProtocol::FindModernUiWindow(game, self) : nullptr) {
 			if (PobProtocol::SendLinkToModernUi(mw, uri)) {
 				PobLog::Diag("protocol", "link handed to the open new-interface window");
 				return 0;
@@ -304,9 +306,10 @@ static int open_pob_link(const std::wstring& dir, const std::wstring& rawUri, bo
 		// Blocks until the window closes; a refused bridge gate makes it open the classic POB itself (exit code 3).
 		return ShowModernUi(dir, game, cfg.locale, cfg, L"", uri);
 	}
-	// Same game already open classically: close the last-used one via POB's own "save changes?"
+	// Replace mode, same game already open classically: close the last-used one via POB's own "save changes?"
 	// prompt so two never share the install (Settings.xml is written by whoever closes last).
-	if (void* pw = PobProtocol::FindLastPobWindow(game, self)) {
+	// New-window mode (pobLinkMode 0) skips both and accepts that trade-off; the settings hint says so.
+	if (void* pw = reuse ? PobProtocol::FindLastPobWindow(game, self) : nullptr) {
 		switch (PobProtocol::ClosePobWindowAndWait(pw)) {
 		case PobProtocol::CloseResult::Cancelled:
 			PobLog::Diag("protocol", "the open POB kept its build (cancelled); link not opened");
@@ -514,6 +517,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		return fails == 0 ? 0 : 1;
 	}
 
+	if (arg1 == L"--boss-profit-selftest") {
+		return RunBossProfitSelftest(dir);
+	}
 	// Headless warehouse (stash revenue) data-layer check: fixtures only, no
 	// network, never the real PobTools\ directory.
 	if (arg1 == L"--warehouse-selftest") {
@@ -765,6 +771,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	}
 	if (arg1 == L"--timeless-jewel") {
 		ShowTimelessJewel(dir, LoadLauncherConfig(dir + L"pob-zh.ini").locale);
+		return 0;
+	}
+	if (arg1 == L"--boss-profit") {
+		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
+		ShowBossProfitTool(dir, c.game, c.locale);
 		return 0;
 	}
 	// 倉庫收益統計（測試性質：POESESSID 通道，見 warehouse_provider.h）

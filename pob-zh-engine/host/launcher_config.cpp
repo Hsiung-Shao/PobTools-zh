@@ -258,6 +258,7 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	c.pobFpsBackground = PobFrameCap::ClampFps(read_ini_int(iniPath, L"PobFpsBackground", PobFrameCap::kDefaultBackgroundFps));
 	c.perfLog = read_ini_int(iniPath, L"PerfLog", 0) != 0;
 	c.pobProtocol = read_ini_int(iniPath, L"PobProtocol", 0) != 0;
+	c.pobLinkMode = read_ini_int(iniPath, L"PobLinkMode", 0) == 1 ? 1 : 0;
 
 	c.proxy = read_ini_path(iniPath, L"Proxy");
 
@@ -358,6 +359,8 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 		cfg.perfLog ? L"1" : L"0", iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"PobProtocol",
 		cfg.pobProtocol ? L"1" : L"0", iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"PobLinkMode",
+		cfg.pobLinkMode == 1 ? L"1" : L"0", iniPath.c_str());
 	for (int g = 0; g < 2; g++) {
 		const AppearanceConfig& a = cfg.look[g];
 		const std::wstring sfx = GameKeySuffix(g);
@@ -1490,6 +1493,18 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		check(on ? "T17q2b PobProtocol round-trips on" : "T17q2c PobProtocol round-trips off",
 		      LoadLauncherConfig(ini).pobProtocol == (on != 0));
 	}
+	// L1-L3 -- how a link opens: new window unless the ini says replace.
+	DeleteFileW(ini.c_str());
+	write(L"PobTools", { { L"Game", L"poe1" } });
+	check("L1 無 PobLinkMode 鍵時為新視窗(0)", LoadLauncherConfig(ini).pobLinkMode == 0);
+	for (int m = 0; m <= 1; m++) {
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.pobLinkMode = m;
+		SaveLauncherConfig(ini, c);
+		check(m ? "L2b PobLinkMode 存 1 讀回 1" : "L2a PobLinkMode 存 0 讀回 0", LoadLauncherConfig(ini).pobLinkMode == m);
+	}
+	check("L3 模式 0 不沿用視窗、模式 1 沿用", !ShouldReuseWindow(0) && ShouldReuseWindow(1));
 	DeleteFileW(ini.c_str());
 	write(L"PobTools", { { L"Game", L"poe1" }, { L"PobFpsForeground", L"-7" }, { L"PobFpsBackground", L"99999" } });
 	check("T17r out-of-range caps read as no cap", LoadLauncherConfig(ini).pobFpsForeground == 0 &&

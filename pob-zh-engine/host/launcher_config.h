@@ -213,7 +213,13 @@ struct LauncherConfig {
 	// install. Off by default: turning it on writes HKCU\Software\Classes and
 	// takes the links over from an official POB install.
 	bool           pobProtocol = false;
+	// What a link does when the same game's POB is already open: 0 = a new window
+	// with the new build (default), 1 = replace the open window's build.
+	int            pobLinkMode = 0;
 };
+
+// pobLinkMode -> whether a link goes to the already-open window.
+inline bool ShouldReuseWindow(int pobLinkMode) { return pobLinkMode == 1; }
 
 // uiMode -> the page file under ui\ that the new interface opens.
 const wchar_t* ModernUiPage(int uiMode);

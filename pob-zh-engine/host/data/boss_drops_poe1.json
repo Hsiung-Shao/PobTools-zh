@@ -1,0 +1,3494 @@
+{
+ "schema": 1,
+ "source": "poewiki.net（社群統計，CC BY-NC-SA 3.0），2026-11-20 核對",
+ "generatedUtc": 1795269568,
+ "bosses": [
+  {
+   "key": "Aul, the Crystal King",
+   "en": "Aul, the Crystal King",
+   "zh": "晶之帝奧爾",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [],
+     "drops": [
+      {
+       "priceKey": "unique|Crown of the Tyrant|Magistrate Crown",
+       "en": "Crown of the Tyrant",
+       "ratePct": 15.0
+      },
+      {
+       "priceKey": "unique|Ahkeli's Meadow|Ruby Ring",
+       "en": "Ahkeli's Meadow",
+       "ratePct": 8.0
+      },
+      {
+       "priceKey": "unique|Uzaza's Valley|Sapphire Ring",
+       "en": "Uzaza's Valley",
+       "ratePct": 8.0
+      },
+      {
+       "priceKey": "unique|Putembo's Mountain|Topaz Ring",
+       "en": "Putembo's Mountain",
+       "ratePct": 8.0
+      },
+      {
+       "priceKey": "card|Luminous Trove",
+       "en": "Luminous Trove",
+       "ratePct": 16.0
+      },
+      {
+       "priceKey": "unique|Aul's Uprising|Onyx Amulet",
+       "en": "Aul's Uprising",
+       "ratePct": 61.0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Kurgal, the Blackblooded",
+   "en": "Kurgal, the Blackblooded",
+   "zh": "非酋血統柯戈",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [],
+     "drops": [
+      {
+       "priceKey": "unique|Hale Negator|Mind Cage",
+       "en": "Hale Negator (1 Abyssal Socket)",
+       "ratePct": 40.0
+      },
+      {
+       "priceKey": "unique|Hale Negator|Mind Cage",
+       "en": "Hale Negator (2 Abyssal Sockets)",
+       "ratePct": 10.0
+      },
+      {
+       "priceKey": "unique|Command of the Pit|Riveted Gloves",
+       "en": "Command of the Pit (1 Abyssal Socket)",
+       "ratePct": 15.0
+      },
+      {
+       "priceKey": "unique|Command of the Pit|Riveted Gloves",
+       "en": "Command of the Pit (2 Abyssal Sockets)",
+       "ratePct": 5.0
+      },
+      {
+       "priceKey": "unique|Ahkeli's Valley|Ruby Ring",
+       "en": "Ahkeli's Valley",
+       "ratePct": 10.0
+      },
+      {
+       "priceKey": "unique|Uzaza's Mountain|Sapphire Ring",
+       "en": "Uzaza's Mountain",
+       "ratePct": 10.0
+      },
+      {
+       "priceKey": "unique|Putembo's Meadow|Topaz Ring",
+       "en": "Putembo's Meadow",
+       "ratePct": 10.0
+      },
+      {
+       "priceKey": "card|Misery in Darkness",
+       "en": "Misery in Darkness",
+       "ratePct": 20.0
+      },
+      {
+       "priceKey": "currency|Zorath's Eye of the Inevitable",
+       "en": "Zorath's Eye of the Inevitable",
+       "ratePct": 50.0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Atziri, Queen of the Vaal",
+   "en": "Atziri, Queen of the Vaal",
+   "zh": "瓦爾女王阿茲里",
+   "variants": [
+    {
+     "name": "Atziri",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Chronicle of Atzoatl (Apex of Atzoatl)",
+       "en": "Chronicle of Atzoatl (阿茲瓦特之巔)",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Atziri's Promise|Amethyst Flask",
+       "en": "Atziri's Promise",
+       "ratePct": 48.0
+      },
+      {
+       "priceKey": "unique|Triumvirate Authority|Unset Ring",
+       "en": "Triumvirate Authority (3 random modifiers)",
+       "ratePct": 18.0
+      },
+      {
+       "priceKey": "unique|Atziri's Step|Slink Boots",
+       "en": "Atziri's Step",
+       "ratePct": 15.0
+      },
+      {
+       "priceKey": "unique|Doryani's Catalyst|Vaal Sceptre",
+       "en": "Doryani's Catalyst",
+       "ratePct": 3.0
+      },
+      {
+       "priceKey": "unique|Pledge of Hands|Judgement Staff",
+       "en": "Pledge of Hands",
+       "ratePct": 0.5,
+       "rateText": "~0.5"
+      },
+      {
+       "priceKey": "unique|Doryani's Invitation|Heavy Belt",
+       "en": "Doryani's Invitation",
+       "ratePct": 15.0
+      },
+      {
+       "priceKey": "currency|Sacrificial Garb",
+       "en": "Sacrificial Garb",
+       "ratePct": 0.0
+      },
+      {
+       "priceKey": "currency|Soul Core of Instability",
+       "en": "Soul Core of Instability",
+       "ratePct": 0.0
+      },
+      {
+       "priceKey": "currency|Soul Core of Might",
+       "en": "Soul Core of Might",
+       "ratePct": 0.0
+      },
+      {
+       "priceKey": "currency|Soul Core of Finesse",
+       "en": "Soul Core of Finesse",
+       "ratePct": 0.0
+      },
+      {
+       "priceKey": "currency|Soul Core of Intellect",
+       "en": "Soul Core of Intellect",
+       "ratePct": 0.0
+      },
+      {
+       "priceKey": "currency|Royal Visage",
+       "en": "Royal Visage",
+       "ratePct": 0.0,
+       "note": "Area level 81+"
+      },
+      {
+       "priceKey": "card|Chasing Risk",
+       "en": "Chasing Risk",
+       "ratePct": 0.0
+      }
+     ]
+    },
+    {
+     "name": "Uber Atziri",
+     "uber": true,
+     "tickets": [
+      {
+       "priceKey": "currency|Chronicle of Atzoatl (Cradle of Creation)",
+       "en": "Chronicle of Atzoatl (創造之搖籃)",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|The Vertex|Vaal Mask",
+       "en": "The Vertex",
+       "ratePct": 40.0
+      },
+      {
+       "priceKey": "unique|Atziri's Acuity|Vaal Gauntlets",
+       "en": "Atziri's Acuity",
+       "ratePct": 6.0
+      },
+      {
+       "priceKey": "unique|Triumvirate Authority|Unset Ring",
+       "en": "Triumvirate Authority (4 random modifiers)",
+       "ratePct": 5.0
+      },
+      {
+       "priceKey": "unique|Atziri's Reflection|Golden Buckler",
+       "en": "Atziri's Reflection",
+       "ratePct": 4.0
+      },
+      {
+       "priceKey": "unique|Atziri's Disfavour|Vaal Axe",
+       "en": "Atziri's Disfavour",
+       "ratePct": 2.0
+      },
+      {
+       "priceKey": "unique|Atziri's Rule|Judgement Staff",
+       "en": "Atziri's Rule",
+       "ratePct": 1.0
+      },
+      {
+       "priceKey": "unique|Atziri's Splendour|Sacrificial Garb",
+       "en": "Atziri's Splendour",
+       "ratePct": 42.0
+      },
+      {
+       "priceKey": "currency|Sacrificial Garb",
+       "en": "Sacrificial Garb",
+       "ratePct": 15.0,
+       "rateText": "~15"
+      },
+      {
+       "priceKey": "unique|Beauty|Vaal Aspect",
+       "en": "Beauty",
+       "ratePct": 15.0,
+       "rateText": "~15"
+      },
+      {
+       "priceKey": "gem|Vaal Sacrifice Support|1|0",
+       "en": "Vaal Sacrifice Support",
+       "ratePct": 8.0
+      },
+      {
+       "priceKey": "gem|Greater Spell Echo Support|1|0",
+       "en": "Greater Spell Echo Support",
+       "ratePct": 5.0
+      },
+      {
+       "priceKey": "card|Triskaidekaphobia",
+       "en": "Triskaidekaphobia",
+       "ratePct": 20.0
+      },
+      {
+       "priceKey": "card|The Price of Devotion",
+       "en": "The Price of Devotion",
+       "ratePct": 0.1,
+       "rateText": "<0.1"
+      },
+      {
+       "priceKey": "currency|Soul Core of Instability",
+       "en": "Soul Core of Instability",
+       "ratePct": 0.0
+      },
+      {
+       "priceKey": "currency|Soul Core of Might",
+       "en": "Soul Core of Might",
+       "ratePct": 0.0
+      },
+      {
+       "priceKey": "currency|Soul Core of Finesse",
+       "en": "Soul Core of Finesse",
+       "ratePct": 0.0
+      },
+      {
+       "priceKey": "currency|Soul Core of Intellect",
+       "en": "Soul Core of Intellect",
+       "ratePct": 0.0
+      },
+      {
+       "priceKey": "card|Chasing Risk",
+       "en": "Chasing Risk",
+       "ratePct": 0.0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "The Shaper",
+   "en": "The Shaper",
+   "zh": "塑界者",
+   "variants": [
+    {
+     "name": "Uber Shaper",
+     "uber": true,
+     "tickets": [
+      {
+       "priceKey": "currency|Cosmic Fragment",
+       "en": "Cosmic Fragment",
+       "qty": 4.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Echoes of Creation|Royal Burgonet",
+       "en": "Echoes of Creation",
+       "ratePct": 32.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Entropic Devastation|Assassin's Mitts",
+       "en": "Entropic Devastation",
+       "ratePct": 31.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Unblinking Eye|Harlequin Mask",
+       "en": "The Unblinking Eye",
+       "ratePct": 19.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Tides of Time|Vanguard Belt",
+       "en": "The Tides of Time",
+       "ratePct": 16.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Starforge|Infernal Sword",
+       "en": "Starforge",
+       "ratePct": 2.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Sublime Vision|Prismatic Jewel",
+       "en": "Sublime Vision",
+       "ratePct": 2.0,
+       "rateText": "~2",
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "currency|Cosmic Reliquary Key",
+       "en": "Cosmic Reliquary Key",
+       "ratePct": 1.0,
+       "rateText": "~1",
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "currency|Fragment of Knowledge",
+       "en": "Fragment of Knowledge",
+       "ratePct": 50.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fragment of Shape",
+       "en": "Fragment of Shape",
+       "ratePct": 50.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Voidstorm Support|1|0",
+       "en": "Voidstorm Support",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Shaper's Exalted Orb",
+       "en": "Shaper's Exalted Orb",
+       "ratePct": 13.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Dominance",
+       "en": "Orb of Dominance",
+       "ratePct": 3.0,
+       "note": "Additional drops"
+      }
+     ]
+    },
+    {
+     "name": "Shaper",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Fragment of the Hydra",
+       "en": "Fragment of the Hydra",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Fragment of the Chimera",
+       "en": "Fragment of the Chimera",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Fragment of the Minotaur",
+       "en": "Fragment of the Minotaur",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Fragment of the Phoenix",
+       "en": "Fragment of the Phoenix",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Shaper's Touch|Crusader Gloves",
+       "en": "Shaper's Touch",
+       "ratePct": 56.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Voidwalker|Murder Boots",
+       "en": "Voidwalker",
+       "ratePct": 30.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Solstice Vigil|Onyx Amulet",
+       "en": "Solstice Vigil",
+       "ratePct": 11.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Dying Sun|Ruby Flask",
+       "en": "Dying Sun",
+       "ratePct": 3.0,
+       "rateText": "~3",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Fragment of Knowledge",
+       "en": "Fragment of Knowledge",
+       "ratePct": 50.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fragment of Shape",
+       "en": "Fragment of Shape",
+       "ratePct": 50.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Voidstorm Support|1|0",
+       "en": "Voidstorm Support",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Shaper's Exalted Orb",
+       "en": "Shaper's Exalted Orb",
+       "ratePct": 13.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Dominance",
+       "en": "Orb of Dominance",
+       "ratePct": 3.0,
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Incarnation of Dread",
+   "en": "Incarnation of Dread",
+   "zh": "恐慌化身",
+   "variants": [
+    {
+     "name": "Uber Dread",
+     "uber": true,
+     "tickets": [
+      {
+       "priceKey": "currency|Reverent Fragment",
+       "en": "Reverent Fragment",
+       "qty": 4.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|The Hallowed Monarch|Faithful Helmet",
+       "en": "The Hallowed Monarch",
+       "ratePct": 54.0,
+       "rateText": "~54",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Whispers of Infinity|Seaglass Amulet",
+       "en": "Whispers of Infinity",
+       "ratePct": 30.0,
+       "rateText": "~30",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Wellwater Phylactery|Colossal Mana Flask",
+       "en": "Wellwater Phylactery",
+       "ratePct": 14.0,
+       "rateText": "~14",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Golden Charlatan|Lion Sword",
+       "en": "The Golden Charlatan",
+       "ratePct": 2.0,
+       "rateText": "~2",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Reverent Reliquary Key",
+       "en": "Reverent Reliquary Key",
+       "ratePct": 1.0,
+       "rateText": "~1",
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "currency|Templar Astrolabe",
+       "en": "Templar Astrolabe",
+       "ratePct": 33.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Chaotic Astrolabe",
+       "en": "Chaotic Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Deceptive Astrolabe",
+       "en": "Deceptive Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fruiting Astrolabe",
+       "en": "Fruiting Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fungal Astrolabe",
+       "en": "Fungal Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Grasping Astrolabe",
+       "en": "Grasping Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Lightless Astrolabe",
+       "en": "Lightless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Nameless Astrolabe",
+       "en": "Nameless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Runic Astrolabe",
+       "en": "Runic Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Timeless Astrolabe",
+       "en": "Timeless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Bound By Destiny|Prismatic Jewel",
+       "en": "Bound By Destiny",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Congregation Support|1|0",
+       "en": "Congregation Support",
+       "ratePct": 0.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Unravelling",
+       "en": "Orb of Unravelling",
+       "ratePct": 33.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Mantle of Dreams|Twilight Regalia",
+       "en": "Mantle of Dreams",
+       "ratePct": 0.0
+      }
+     ]
+    },
+    {
+     "name": "Regular Dread",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Echo of Reverence",
+       "en": "Echo of Reverence",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Bonemeld|Marble Amulet",
+       "en": "Bonemeld",
+       "ratePct": 55.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Dark Monarch|Lich's Circlet",
+       "en": "The Dark Monarch",
+       "ratePct": 35.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Seven Teachings|Waxed Garb",
+       "en": "Seven Teachings",
+       "ratePct": 8.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Wine of the Prophet|Gold Flask",
+       "en": "Wine of the Prophet",
+       "ratePct": 2.0,
+       "rateText": "~2",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Templar Astrolabe",
+       "en": "Templar Astrolabe",
+       "ratePct": 33.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Chaotic Astrolabe",
+       "en": "Chaotic Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Deceptive Astrolabe",
+       "en": "Deceptive Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fruiting Astrolabe",
+       "en": "Fruiting Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fungal Astrolabe",
+       "en": "Fungal Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Grasping Astrolabe",
+       "en": "Grasping Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Lightless Astrolabe",
+       "en": "Lightless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Nameless Astrolabe",
+       "en": "Nameless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Runic Astrolabe",
+       "en": "Runic Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Timeless Astrolabe",
+       "en": "Timeless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Bound By Destiny|Prismatic Jewel",
+       "en": "Bound By Destiny",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Congregation Support|1|0",
+       "en": "Congregation Support",
+       "ratePct": 0.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Unravelling",
+       "en": "Orb of Unravelling",
+       "ratePct": 33.0,
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "The Maven",
+   "en": "The Maven",
+   "zh": "釋界",
+   "variants": [
+    {
+     "name": "Uber Maven",
+     "uber": true,
+     "tickets": [
+      {
+       "priceKey": "currency|Reality Fragment",
+       "en": "Reality Fragment",
+       "qty": 4.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Viridi's Veil|Praetor Crown",
+       "en": "Viridi's Veil",
+       "ratePct": 52.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Impossible Escape|Viridian Jewel",
+       "en": "Impossible Escape",
+       "ratePct": 31.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Grace of the Goddess|Prophecy Wand",
+       "en": "Grace of the Goddess",
+       "ratePct": 14.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Progenesis|Amethyst Flask",
+       "en": "Progenesis",
+       "ratePct": 2.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "gem|Awakened Empower Support|1|0",
+       "en": "Awakened Empower Support",
+       "ratePct": 0.6,
+       "rateText": "~0.6",
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "gem|Awakened Enhance Support|1|0",
+       "en": "Awakened Enhance Support",
+       "ratePct": 1.0,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "gem|Awakened Enlighten Support|1|0",
+       "en": "Awakened Enlighten Support",
+       "ratePct": 0.5,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "gem|Eclipse Support|1|0",
+       "en": "Eclipse Support",
+       "ratePct": 2.0,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "currency|Shiny Reliquary Key",
+       "en": "Shiny Reliquary Key",
+       "ratePct": 0.7,
+       "rateText": "~0.7",
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "unique|Curio of Potential|Primordial Fragment",
+       "en": "Curio of Potential",
+       "ratePct": 5.0,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "gem|Invert the Rules Support|1|0",
+       "en": "Invert the Rules Support",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Conflict",
+       "en": "Orb of Conflict",
+       "ratePct": 32.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Auspicious Ambitions",
+       "en": "Auspicious Ambitions",
+       "ratePct": 0.05,
+       "rateText": "<0.05",
+       "note": "Additional drops"
+      }
+     ]
+    },
+    {
+     "name": "Maven",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|The Maven's Writ",
+       "en": "The Maven's Writ",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Legacy of Fury|Wyrmscale Boots",
+       "en": "Legacy of Fury",
+       "ratePct": 41.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Graven's Secret|Cloth Belt",
+       "en": "Graven's Secret",
+       "ratePct": 17.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Arn's Anguish|Cloth Belt",
+       "en": "Arn's Anguish",
+       "ratePct": 17.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Olesya's Delight|Cloth Belt",
+       "en": "Olesya's Delight",
+       "ratePct": 17.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Doppelgänger Guise|Sadist Garb",
+       "en": "Doppelgänger Guise",
+       "ratePct": 7.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Echoforge|Infernal Sword",
+       "en": "Echoforge",
+       "ratePct": 1.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "gem|Invert the Rules Support|1|0",
+       "en": "Invert the Rules Support",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Conflict",
+       "en": "Orb of Conflict",
+       "ratePct": 32.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Auspicious Ambitions",
+       "en": "Auspicious Ambitions",
+       "ratePct": 0.05,
+       "rateText": "<0.05",
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Sirus, Awakener of Worlds",
+   "en": "Sirus, Awakener of Worlds",
+   "zh": "喚世者．賽勒斯",
+   "variants": [
+    {
+     "name": "Uber Sirus",
+     "uber": true,
+     "tickets": [
+      {
+       "priceKey": "currency|Awakening Fragment",
+       "en": "Awakening Fragment",
+       "qty": 4.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Thread of Hope|Crimson Jewel",
+       "en": "Thread of Hope (Massive Ring)",
+       "ratePct": 44.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Tempest Rising|Goliath Greaves",
+       "en": "The Tempest Rising",
+       "ratePct": 28.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Zana's Ingenuity|Prismatic Ring",
+       "en": "Zana's Ingenuity",
+       "ratePct": 18.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Oriath's End|Bismuth Flask",
+       "en": "Oriath's End",
+       "ratePct": 9.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Saviour|Legion Sword",
+       "en": "The Saviour",
+       "ratePct": 1.0,
+       "rateText": "≤1",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Oubliette Reliquary Key",
+       "en": "Oubliette Reliquary Key",
+       "ratePct": 1.5,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "gem|Annihilation Support|1|0",
+       "en": "Annihilation Support",
+       "ratePct": 7.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Dominance",
+       "en": "Orb of Dominance",
+       "ratePct": 5.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Awakener's Orb",
+       "en": "Awakener's Orb",
+       "ratePct": 20.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|A Fate Worse Than Death",
+       "en": "A Fate Worse Than Death",
+       "ratePct": 4.0,
+       "note": "Additional drops"
+      }
+     ]
+    },
+    {
+     "name": "Sirus",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Veritania's Crest",
+       "en": "Veritania's Crest",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Drox's Crest",
+       "en": "Drox's Crest",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Baran's Crest",
+       "en": "Baran's Crest",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Al-Hezmin's Crest",
+       "en": "Al-Hezmin's Crest",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Hands of the High Templar|Crusader Gloves",
+       "en": "Hands of the High Templar",
+       "ratePct": 43.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Crown of the Inward Eye|Prophet Crown",
+       "en": "Crown of the Inward Eye",
+       "ratePct": 32.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Burden of Truth|Crystal Belt",
+       "en": "The Burden of Truth",
+       "ratePct": 20.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Thread of Hope|Crimson Jewel",
+       "en": "Thread of Hope (Small ~ Very Large Ring)",
+       "ratePct": 5.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "gem|Annihilation Support|1|0",
+       "en": "Annihilation Support",
+       "ratePct": 7.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Dominance",
+       "en": "Orb of Dominance",
+       "ratePct": 5.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Awakener's Orb",
+       "en": "Awakener's Orb",
+       "ratePct": 20.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|A Fate Worse Than Death",
+       "en": "A Fate Worse Than Death",
+       "ratePct": 4.0,
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "The Eater of Worlds",
+   "en": "The Eater of Worlds",
+   "zh": "吞噬天地",
+   "variants": [
+    {
+     "name": "Uber Eater",
+     "uber": true,
+     "tickets": [
+      {
+       "priceKey": "currency|Devouring Fragment",
+       "en": "Devouring Fragment",
+       "qty": 4.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Ravenous Passion|Zealot Helmet",
+       "en": "Ravenous Passion",
+       "ratePct": 68.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Ashes of the Stars|Onyx Amulet",
+       "en": "Ashes of the Stars",
+       "ratePct": 30.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Nimis|Topaz Ring",
+       "en": "Nimis",
+       "ratePct": 2.0,
+       "rateText": "~2",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Forbidden Flesh|Cobalt Jewel|Hidden Ascendancy",
+       "en": "Forbidden Flesh (Hidden Ascendancy Notable variant)",
+       "ratePct": 0.0,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "currency|Visceral Reliquary Key",
+       "en": "Visceral Reliquary Key",
+       "ratePct": 1.0,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "unique|Curio of Consumption|Primordial Fragment",
+       "en": "Curio of Consumption",
+       "ratePct": 5.0,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "gem|Gluttony Support|1|0",
+       "en": "Gluttony Support",
+       "ratePct": 0.0,
+       "note": "Additional drops (Affected by map quant)"
+      },
+      {
+       "priceKey": "unique|Forbidden Flesh|Cobalt Jewel",
+       "en": "Forbidden Flesh",
+       "ratePct": 5.0,
+       "note": "Additional drops (Affected by map quant)"
+      },
+      {
+       "priceKey": "currency|Exceptional Eldritch Ichor",
+       "en": "Exceptional Eldritch Ichor",
+       "ratePct": 15.0,
+       "note": "Additional drops (Affected by map quant)"
+      },
+      {
+       "priceKey": "currency|Eldritch Orb of Annulment",
+       "en": "Eldritch Orb of Annulment",
+       "ratePct": 5.0,
+       "note": "Additional drops (Affected by map quant)"
+      },
+      {
+       "priceKey": "currency|Eldritch Chaos Orb",
+       "en": "Eldritch Chaos Orb",
+       "ratePct": 5.0,
+       "note": "Additional drops (Affected by map quant)"
+      },
+      {
+       "priceKey": "currency|Eldritch Exalted Orb",
+       "en": "Eldritch Exalted Orb",
+       "ratePct": 5.0,
+       "note": "Additional drops (Affected by map quant)"
+      },
+      {
+       "priceKey": "card|Auspicious Ambitions",
+       "en": "Auspicious Ambitions",
+       "ratePct": 0.0,
+       "note": "Additional drops (Affected by map quant)"
+      }
+     ]
+    },
+    {
+     "name": "Eater",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Screaming Invitation",
+       "en": "Screaming Invitation",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Inextricable Fate|Fugitive Boots",
+       "en": "Inextricable Fate",
+       "ratePct": 55.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Gluttonous Tide|Citadel Bow",
+       "en": "The Gluttonous Tide",
+       "ratePct": 43.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Melding of the Flesh|Cobalt Jewel",
+       "en": "Melding of the Flesh",
+       "ratePct": 2.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "gem|Gluttony Support|1|0",
+       "en": "Gluttony Support",
+       "ratePct": 0.0,
+       "note": "Additional drops (Affected by map quant)"
+      },
+      {
+       "priceKey": "unique|Forbidden Flesh|Cobalt Jewel",
+       "en": "Forbidden Flesh",
+       "ratePct": 5.0,
+       "note": "Additional drops (Affected by map quant)"
+      },
+      {
+       "priceKey": "currency|Exceptional Eldritch Ichor",
+       "en": "Exceptional Eldritch Ichor",
+       "ratePct": 15.0,
+       "note": "Additional drops (Affected by map quant)"
+      },
+      {
+       "priceKey": "currency|Eldritch Orb of Annulment",
+       "en": "Eldritch Orb of Annulment",
+       "ratePct": 5.0,
+       "note": "Additional drops (Affected by map quant)"
+      },
+      {
+       "priceKey": "currency|Eldritch Chaos Orb",
+       "en": "Eldritch Chaos Orb",
+       "ratePct": 5.0,
+       "note": "Additional drops (Affected by map quant)"
+      },
+      {
+       "priceKey": "currency|Eldritch Exalted Orb",
+       "en": "Eldritch Exalted Orb",
+       "ratePct": 5.0,
+       "note": "Additional drops (Affected by map quant)"
+      },
+      {
+       "priceKey": "card|Auspicious Ambitions",
+       "en": "Auspicious Ambitions",
+       "ratePct": 0.0,
+       "note": "Additional drops (Affected by map quant)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Venarius",
+   "en": "Venarius",
+   "zh": "維那利斯",
+   "variants": [
+    {
+     "name": "Venarius",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "unique|Cortex|Map (Tier 16)",
+       "en": "Cortex",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Offering to the Serpent|Legion Gloves",
+       "en": "Offering to the Serpent",
+       "ratePct": 43.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Perepiteia|Ezomyte Spiked Shield",
+       "en": "Perepiteia",
+       "ratePct": 43.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Garb of the Ephemeral|Savant's Robe",
+       "en": "Garb of the Ephemeral",
+       "ratePct": 9.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Bottled Faith|Sulphur Flask",
+       "en": "Bottled Faith",
+       "ratePct": 5.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "gem|Greater Kinetic Instability Support|1|0",
+       "en": "Greater Kinetic Instability Support",
+       "ratePct": 10.0,
+       "rateText": "~10",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|The Hook",
+       "en": "The Hook",
+       "ratePct": 5.0,
+       "rateText": "~5",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Imperfect Memories",
+       "en": "Imperfect Memories",
+       "ratePct": 0.5,
+       "rateText": "<0.5",
+       "note": "Additional drops"
+      }
+     ]
+    },
+    {
+     "name": "Uber Venarius",
+     "uber": true,
+     "tickets": [
+      {
+       "priceKey": "currency|Synthesising Fragment",
+       "en": "Synthesising Fragment",
+       "qty": 4.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Nebulis|Void Sceptre",
+       "en": "Nebulis",
+       "ratePct": 34.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Mask of the Tribunal|Magistrate Crown",
+       "en": "Mask of the Tribunal",
+       "ratePct": 34.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Circle of Ambition|Prismatic Ring",
+       "en": "Circle of Ambition",
+       "ratePct": 19.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Apostate|Cabalist Regalia",
+       "en": "The Apostate",
+       "ratePct": 8.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Rational Doctrine|Cobalt Jewel",
+       "en": "Rational Doctrine",
+       "ratePct": 5.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Forgotten Reliquary Key",
+       "en": "Forgotten Reliquary Key",
+       "ratePct": 1.5,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "gem|Greater Kinetic Instability Support|1|0",
+       "en": "Greater Kinetic Instability Support",
+       "ratePct": 10.0,
+       "rateText": "~10",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|The Hook",
+       "en": "The Hook",
+       "ratePct": 5.0,
+       "rateText": "~5",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Imperfect Memories",
+       "en": "Imperfect Memories",
+       "ratePct": 0.5,
+       "rateText": "<0.5",
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "It That Was Esh/Tul",
+   "en": "It That Was Esh/Tul",
+   "zh": "昔之艾許/昔之托沃",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Hivebrain Gland",
+       "en": "Hivebrain Gland",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|The Will of Esh|Synaptic Ring",
+       "en": "The Will of Esh",
+       "ratePct": 17.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Will of Tul|Cryonic Ring",
+       "en": "The Will of Tul",
+       "ratePct": 17.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Will of Xoph|Enthalpic Ring",
+       "en": "The Will of Xoph",
+       "ratePct": 17.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Will of Uul-Netol|Organic Ring",
+       "en": "The Will of Uul-Netol",
+       "ratePct": 12.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Sundered Will|Fugitive Ring",
+       "en": "The Sundered Will",
+       "ratePct": 4.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Hand of the Lords|Carnal Mitts",
+       "en": "Hand of the Lords",
+       "ratePct": 29.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Grey Wind|Spectral Axe",
+       "en": "The Grey Wind",
+       "ratePct": 3.0,
+       "rateText": "~3",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Uul-Netol's Vow|Unset Amulet",
+       "en": "Uul-Netol's Vow",
+       "ratePct": 1.0,
+       "rateText": "~1",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Flesh of Xesht",
+       "en": "Flesh of Xesht",
+       "ratePct": 20.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Foulgrasp Support|1|0",
+       "en": "Foulgrasp Support",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Hiveborn Support|1|0",
+       "en": "Hiveborn Support",
+       "ratePct": 5.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Something Dark",
+       "en": "Something Dark",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|The Escape",
+       "en": "The Escape",
+       "ratePct": 9.0,
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Ahuatotli, the Blind",
+   "en": "Ahuatotli, the Blind",
+   "zh": "盲人阿烏塔利",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [],
+     "drops": [
+      {
+       "priceKey": "unique|Cerberus Limb|Blood Sceptre",
+       "en": "Cerberus Limb",
+       "ratePct": 60.0
+      },
+      {
+       "priceKey": "unique|Doryani's Machinarium|Map (Tier 16)",
+       "en": "Doryani's Machinarium",
+       "ratePct": 16.0
+      },
+      {
+       "priceKey": "unique|Ahkeli's Mountain|Ruby Ring",
+       "en": "Ahkeli's Mountain",
+       "ratePct": 8.0
+      },
+      {
+       "priceKey": "unique|Uzaza's Meadow|Sapphire Ring",
+       "en": "Uzaza's Meadow",
+       "ratePct": 8.0
+      },
+      {
+       "priceKey": "unique|Putembo's Valley|Topaz Ring",
+       "en": "Putembo's Valley",
+       "ratePct": 8.0
+      },
+      {
+       "priceKey": "unique|Curiosity|Vaal Aspect",
+       "en": "Curiosity",
+       "ratePct": 40.0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Catarina, Master of Undeath",
+   "en": "Catarina, Master of Undeath",
+   "zh": "永生大師卡塔莉娜",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Syndicate Medallion",
+       "en": "Syndicate Medallion",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Cinderswallow Urn|Silver Flask",
+       "en": "Cinderswallow Urn",
+       "ratePct": 30.0
+      },
+      {
+       "priceKey": "unique|Spinehail|Vile Arrow Quiver",
+       "en": "Spinehail",
+       "ratePct": 20.0
+      },
+      {
+       "priceKey": "unique|The Devouring Diadem|Necromancer Circlet",
+       "en": "The Devouring Diadem",
+       "ratePct": 16.0
+      },
+      {
+       "priceKey": "unique|Bitterbind Point|Titanium Spirit Shield",
+       "en": "Bitterbind Point",
+       "ratePct": 10.0
+      },
+      {
+       "priceKey": "unique|The Queen's Hunger|Vaal Regalia",
+       "en": "The Queen's Hunger",
+       "ratePct": 6.0
+      },
+      {
+       "priceKey": "unique|Cane of Kulemak|Serpentine Staff",
+       "en": "Cane of Kulemak",
+       "ratePct": 17.0
+      },
+      {
+       "priceKey": "unique|Cane of Kulemak|Serpentine Staff",
+       "en": "Cane of Kulemak (4 veiled mods)",
+       "ratePct": 1.0
+      },
+      {
+       "priceKey": "gem|Communion Support|1|0",
+       "en": "Communion Support",
+       "ratePct": 10.0
+      },
+      {
+       "priceKey": "currency|Veiled Exalted Orb",
+       "en": "Veiled Exalted Orb",
+       "ratePct": 25.0
+      },
+      {
+       "priceKey": "currency|Allflame Ember of Kulemak",
+       "en": "Allflame Ember of Kulemak",
+       "ratePct": 60.0
+      },
+      {
+       "priceKey": "currency|Zorath's Eye of the Endless",
+       "en": "Zorath's Eye of the Endless",
+       "ratePct": 50.0
+      },
+      {
+       "priceKey": "card|Nook's Crown",
+       "en": "Nook's Crown",
+       "ratePct": 0.5,
+       "rateText": "<0.5"
+      },
+      {
+       "priceKey": "card|Keeper's Corruption",
+       "en": "Keeper's Corruption",
+       "ratePct": 0.0
+      },
+      {
+       "priceKey": "currency|Allflame Ember of Propagation",
+       "en": "Allflame Ember of Propagation",
+       "ratePct": 0.0
+      },
+      {
+       "priceKey": "currency|Allflame Ember of the Ethereal",
+       "en": "Allflame Ember of the Ethereal",
+       "ratePct": 0.0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "The Elder",
+   "en": "The Elder",
+   "zh": "異界尊師",
+   "variants": [
+    {
+     "name": "Elder",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Fragment of Purification",
+       "en": "Fragment of Purification",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Fragment of Constriction",
+       "en": "Fragment of Constriction",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Fragment of Eradication",
+       "en": "Fragment of Eradication",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Fragment of Enslavement",
+       "en": "Fragment of Enslavement",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Cyclopean Coil|Leather Belt",
+       "en": "Cyclopean Coil",
+       "ratePct": 30.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Blasphemer's Grasp|Assassin's Mitts",
+       "en": "Blasphemer's Grasp",
+       "ratePct": 26.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Impresence|Onyx Amulet",
+       "en": "Impresence",
+       "ratePct": 4.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Hopeshredder|Ranger Bow",
+       "en": "Hopeshredder",
+       "ratePct": 8.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Nebuloch|Nightmare Mace",
+       "en": "Nebuloch",
+       "ratePct": 8.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Shimmeron|Tornado Wand",
+       "en": "Shimmeron",
+       "ratePct": 8.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Fragment of Terror",
+       "en": "Fragment of Terror",
+       "ratePct": 50.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fragment of Emptiness",
+       "en": "Fragment of Emptiness",
+       "ratePct": 50.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Watcher's Eye|Prismatic Jewel",
+       "en": "Watcher's Eye",
+       "ratePct": 40.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Elder's Exalted Orb",
+       "en": "Elder's Exalted Orb",
+       "ratePct": 12.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Eldritch Blasphemy Support|1|0",
+       "en": "Eldritch Blasphemy Support",
+       "ratePct": 10.0,
+       "rateText": "~10",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Dominance",
+       "en": "Orb of Dominance",
+       "ratePct": 2.0,
+       "rateText": "~2",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Void of the Elements",
+       "en": "Void of the Elements",
+       "ratePct": 0.5,
+       "rateText": "≤0.5",
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Ziggurat",
+   "en": "Ziggurat",
+   "zh": "高地神塔",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Nightmare Map",
+       "en": "Nightmare Map",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "currency|Blazing Fragment",
+       "en": "Blazing Fragment",
+       "ratePct": 75.0
+      },
+      {
+       "priceKey": "currency|Devouring Fragment",
+       "en": "Devouring Fragment",
+       "ratePct": 75.0
+      },
+      {
+       "priceKey": "unique|Wraithlord|Bone Circlet",
+       "en": "Wraithlord",
+       "ratePct": 5.0
+      },
+      {
+       "priceKey": "gem|Communion Support|1|0",
+       "en": "Communion Support",
+       "ratePct": 5.0,
+       "rateText": "~5"
+      },
+      {
+       "priceKey": "card|Nook's Crown",
+       "en": "Nook's Crown",
+       "ratePct": 0.0
+      },
+      {
+       "priceKey": "card|Keeper's Corruption",
+       "en": "Keeper's Corruption",
+       "ratePct": 0.0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Sanctuary",
+   "en": "Sanctuary",
+   "zh": "庇護聖所",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Nightmare Map",
+       "en": "Nightmare Map",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "currency|Lonely Fragment",
+       "en": "Lonely Fragment",
+       "ratePct": 50.0
+      },
+      {
+       "priceKey": "currency|Traumatic Fragment",
+       "en": "Traumatic Fragment",
+       "ratePct": 50.0
+      },
+      {
+       "priceKey": "currency|Reverent Fragment",
+       "en": "Reverent Fragment",
+       "ratePct": 50.0
+      },
+      {
+       "priceKey": "unique|The Dark Seer|Shadow Sceptre",
+       "en": "The Dark Seer (Life Mana)",
+       "ratePct": 1.67,
+       "rateText": "~1.67"
+      },
+      {
+       "priceKey": "unique|The Dark Seer|Shadow Sceptre",
+       "en": "The Dark Seer (Life ES)",
+       "ratePct": 1.67,
+       "rateText": "~1.67"
+      },
+      {
+       "priceKey": "unique|The Dark Seer|Shadow Sceptre",
+       "en": "The Dark Seer (Mana ES)",
+       "ratePct": 1.67,
+       "rateText": "~1.67"
+      },
+      {
+       "priceKey": "gem|Scornful Herald Support|1|0",
+       "en": "Scornful Herald Support",
+       "ratePct": 5.0,
+       "rateText": "~5"
+      },
+      {
+       "priceKey": "gem|Pact of Lycia|1|0",
+       "en": "Pact of Lycia",
+       "ratePct": 5.0,
+       "rateText": "~5"
+      },
+      {
+       "priceKey": "unique|Unholy Accomplice|Cloth Belt",
+       "en": "Unholy Accomplice",
+       "ratePct": 1.0,
+       "rateText": "<1"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "The Searing Exarch",
+   "en": "The Searing Exarch",
+   "zh": "灼烙總督",
+   "variants": [
+    {
+     "name": "Uber Exarch",
+     "uber": true,
+     "tickets": [
+      {
+       "priceKey": "currency|Blazing Fragment",
+       "en": "Blazing Fragment",
+       "qty": 4.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|The Annihilating Light|Quarterstaff",
+       "en": "The Annihilating Light",
+       "ratePct": 45.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Annihilation's Approach|Dragonscale Boots",
+       "en": "Annihilation's Approach",
+       "ratePct": 29.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Crystallised Omniscience|Onyx Amulet",
+       "en": "Crystallised Omniscience",
+       "ratePct": 24.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Celestial Brace|Goliath Gauntlets",
+       "en": "The Celestial Brace",
+       "ratePct": 1.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Forbidden Flame|Crimson Jewel|Hidden Ascendancy",
+       "en": "Forbidden Flame (Hidden Ascendancy Notable variant)",
+       "ratePct": 0.0,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "currency|Archive Reliquary Key",
+       "en": "Archive Reliquary Key",
+       "ratePct": 1.5,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "unique|Curio of Absorption|Primordial Fragment",
+       "en": "Curio of Absorption",
+       "ratePct": 5.0,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "gem|Overheat Support|1|0",
+       "en": "Overheat Support",
+       "ratePct": 0.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Forbidden Flame|Crimson Jewel",
+       "en": "Forbidden Flame",
+       "ratePct": 5.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Exceptional Eldritch Ember",
+       "en": "Exceptional Eldritch Ember",
+       "ratePct": 15.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Eldritch Orb of Annulment",
+       "en": "Eldritch Orb of Annulment",
+       "ratePct": 5.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Eldritch Chaos Orb",
+       "en": "Eldritch Chaos Orb",
+       "ratePct": 5.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Eldritch Exalted Orb",
+       "en": "Eldritch Exalted Orb",
+       "ratePct": 5.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Auspicious Ambitions",
+       "en": "Auspicious Ambitions",
+       "ratePct": 1.0,
+       "rateText": "<1",
+       "note": "Additional drops"
+      }
+     ]
+    },
+    {
+     "name": "Exarch",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Incandescent Invitation",
+       "en": "Incandescent Invitation",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Dawnbreaker|Colossal Tower Shield",
+       "en": "Dawnbreaker",
+       "ratePct": 63.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Dawnstrider|Vaal Greaves",
+       "en": "Dawnstrider",
+       "ratePct": 35.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Dissolution of the Flesh|Crimson Jewel",
+       "en": "Dissolution of the Flesh",
+       "ratePct": 2.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "gem|Overheat Support|1|0",
+       "en": "Overheat Support",
+       "ratePct": 0.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Forbidden Flame|Crimson Jewel",
+       "en": "Forbidden Flame",
+       "ratePct": 5.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Exceptional Eldritch Ember",
+       "en": "Exceptional Eldritch Ember",
+       "ratePct": 15.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Eldritch Orb of Annulment",
+       "en": "Eldritch Orb of Annulment",
+       "ratePct": 5.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Eldritch Chaos Orb",
+       "en": "Eldritch Chaos Orb",
+       "ratePct": 5.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Eldritch Exalted Orb",
+       "en": "Eldritch Exalted Orb",
+       "ratePct": 5.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Auspicious Ambitions",
+       "en": "Auspicious Ambitions",
+       "ratePct": 1.0,
+       "rateText": "<1",
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Abomination",
+   "en": "Abomination",
+   "zh": "憎惡",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Nightmare Map",
+       "en": "Nightmare Map",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "currency|Awakening Fragment",
+       "en": "Awakening Fragment",
+       "ratePct": 75.0
+      },
+      {
+       "priceKey": "currency|Reality Fragment",
+       "en": "Reality Fragment",
+       "ratePct": 75.0
+      },
+      {
+       "priceKey": "unique|Malachai's Mark|Murder Mitts",
+       "en": "Malachai's Mark",
+       "ratePct": 5.0
+      },
+      {
+       "priceKey": "gem|Unholy Trinity Support|1|0",
+       "en": "Unholy Trinity Support",
+       "ratePct": 5.0,
+       "rateText": "~5"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "The King in the Mists",
+   "en": "The King in the Mists",
+   "zh": "迷霧之王",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|An Audience With The King",
+       "en": "An Audience With The King",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|The Untouched Soul|Gold Amulet",
+       "en": "The Untouched Soul",
+       "ratePct": 40.0,
+       "rateText": "~40"
+      },
+      {
+       "priceKey": "unique|Pragmatism|Colosseum Plate",
+       "en": "Pragmatism",
+       "ratePct": 35.0,
+       "rateText": "~35"
+      },
+      {
+       "priceKey": "unique|The Light of Meaning|Prismatic Jewel",
+       "en": "The Light of Meaning",
+       "ratePct": 20.0
+      },
+      {
+       "priceKey": "unique|The Burden of Shadows|Primordial Staff",
+       "en": "The Burden of Shadows",
+       "ratePct": 5.0,
+       "rateText": "~5"
+      },
+      {
+       "priceKey": "gem|Hextoad Support|1|0",
+       "en": "Hextoad Support",
+       "ratePct": 6.0,
+       "rateText": "~6"
+      },
+      {
+       "priceKey": "gem|Hexpass Support|1|0",
+       "en": "Hexpass Support",
+       "ratePct": 10.0,
+       "rateText": "~10"
+      },
+      {
+       "priceKey": "card|The Endless Darkness",
+       "en": "The Endless Darkness",
+       "ratePct": 0.0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Ulaman, Sovereign of the Well",
+   "en": "Ulaman, Sovereign of the Well",
+   "zh": "虎勢領主烏拉曼",
+   "variants": [
+    {
+     "name": "Ulaman",
+     "uber": false,
+     "tickets": [],
+     "drops": [
+      {
+       "priceKey": "unique|Lightpoacher|Great Crown",
+       "en": "Lightpoacher (1 Abyssal Socket)",
+       "ratePct": 30.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Lightpoacher|Great Crown",
+       "en": "Lightpoacher (2 Abyssal Sockets)",
+       "ratePct": 1.0,
+       "rateText": "~1",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Tombfist|Steelscale Gauntlets",
+       "en": "Tombfist (1 Abyssal Socket)",
+       "ratePct": 27.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Tombfist|Steelscale Gauntlets",
+       "en": "Tombfist (2 Abyssal Sockets)",
+       "ratePct": 1.0,
+       "rateText": "~1",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Bubonic Trail|Murder Boots",
+       "en": "Bubonic Trail (1 Abyssal Socket)",
+       "ratePct": 27.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Bubonic Trail|Murder Boots",
+       "en": "Bubonic Trail (2 Abyssal Sockets)",
+       "ratePct": 1.0,
+       "rateText": "~1",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Shroud of the Lightless|Carnal Armour",
+       "en": "Shroud of the Lightless (2 Abyssal Sockets)",
+       "ratePct": 3.0,
+       "rateText": "~3",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Shroud of the Lightless|Carnal Armour",
+       "en": "Shroud of the Lightless (3 Abyssal Sockets)",
+       "ratePct": 0.2,
+       "rateText": "~0.2",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Amanamu's Gaze|Ghastly Eye Jewel",
+       "en": "Amanamu's Gaze",
+       "ratePct": 2.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Kurgal's Gaze|Hypnotic Eye Jewel",
+       "en": "Kurgal's Gaze",
+       "ratePct": 2.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Tecrod's Gaze|Murderous Eye Jewel",
+       "en": "Tecrod's Gaze",
+       "ratePct": 2.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Ulaman's Gaze|Searching Eye Jewel",
+       "en": "Ulaman's Gaze",
+       "ratePct": 2.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Zorath's Eye of Authority",
+       "en": "Zorath's Eye of Authority",
+       "ratePct": 20.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Darkness Enthroned|Stygian Vise",
+       "en": "Darkness Enthroned",
+       "ratePct": 50.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Stygian Vise|Stygian Vise",
+       "en": "Stygian Vise",
+       "ratePct": 100.0,
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Amanamu, Liege of the Lightless",
+   "en": "Amanamu, Liege of the Lightless",
+   "zh": "黯光諸侯阿姆那姆",
+   "variants": [
+    {
+     "name": "Amanamu",
+     "uber": false,
+     "tickets": [],
+     "drops": [
+      {
+       "priceKey": "unique|Lightpoacher|Great Crown",
+       "en": "Lightpoacher (1 Abyssal Socket)",
+       "ratePct": 30.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Lightpoacher|Great Crown",
+       "en": "Lightpoacher (2 Abyssal Sockets)",
+       "ratePct": 1.0,
+       "rateText": "~1",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Tombfist|Steelscale Gauntlets",
+       "en": "Tombfist (1 Abyssal Socket)",
+       "ratePct": 27.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Tombfist|Steelscale Gauntlets",
+       "en": "Tombfist (2 Abyssal Sockets)",
+       "ratePct": 1.0,
+       "rateText": "~1",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Bubonic Trail|Murder Boots",
+       "en": "Bubonic Trail (1 Abyssal Socket)",
+       "ratePct": 27.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Bubonic Trail|Murder Boots",
+       "en": "Bubonic Trail (2 Abyssal Sockets)",
+       "ratePct": 1.0,
+       "rateText": "~1",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Shroud of the Lightless|Carnal Armour",
+       "en": "Shroud of the Lightless (2 Abyssal Sockets)",
+       "ratePct": 3.0,
+       "rateText": "~3",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Shroud of the Lightless|Carnal Armour",
+       "en": "Shroud of the Lightless (3 Abyssal Sockets)",
+       "ratePct": 0.2,
+       "rateText": "~0.2",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Amanamu's Gaze|Ghastly Eye Jewel",
+       "en": "Amanamu's Gaze",
+       "ratePct": 2.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Kurgal's Gaze|Hypnotic Eye Jewel",
+       "en": "Kurgal's Gaze",
+       "ratePct": 2.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Tecrod's Gaze|Murderous Eye Jewel",
+       "en": "Tecrod's Gaze",
+       "ratePct": 2.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Ulaman's Gaze|Searching Eye Jewel",
+       "en": "Ulaman's Gaze",
+       "ratePct": 2.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Zorath's Eye of Malevolence",
+       "en": "Zorath's Eye of Malevolence",
+       "ratePct": 20.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Darkness Enthroned|Stygian Vise",
+       "en": "Darkness Enthroned",
+       "ratePct": 50.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Stygian Vise|Stygian Vise",
+       "en": "Stygian Vise",
+       "ratePct": 100.0,
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "The Trialmaster",
+   "en": "The Trialmaster",
+   "zh": "試煉大師",
+   "variants": [
+    {
+     "name": "The Trialmaster",
+     "uber": false,
+     "tickets": [],
+     "drops": [
+      {
+       "priceKey": "unique|Ixchel's Temptation|Gold Ring",
+       "en": "Ixchel's Temptation",
+       "ratePct": 40.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Glimpse of Chaos|Vaal Mask",
+       "en": "Glimpse of Chaos",
+       "ratePct": 40.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Yaomac's Accord|Vaal Sceptre",
+       "en": "Yaomac's Accord",
+       "ratePct": 9.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Mahuxotl's Machination|Steel Kite Shield",
+       "en": "Mahuxotl's Machination",
+       "ratePct": 9.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Hateforge|Ancient Gauntlets",
+       "en": "Hateforge",
+       "ratePct": 1.0,
+       "rateText": "<1",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Tainted Catalyst",
+       "en": "Tainted Catalyst",
+       "ratePct": 0.0,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "gem|Machinations Support|1|0",
+       "en": "Machinations Support",
+       "ratePct": 10.0,
+       "rateText": "~10",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Vaal Temptation Support|1|0",
+       "en": "Vaal Temptation Support",
+       "ratePct": 5.0,
+       "rateText": "~5",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Ambition|Vaal Aspect",
+       "en": "Ambition",
+       "ratePct": 0.0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Oshabi, Avatar of the Grove",
+   "en": "Oshabi, Avatar of the Grove",
+   "zh": "密園之相．奧莎比",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Sacred Blossom",
+       "en": "Sacred Blossom",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Forbidden Shako|Great Crown",
+       "en": "Forbidden Shako",
+       "ratePct": 50.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Law of the Wilds|Hellion's Paw",
+       "en": "Law of the Wilds",
+       "ratePct": 19.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Witchhunter's Judgment|Highborn Staff",
+       "en": "Witchhunter's Judgment",
+       "ratePct": 19.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Abhorrent Interrogation|Ambush Mitts",
+       "en": "Abhorrent Interrogation",
+       "ratePct": 12.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Sacred Crystallised Lifeforce",
+       "en": "Sacred Crystallised Lifeforce",
+       "ratePct": 100.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Pacifism Support|1|0",
+       "en": "Pacifism Support",
+       "ratePct": 10.0,
+       "rateText": "~10",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Greater Unleash Support|1|0",
+       "en": "Greater Unleash Support",
+       "ratePct": 10.0,
+       "rateText": "~10",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|The Aspirant",
+       "en": "The Aspirant",
+       "ratePct": 14.0,
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Incarnation of Fear",
+   "en": "Incarnation of Fear",
+   "zh": "恐懼化身",
+   "variants": [
+    {
+     "name": "Uber Fear",
+     "uber": true,
+     "tickets": [
+      {
+       "priceKey": "currency|Traumatic Fragment",
+       "en": "Traumatic Fragment",
+       "qty": 4.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|The Caged Mammoth|Antique Gauntlets",
+       "en": "The Caged Mammoth",
+       "ratePct": 60.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Coiling Whisper|Amethyst Ring",
+       "en": "Coiling Whisper",
+       "ratePct": 36.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Wing of the Wyvern|Imperial Bow",
+       "en": "Wing of the Wyvern",
+       "ratePct": 2.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Woespike|Steel Ring",
+       "en": "Woespike",
+       "ratePct": 2.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Traumatic Reliquary Key",
+       "en": "Traumatic Reliquary Key",
+       "ratePct": 1.0,
+       "rateText": "~1",
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "currency|Templar Astrolabe",
+       "en": "Templar Astrolabe",
+       "ratePct": 33.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Chaotic Astrolabe",
+       "en": "Chaotic Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Deceptive Astrolabe",
+       "en": "Deceptive Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fruiting Astrolabe",
+       "en": "Fruiting Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fungal Astrolabe",
+       "en": "Fungal Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Grasping Astrolabe",
+       "en": "Grasping Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Lightless Astrolabe",
+       "en": "Lightless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Nameless Astrolabe",
+       "en": "Nameless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Runic Astrolabe",
+       "en": "Runic Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Timeless Astrolabe",
+       "en": "Timeless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Bound By Destiny|Prismatic Jewel",
+       "en": "Bound By Destiny",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Greater Devour Support|1|0",
+       "en": "Greater Devour Support",
+       "ratePct": 5.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Intention",
+       "en": "Orb of Intention",
+       "ratePct": 50.0,
+       "note": "Additional drops"
+      }
+     ]
+    },
+    {
+     "name": "Regular Fear",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Echo of Trauma",
+       "en": "Echo of Trauma",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Servant of Decay|Torturer Garb",
+       "en": "Servant of Decay",
+       "ratePct": 50.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Unseen Hue|Opal Ring",
+       "en": "The Unseen Hue",
+       "ratePct": 37.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Enmity's Embrace|Vermillion Ring",
+       "en": "Enmity's Embrace",
+       "ratePct": 11.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Starcaller|Abyssal Axe",
+       "en": "Starcaller",
+       "ratePct": 2.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Templar Astrolabe",
+       "en": "Templar Astrolabe",
+       "ratePct": 33.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Chaotic Astrolabe",
+       "en": "Chaotic Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Deceptive Astrolabe",
+       "en": "Deceptive Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fruiting Astrolabe",
+       "en": "Fruiting Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fungal Astrolabe",
+       "en": "Fungal Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Grasping Astrolabe",
+       "en": "Grasping Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Lightless Astrolabe",
+       "en": "Lightless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Nameless Astrolabe",
+       "en": "Nameless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Runic Astrolabe",
+       "en": "Runic Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Timeless Astrolabe",
+       "en": "Timeless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Bound By Destiny|Prismatic Jewel",
+       "en": "Bound By Destiny",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Greater Devour Support|1|0",
+       "en": "Greater Devour Support",
+       "ratePct": 5.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Intention",
+       "en": "Orb of Intention",
+       "ratePct": 50.0,
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "The Black Star",
+   "en": "The Black Star",
+   "zh": "黯星",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Polaric Invitation",
+       "en": "Polaric Invitation",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Polaric Devastation|Opal Ring",
+       "en": "Polaric Devastation",
+       "ratePct": 3.0
+      },
+      {
+       "priceKey": "unique|Sudden Dawn|Steel Circlet",
+       "en": "Sudden Dawn",
+       "ratePct": 3.0
+      },
+      {
+       "priceKey": "unique|The Eternal Struggle|Onyx Amulet",
+       "en": "The Eternal Struggle",
+       "ratePct": 5.0
+      },
+      {
+       "priceKey": "currency|Eldritch Orb of Annulment",
+       "en": "Eldritch Orb of Annulment",
+       "ratePct": 5.0
+      },
+      {
+       "priceKey": "currency|Eldritch Chaos Orb",
+       "en": "Eldritch Chaos Orb",
+       "ratePct": 5.0
+      },
+      {
+       "priceKey": "currency|Eldritch Exalted Orb",
+       "en": "Eldritch Exalted Orb",
+       "ratePct": 5.0
+      },
+      {
+       "priceKey": "currency|Grand Eldritch Ember",
+       "en": "Grand Eldritch Ember",
+       "ratePct": 12.0
+      },
+      {
+       "priceKey": "currency|Greater Eldritch Ember",
+       "en": "Greater Eldritch Ember",
+       "ratePct": 12.0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Citadel",
+   "en": "Citadel",
+   "zh": "壁壘",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Nightmare Map",
+       "en": "Nightmare Map",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "currency|Cosmic Fragment",
+       "en": "Cosmic Fragment",
+       "ratePct": 75.0
+      },
+      {
+       "priceKey": "currency|Synthesising Fragment",
+       "en": "Synthesising Fragment",
+       "ratePct": 75.0
+      },
+      {
+       "priceKey": "unique|Manastorm|Lacewood Spirit Shield",
+       "en": "Manastorm",
+       "ratePct": 5.0
+      },
+      {
+       "priceKey": "gem|Cast on Ward Break Support|1|0",
+       "en": "Cast on Ward Break Support",
+       "ratePct": 5.0,
+       "rateText": "~5"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Incarnation of Neglect",
+   "en": "Incarnation of Neglect",
+   "zh": "漠視化身",
+   "variants": [
+    {
+     "name": "Uber Neglect",
+     "uber": true,
+     "tickets": [
+      {
+       "priceKey": "currency|Lonely Fragment",
+       "en": "Lonely Fragment",
+       "qty": 4.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Refuge in Isolation|Paladin Crown",
+       "en": "Refuge in Isolation",
+       "ratePct": 55.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Bitter Instinct|Spiny Round Shield",
+       "en": "Bitter Instinct",
+       "ratePct": 30.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Haunting Memories|Turquoise Amulet",
+       "en": "Haunting Memories",
+       "ratePct": 13.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Festering Resentment|Demon Dagger",
+       "en": "Festering Resentment",
+       "ratePct": 2.0,
+       "rateText": "~2",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Lonely Reliquary Key",
+       "en": "Lonely Reliquary Key",
+       "ratePct": 1.0,
+       "rateText": "~1",
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "currency|Templar Astrolabe",
+       "en": "Templar Astrolabe",
+       "ratePct": 33.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Chaotic Astrolabe",
+       "en": "Chaotic Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Deceptive Astrolabe",
+       "en": "Deceptive Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fruiting Astrolabe",
+       "en": "Fruiting Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fungal Astrolabe",
+       "en": "Fungal Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Grasping Astrolabe",
+       "en": "Grasping Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Lightless Astrolabe",
+       "en": "Lightless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Nameless Astrolabe",
+       "en": "Nameless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Runic Astrolabe",
+       "en": "Runic Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Timeless Astrolabe",
+       "en": "Timeless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Bound By Destiny|Prismatic Jewel",
+       "en": "Bound By Destiny",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Frostmage Support|1|0",
+       "en": "Frostmage Support",
+       "ratePct": 5.0,
+       "rateText": "~5",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Remembrance",
+       "en": "Orb of Remembrance",
+       "ratePct": 33.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Monochrome",
+       "en": "Monochrome",
+       "ratePct": 3.0,
+       "rateText": "~3",
+       "note": "Additional drops"
+      }
+     ]
+    },
+    {
+     "name": "Regular Neglect",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Echo of Loneliness",
+       "en": "Echo of Loneliness",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Betrayal's Sting|Steel Ring",
+       "en": "Betrayal's Sting",
+       "ratePct": 50.0,
+       "rateText": "~50",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Arkhon's Tools|Cloth Belt",
+       "en": "The Arkhon's Tools",
+       "ratePct": 38.0,
+       "rateText": "~38",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Venarius' Astrolabe|Astrolabe Amulet",
+       "en": "Venarius' Astrolabe",
+       "ratePct": 10.0,
+       "rateText": "~10",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Legacy of the Rose|Judgement Staff",
+       "en": "Legacy of the Rose",
+       "ratePct": 2.0,
+       "rateText": "~2",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "currency|Templar Astrolabe",
+       "en": "Templar Astrolabe",
+       "ratePct": 33.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Chaotic Astrolabe",
+       "en": "Chaotic Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Deceptive Astrolabe",
+       "en": "Deceptive Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fruiting Astrolabe",
+       "en": "Fruiting Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Fungal Astrolabe",
+       "en": "Fungal Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Grasping Astrolabe",
+       "en": "Grasping Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Lightless Astrolabe",
+       "en": "Lightless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Nameless Astrolabe",
+       "en": "Nameless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Runic Astrolabe",
+       "en": "Runic Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Timeless Astrolabe",
+       "en": "Timeless Astrolabe",
+       "ratePct": 7.5,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Bound By Destiny|Prismatic Jewel",
+       "en": "Bound By Destiny",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "gem|Frostmage Support|1|0",
+       "en": "Frostmage Support",
+       "ratePct": 5.0,
+       "rateText": "~5",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Remembrance",
+       "en": "Orb of Remembrance",
+       "ratePct": 33.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Monochrome",
+       "en": "Monochrome",
+       "ratePct": 3.0,
+       "rateText": "~3",
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Fortress",
+   "en": "Fortress",
+   "zh": "堡壘",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Nightmare Map",
+       "en": "Nightmare Map",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "currency|Decaying Fragment",
+       "en": "Decaying Fragment",
+       "ratePct": 75.0
+      },
+      {
+       "priceKey": "currency|Synthesising Fragment",
+       "en": "Synthesising Fragment",
+       "ratePct": 75.0
+      },
+      {
+       "priceKey": "unique|Yoke of Suffering|Onyx Amulet",
+       "en": "Yoke of Suffering",
+       "ratePct": 5.0
+      },
+      {
+       "priceKey": "gem|Overloaded Intensity Support|1|0",
+       "en": "Overloaded Intensity Support",
+       "ratePct": 5.0,
+       "rateText": "~5"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "The Elder (The Shaper's Realm)",
+   "en": "The Elder (The Shaper's Realm)",
+   "zh": "異界尊師(塑者之界)",
+   "variants": [
+    {
+     "name": "Uber Elder",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Fragment of Knowledge",
+       "en": "Fragment of Knowledge",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Fragment of Shape",
+       "en": "Fragment of Shape",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Fragment of Terror",
+       "en": "Fragment of Terror",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Fragment of Emptiness",
+       "en": "Fragment of Emptiness",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Mark of the Shaper|Opal Ring",
+       "en": "Mark of the Shaper",
+       "ratePct": 35.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Mark of the Elder|Steel Ring",
+       "en": "Mark of the Elder",
+       "ratePct": 35.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Voidfletcher|Ornate Quiver",
+       "en": "Voidfletcher",
+       "ratePct": 20.0,
+       "rateText": "~20",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Indigon|Hubris Circlet",
+       "en": "Indigon",
+       "ratePct": 8.0,
+       "rateText": "~8",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Disintegrator|Maelström Staff",
+       "en": "Disintegrator",
+       "ratePct": 2.0,
+       "rateText": "~2",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "gem|Void Shockwave Support|1|0",
+       "en": "Void Shockwave Support",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Watcher's Eye|Prismatic Jewel",
+       "en": "Watcher's Eye (3 mod)",
+       "ratePct": 35.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Shaper's Exalted Orb",
+       "en": "Shaper's Exalted Orb",
+       "ratePct": 13.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Elder's Exalted Orb",
+       "en": "Elder's Exalted Orb",
+       "ratePct": 13.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Dominance",
+       "en": "Orb of Dominance",
+       "ratePct": 6.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Void of the Elements",
+       "en": "Void of the Elements",
+       "ratePct": 1.0,
+       "rateText": "≤1",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Auspicious Ambitions",
+       "en": "Auspicious Ambitions",
+       "ratePct": 0.5,
+       "rateText": "<0.5",
+       "note": "Additional drops"
+      }
+     ]
+    },
+    {
+     "name": "Uber Uber Elder",
+     "uber": true,
+     "tickets": [
+      {
+       "priceKey": "currency|Decaying Fragment",
+       "en": "Decaying Fragment",
+       "qty": 4.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Call of the Void|Sapphire Ring",
+       "en": "Call of the Void",
+       "ratePct": 46.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Devourer of Minds|Pig-Faced Bascinet",
+       "en": "The Devourer of Minds",
+       "ratePct": 28.5,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Soul Ascension|Carnal Mitts",
+       "en": "Soul Ascension",
+       "ratePct": 9.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|The Eternity Shroud|Blood Raiment",
+       "en": "The Eternity Shroud",
+       "ratePct": 5.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Voidforge|Infernal Sword",
+       "en": "Voidforge",
+       "ratePct": 1.5,
+       "rateText": "~1.5",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Impresence|Onyx Amulet",
+       "en": "Impresence (Full power variant (2 curses))",
+       "ratePct": 10.0,
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Sublime Vision|Prismatic Jewel",
+       "en": "Sublime Vision",
+       "ratePct": 1.5,
+       "rateText": "~1.5",
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "currency|Decaying Reliquary Key",
+       "en": "Decaying Reliquary Key",
+       "ratePct": 1.5,
+       "rateText": "~1.5",
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "unique|Curio of Decay|Primordial Fragment",
+       "en": "Curio of Decay",
+       "ratePct": 5.0,
+       "note": "Encounter-specific drops"
+      },
+      {
+       "priceKey": "gem|Void Shockwave Support|1|0",
+       "en": "Void Shockwave Support",
+       "ratePct": 10.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "unique|Watcher's Eye|Prismatic Jewel",
+       "en": "Watcher's Eye (3 mod)",
+       "ratePct": 35.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Shaper's Exalted Orb",
+       "en": "Shaper's Exalted Orb",
+       "ratePct": 13.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Elder's Exalted Orb",
+       "en": "Elder's Exalted Orb",
+       "ratePct": 13.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "currency|Orb of Dominance",
+       "en": "Orb of Dominance",
+       "ratePct": 6.0,
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Void of the Elements",
+       "en": "Void of the Elements",
+       "ratePct": 1.0,
+       "rateText": "≤1",
+       "note": "Additional drops"
+      },
+      {
+       "priceKey": "card|Auspicious Ambitions",
+       "en": "Auspicious Ambitions",
+       "ratePct": 0.5,
+       "rateText": "<0.5",
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Zorath, Vile Assembled",
+   "en": "Zorath, Vile Assembled",
+   "zh": "汙孽再造．澤洛斯",
+   "variants": [
+    {
+     "name": "Zorath",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|Zorath's Eye of Malevolence",
+       "en": "Zorath's Eye of Malevolence",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Zorath's Eye of Authority",
+       "en": "Zorath's Eye of Authority",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Zorath's Eye of the Inevitable",
+       "en": "Zorath's Eye of the Inevitable",
+       "qty": 1.0
+      },
+      {
+       "priceKey": "currency|Zorath's Eye of the Endless",
+       "en": "Zorath's Eye of the Endless",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|Subsume the Source|Faithful Helmet",
+       "en": "Subsume the Source",
+       "ratePct": 40.0,
+       "rateText": "~40",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Spinesnatch|Fleshripper",
+       "en": "Spinesnatch",
+       "ratePct": 20.0,
+       "rateText": "~20",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Baleful Dominion|Hypnotic Eye Jewel",
+       "en": "Baleful Dominion",
+       "ratePct": 10.0,
+       "rateText": "~10",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Destructive Aspiration|Ghastly Eye Jewel",
+       "en": "Destructive Aspiration",
+       "ratePct": 10.0,
+       "rateText": "~10",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Extinguishing Grasp|Searching Eye Jewel",
+       "en": "Extinguishing Grasp",
+       "ratePct": 10.0,
+       "rateText": "~10",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "unique|Festering Vengeance|Murderous Eye Jewel",
+       "en": "Festering Vengeance",
+       "ratePct": 10.0,
+       "rateText": "~10",
+       "note": "Guaranteed Unique"
+      },
+      {
+       "priceKey": "gem|Crystalfall Support|1|0",
+       "en": "Crystalfall Support",
+       "ratePct": 10.0,
+       "rateText": "~10",
+       "note": "Additional drops"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "Saresh, of the Weeping Black",
+   "en": "Saresh, of the Weeping Black",
+   "zh": "潸然之黯．薩雷許",
+   "variants": [
+    {
+     "name": "Regular",
+     "uber": false,
+     "tickets": [
+      {
+       "priceKey": "currency|The Black Barya",
+       "en": "The Black Barya",
+       "qty": 1.0
+      }
+     ],
+     "drops": [
+      {
+       "priceKey": "unique|The Sands of Time|Tyrant's Sekhem",
+       "en": "The Sands of Time",
+       "ratePct": 6.0
+      },
+      {
+       "priceKey": "unique|The Broken Elegy|Foul Staff",
+       "en": "The Broken Elegy",
+       "ratePct": 40.0
+      },
+      {
+       "priceKey": "unique|Screams of the Desiccated|Leather Belt",
+       "en": "Screams of the Desiccated (1 shrine)",
+       "ratePct": 50.0
+      },
+      {
+       "priceKey": "unique|Screams of the Desiccated|Leather Belt",
+       "en": "Screams of the Desiccated (2 shrines)",
+       "ratePct": 4.0
+      },
+      {
+       "priceKey": "unique|Screams of the Desiccated|Leather Belt",
+       "en": "Screams of the Desiccated",
+       "ratePct": 4.0
+      },
+      {
+       "priceKey": "gem|Transfusion Support|1|0",
+       "en": "Transfusion Support",
+       "ratePct": 10.0
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

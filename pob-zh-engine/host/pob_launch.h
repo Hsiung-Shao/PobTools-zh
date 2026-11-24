@@ -21,6 +21,7 @@ enum class InstanceKind {
 	FilterEditor,
 	TimelessJewel,
 	Warehouse,
+	BossProfit,
 	// The WebView2 "new interface" window (--modern-ui). A tool for update
 	// purposes: the POB it drives is a headless engine child of its own, and
 	// THAT child holds the engine-running marker, not this window.

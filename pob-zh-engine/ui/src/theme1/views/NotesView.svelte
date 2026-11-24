@@ -134,7 +134,7 @@
     <span class="grow"></span>
     <span class="k">{t("notes.colors")}</span>
     {#each colours as c}
-      <button class="sw" title={c.code} style:color={swatch(c.code)} onclick={() => insertColour(c.code)}>{colourLabel(c.name)}</button>
+      <button class="sw pob-lit" title={c.code} style:--pc={swatch(c.code)} onclick={() => insertColour(c.code)}>{colourLabel(c.name)}</button>
     {/each}
   </div>
   <div class="two">
