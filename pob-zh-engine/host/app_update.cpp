@@ -1679,7 +1679,7 @@ static void delete_old_backups(const std::wstring& exeDir, int retries)
 	};
 	// *.old and the numbered *.old2..9 move_to_backup falls back to
 	WIN32_FIND_DATAW fd{};
-	HANDLE h = FindFirstFileW((exeDir + L"pob-zh.exe.old*").c_str(), &fd);
+	HANDLE h = FindFirstFileW((exeDir + L"*.exe.old*").c_str(), &fd);
 	if (h != INVALID_HANDLE_VALUE) {
 		do {
 			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) tryDelete(exeDir + fd.cFileName);
@@ -1790,7 +1790,10 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 			// ("內容檔替換失敗: glfw3.dll", field report on 1.7.3), renaming works.
 			const bool rootDll = rel.find(L'\\') == std::wstring::npos && rel.size() > 4 &&
 			                     _wcsicmp(rel.c_str() + rel.size() - 4, L".dll") == 0;
-			if (rel == L"pob-zh.exe" || rootDll || rel.compare(0, 7, L"engine\\") == 0) { boot.push_back(rel); continue; }
+			// pobtools.exe may be running (an agent's CLI call): rename, never overwrite
+			const bool rootExe = rel.find(L'\\') == std::wstring::npos && rel.size() > 4 &&
+			                     _wcsicmp(rel.c_str() + rel.size() - 4, L".exe") == 0;
+			if (rootExe || rootDll || rel.compare(0, 7, L"engine\\") == 0) { boot.push_back(rel); continue; }
 			// Normally a no-op since v0.19.0: PobTools-update-<ver>.zip carries no
 			// dictionaries at all. Kept as the last line of defence for the two
 			// cases where the stage DOES hold them -- someone pointed at the full
@@ -2306,6 +2309,7 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		ok = ok && writeSmall(inst + L"engine\\libGLESv2.dll", "OLD");
 		ok = ok && writeSmall(inst + L"Data\\dict.json", "OLD");
 		ok = ok && writeBig(stage + L"pob-zh.exe", "NEW");
+		ok = ok && writeSmall(inst + L"pobtools.exe", "OLD") && writeSmall(stage + L"pobtools.exe", "NEW");
 		ok = ok && writeSmall(stage + L"engine\\SimpleGraphic.dll", "NEW");
 		ok = ok && writeSmall(stage + L"engine\\glfw3.dll", "NEW");
 		ok = ok && writeSmall(stage + L"engine\\libGLESv2.dll", "NEW");
@@ -2323,7 +2327,9 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		ok = ok && readPrefix(inst + L"pob-zh.exe") == "NEW" &&
 		     readPrefix(inst + L"engine\\SimpleGraphic.dll") == "NEW" &&
 		     readPrefix(inst + L"Data\\dict.json") == "NEW" &&
-		     readPrefix(inst + L"pob-zh.exe.old") == "OLD";
+		     readPrefix(inst + L"pob-zh.exe.old") == "OLD" &&
+		     readPrefix(inst + L"pobtools.exe") == "NEW" &&
+		     readPrefix(inst + L"pobtools.exe.old") == "OLD";
 		std::string stateRaw;
 		ok = ok && read_file_utf8(inst + L"PobTools\\update_state.json", stateRaw) &&
 		     stateRaw.find("9.9.9") != std::string::npos;
