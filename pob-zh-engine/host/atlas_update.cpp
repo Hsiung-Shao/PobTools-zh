@@ -554,7 +554,8 @@ bool AtlasUpdater::doCheck(std::string* err)
 		// same tree, newer translations: rebuild the zh mapping in place
 		setPhase(AtlasUpdatePhase::Checking, u8"更新繁中對照資料中…");
 		std::string zhErr;
-		if (refreshZhMapping(latestTag, latestSha.empty() ? latestTag : latestSha, repoeVer, &zhErr)) {
+		// tag_ == latestTag here: rebuild against the INSTALLED tree, not a tag-only fallback sha
+		if (refreshZhMapping(latestTag, sha_.empty() ? latestTag : sha_, repoeVer, &zhErr)) {
 			repoe_ = repoeVer;
 			msg = u8"繁中對照已更新（repoe " + repoeVer + u8"）";
 			zhRefreshed = true;
@@ -763,22 +764,7 @@ int RunAtlasUpdateCli(const std::wstring& exeDir)
 
 	AtlasUpdater u;
 	u.exeDir_ = exeDir;
-	{
-		std::string content;
-		if (read_file_utf8(exeDir + L"Data\\atlas_version.json", content)) {
-			try {
-				ordered_json v = ordered_json::parse(content);
-				u.tag_ = v.value("tag", std::string());
-				u.sha_ = v.value("sha", std::string());
-				u.repoe_ = v.value("repoe", std::string());
-			} catch (...) {
-				// corrupt record reads as "never updated": forces a full update
-				u.tag_.clear();
-				u.sha_.clear();
-				u.repoe_.clear();
-			}
-		}
-	}
+	u.loadRecord(); // same record + installed-sha rules as the GUI
 
 	std::string err;
 	if (!u.doCheck(&err)) {

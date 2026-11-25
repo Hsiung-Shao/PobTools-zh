@@ -576,7 +576,7 @@ int RunAtlasDiffSelfTest(const std::wstring& exeDir)
 		check(PickAtlasRemote(tags, head("oldsha", "3.29.9"), &tag, &sha, &fh, &e) && sha == "tagsha" && !fh,
 		      "master 版號比 tag 舊時仍取 tag");
 		{
-			const std::wstring d = std::wstring(_wgetenv(L"TEMP")) + L"\\atlas_sha_selftest\\";
+			const std::wstring d = exeDir + L"atlas_sha_selftest\\";
 			CreateDirectoryW(d.c_str(), nullptr);
 			CreateDirectoryW((d + L"Data").c_str(), nullptr);
 			write_file_utf8(d + L"Data\\atlas_index.json",
