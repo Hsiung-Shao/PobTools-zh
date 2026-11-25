@@ -1891,9 +1891,12 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
         }
         if (sink && fwd) (*sink)[full_key] = full_value;
         if (merge) {
-            s_reverse[full_value] = full_key;
+            /* Chinese without markup answers with the markup-free English */
+            s_reverse[full_value] = clean_value == full_value ? clean_key : full_key;
             s_reverse_origin[full_value] = origin;
-            if (clean_value != full_value) {
+            /* a bracket-stripped copy is derived: it never replaces an existing entry
+            ** (PoE2 "[Critical|暴擊率]" lines in a PoE1 file stole 增加 15% 暴擊率) */
+            if (clean_value != full_value && !s_reverse.count(clean_value)) {
                 s_reverse[clean_value] = clean_key;
                 s_reverse_origin[clean_value] = origin;
             }
