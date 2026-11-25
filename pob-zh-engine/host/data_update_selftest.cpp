@@ -603,7 +603,7 @@ void verify_atlas_installed(Ctx& c, Rep& R)
 	for (const std::string& a : c.fl.neededAssets)
 		if (slurp(nd + L"atlas\\" + widen(a)) != "ASSET:" + a) sheetsOk = false;
 	R.chk(0, sheetsOk, u8"4 張圖集都複製進新賽季 atlas\\（內容與下載相同）");
-	R.chk(0, !dir_exists(d + L"PobTools\\cache\\atlas_update\\3.29.0\\assets"), u8"成功後清掉下載快取");
+	R.chk(0, !dir_exists(d + L"PobTools\\cache\\atlas_update\\" + widen(c.fl.ref()) + L"\\assets"), u8"成功後清掉下載快取");
 }
 
 void verify_pt_installed(Ctx& c, Rep& R)
