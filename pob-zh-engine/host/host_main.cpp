@@ -672,9 +672,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		return RunAtlasUpdateCli(dir);
 	}
 
-	// Offline zh-mapping rebuild: --atlas-zh <data.json> <TC Atlas.json>.
+	// Offline zh-mapping rebuild: --atlas-zh <data.json> <TC Atlas.json> [<EN Atlas.json>].
 	if (arg1 == L"--atlas-zh") {
-		return RunAtlasZhCli(arg2, arg3, dir);
+		return RunAtlasZhCli(arg2, arg3, arg4, dir);
 	}
 
 	// Open the atlas planner directly (shortcut-friendly; also used by the

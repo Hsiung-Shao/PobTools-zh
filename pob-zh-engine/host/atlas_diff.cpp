@@ -504,7 +504,72 @@ int RunAtlasDiffSelfTest(const std::wstring& exeDir)
 		RemoveDirectoryW(dir.c_str());
 	}
 
-	rep.text += "\n--- sample report ---\n" + FormatAtlasTreeDiffReport(d);
+	// statsZh 依 repoe 英文同列全文對位(3.30.0 節點 60101:兩行無數字，數字重排會前後綴對調)
+	{
+		using nlohmann::ordered_json;
+		std::wstring dir = exeDir + L"zhalign_selftest\\";
+		CreateDirectoryW(dir.c_str(), nullptr);
+		const char* ggg =
+			"{\"nodes\":{\"1\":{\"skill\":200,\"name\":\"Node R\",\"stats\":["
+			"\"[Remnant|Remnants] have an additional Suffix Modifier\","
+			"\"Remnants have an additional Prefix Modifier\","
+			"\"Shaped Regions grant 30% more\"],"
+			"\"variantEffects\":[{\"effect\":201,\"stats\":[\"Option A\",\"Option B\"]}]}}}";
+		const char* tc =
+			"{\"passives\":{\"200\":{\"name\":\"節點R\",\"stat_text\":["
+			"\"塑形區域給予多 30%\",\"遺物額外前綴\",\"遺物額外後綴\"]},"
+			"\"201\":{\"stat_text\":[\"選項乙\",\"選項甲\"]}}}";
+		const char* en =
+			"{\"passives\":{\"200\":{\"name\":\"Node R\",\"stat_text\":["
+			"\"Shaped Region Objectives grant 30% more\","
+			"\"Remnants have an additional Prefix Modifier\","
+			"\"Remnants  have an additional\\nSuffix Modifier\"]},"
+			"\"201\":{\"stat_text\":[\"Option B\",\"Option A\"]}}}";
+		auto statsZhOf = [&](const char* key) {
+			std::vector<std::string> got;
+			std::string outRaw;
+			if (read_file_utf8(dir + L"atlas_tree_zh.json", outRaw)) try {
+				const ordered_json j = ordered_json::parse(outRaw);
+				for (const auto& s : j["nodes"][key]["statsZh"]) got.push_back(s.get<std::string>());
+			} catch (...) {}
+			return got;
+		};
+		std::string zhErr;
+		check(GenerateAtlasZhMapping(ggg, tc, "9.99.0", "9.98.0.2", dir, &zhErr, nullptr, en), "帶英文檔時對照產生成功");
+		std::vector<std::string> got = statsZhOf("200");
+		check(got.size() == 3 && got[0] == u8"遺物額外後綴" && got[1] == u8"遺物額外前綴",
+		      "無數字的兩行依 repoe 英文全文對位，不會前後綴對調");
+		check(got.size() == 3 && got[2] == u8"塑形區域給予多 30%", "英文與 repoe 不同的行退回數字配對");
+		got = statsZhOf("201");
+		check(got.size() == 2 && got[0] == u8"選項甲" && got[1] == u8"選項乙", "多選節點的選項也依英文全文對位");
+		check(GenerateAtlasZhMapping(ggg, tc, "9.99.0", "9.98.0.2", dir, &zhErr, nullptr, "<html>not json"),
+		      "英文檔內容壞掉時仍產生對照");
+		got = statsZhOf("200");
+		check(got.size() == 3 && got[2] == u8"塑形區域給予多 30%", "英文檔壞掉時退回數字配對，內容不空");
+		DeleteFileW((dir + L"atlas_tree_zh.json").c_str());
+		RemoveDirectoryW(dir.c_str());
+	}
+
+	// 3.30.0c:GGG 推到 master 但沒打新 tag
+	{
+		const std::string tags = R"([{"name":"3.30.0","commit":{"sha":"tagsha"}},
+			{"name":"3.29.1","commit":{"sha":"old"}},{"name":"3.30.0-ruthless","commit":{"sha":"r"}}])";
+		auto head = [](const char* sha, const char* msg) {
+			return std::string(R"([{"sha":")") + sha + R"(","commit":{"message":")" + msg + R"("}}])";
+		};
+		std::string tag, sha, e;
+		check(PickAtlasRemote(tags, head("headsha", "3.30.0c"), &tag, &sha, &e) && tag == "3.30.0" && sha == "headsha",
+		      "master 有同版號未打 tag 的修訂時取 master 的 sha");
+		check(PickAtlasRemote(tags, head("nextsha", "3.31.0 preview"), &tag, &sha, &e) && tag == "3.30.0" && sha == "tagsha",
+		      "master 是下一季預覽時仍取 tag");
+		check(PickAtlasRemote(tags, "", &tag, &sha, &e) && tag == "3.30.0" && sha == "tagsha", "抓不到 master 時退回 tag");
+		check(AtlasNeedsUpdate("3.30.0", "tagsha", "3.30.0", "headsha"), "同版號 sha 不同=有更新");
+		check(!AtlasNeedsUpdate("3.30.0", "tagsha", "3.30.0", "tagsha"), "同版號同 sha=已是最新");
+		check(!AtlasNeedsUpdate("3.30.0", "", "3.30.0", "headsha"), "本機沒記 sha 時不靠 sha 判斷");
+		check(AtlasNeedsUpdate("3.29.1", "old", "3.30.0", "tagsha"), "版號不同=有更新");
+	}
+
+	rep.text +="\n--- sample report ---\n" + FormatAtlasTreeDiffReport(d);
 	return rep.finish(exeDir + L"atlas_diff_selftest.txt");
 }
 
