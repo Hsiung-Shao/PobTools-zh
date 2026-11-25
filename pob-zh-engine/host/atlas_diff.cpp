@@ -558,15 +558,17 @@ int RunAtlasDiffSelfTest(const std::wstring& exeDir)
 			return std::string(R"([{"sha":")") + sha + R"(","commit":{"message":")" + msg + R"("}}])";
 		};
 		std::string tag, sha, e;
-		check(PickAtlasRemote(tags, head("headsha", "3.30.0c"), &tag, &sha, &e) && tag == "3.30.0" && sha == "headsha",
+		bool fh = false;
+		check(PickAtlasRemote(tags, head("headsha", "3.30.0c"), &tag, &sha, &fh, &e) && tag == "3.30.0" && sha == "headsha" && fh,
 		      "master 有同版號未打 tag 的修訂時取 master 的 sha");
-		check(PickAtlasRemote(tags, head("nextsha", "3.31.0 preview"), &tag, &sha, &e) && tag == "3.30.0" && sha == "tagsha",
+		check(PickAtlasRemote(tags, head("nextsha", "3.31.0 preview"), &tag, &sha, &fh, &e) && tag == "3.30.0" && sha == "tagsha" && !fh,
 		      "master 是下一季預覽時仍取 tag");
-		check(PickAtlasRemote(tags, "", &tag, &sha, &e) && tag == "3.30.0" && sha == "tagsha", "抓不到 master 時退回 tag");
-		check(AtlasNeedsUpdate("3.30.0", "tagsha", "3.30.0", "headsha"), "同版號 sha 不同=有更新");
-		check(!AtlasNeedsUpdate("3.30.0", "tagsha", "3.30.0", "tagsha"), "同版號同 sha=已是最新");
-		check(!AtlasNeedsUpdate("3.30.0", "", "3.30.0", "headsha"), "本機沒記 sha 時不靠 sha 判斷");
-		check(AtlasNeedsUpdate("3.29.1", "old", "3.30.0", "tagsha"), "版號不同=有更新");
+		check(PickAtlasRemote(tags, "", &tag, &sha, &fh, &e) && tag == "3.30.0" && sha == "tagsha" && !fh, "抓不到 master 時退回 tag");
+		check(AtlasNeedsUpdate("3.30.0", "tagsha", "3.30.0", "headsha", true), "同版號 sha 不同=有更新");
+		check(!AtlasNeedsUpdate("3.30.0", "tagsha", "3.30.0", "tagsha", true), "同版號同 sha=已是最新");
+		check(!AtlasNeedsUpdate("3.30.0", "", "3.30.0", "headsha", true), "本機沒記 sha 時不靠 sha 判斷");
+		check(AtlasNeedsUpdate("3.29.1", "old", "3.30.0", "tagsha", false), "版號不同=有更新");
+		check(!AtlasNeedsUpdate("3.30.0", "headsha", "3.30.0", "tagsha", false), "已是修訂版、master 抓不到時不降回 tag");
 	}
 
 	rep.text +="\n--- sample report ---\n" + FormatAtlasTreeDiffReport(d);

@@ -72,12 +72,14 @@ bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& t
 // Newest atlas data on GitHub: the highest plain-semver tag, or the default
 // branch head when its commit message starts with that same version (GGG
 // pushed "3.30.0c" to master without tagging it). headBody = GET commits?per_page=1,
-// empty/unparsable = tag only. Download by *sha, not by tag name.
+// empty/unparsable = tag only. Download by *sha, not by tag name. *fromHead:
+// *sha is the head's (only then does a sha mismatch on the same tag mean "newer").
 bool PickAtlasRemote(const std::string& tagsBody, const std::string& headBody,
-                     std::string* tag, std::string* sha, std::string* err);
-// Local tag/sha vs remote: new tag, or same tag with a different known sha.
+                     std::string* tag, std::string* sha, bool* fromHead, std::string* err);
+// Local tag/sha vs remote: new tag, or same tag with a different known head sha
+// (a tag-only fallback must not "update" a head revision back to the tag).
 bool AtlasNeedsUpdate(const std::string& localTag, const std::string& localSha,
-                      const std::string& remoteTag, const std::string& remoteSha);
+                      const std::string& remoteTag, const std::string& remoteSha, bool remoteFromHead);
 
 // "pob-zh.exe --atlas-update": headless check + download + import + zh mapping
 // (ignores the daily throttle). Prints the outcome; 0 on success/up-to-date.

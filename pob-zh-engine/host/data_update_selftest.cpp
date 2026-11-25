@@ -134,6 +134,7 @@ struct FakeNet {
 	int unexpected = 0;             // requests outside the known set
 
 	std::string tagsPath, rawPrefix; // the exact request shapes the updater is expected to use
+	std::string headPath;            // atlas only: default-branch head (fake answers "unreachable" = tag only)
 	std::string tagsBody;
 	bool tagsFail = false;
 	std::string repoeVer = "r1";
@@ -167,6 +168,7 @@ struct FakeNet {
 		};
 
 		if (h == "api.github.com") {
+			if (!headPath.empty() && p == headPath) return no("fake: head unreachable", false);
 			if (p != tagsPath) return no("unexpected api path", true);
 			if (tagsFail) return no("fake: tags unreachable", false);
 			return ok(tagsBody);
@@ -174,6 +176,7 @@ struct FakeNet {
 		if (h == "repoe-fork.github.io") {
 			if (p == "/version.txt") return ok(repoeVer + "\n");
 			if (p == "/Traditional%20Chinese/passive_skill_trees/Atlas.json") return ok(tcAtlas);
+			if (p == "/passive_skill_trees/Atlas.json") return no("fake: no en atlas", false); // number-matching fallback
 			return no("unexpected repoe path", true);
 		}
 		if (h == "raw.githubusercontent.com") {
@@ -368,6 +371,7 @@ struct Flavor {
 	bool atlas;
 	std::string curTag, newTag, curLatest, newLatest; // curTag/newTag = GitHub tags; *Latest = Status::latest form
 	std::string newSha;
+	std::string ref() const { return newSha.empty() ? newTag : newSha; } // download/cache key
 	std::string tagsPath, rawPrefix;
 	std::string dataGood;
 	std::wstring treeFile;                     // an existing tree file an up-to-date check must not rewrite
@@ -463,6 +467,7 @@ struct Ctx {
 			put(pob + L"TreeData\\" + widen(o.pobVer) + L"\\a-3.png", "POB-A3-SHEET");
 		}
 		net.tagsPath = fl.tagsPath;
+		if (fl.atlas) net.headPath = "/repos/grindinggear/atlastree-export/commits?per_page=1";
 		net.rawPrefix = fl.rawPrefix;
 		net.tagsBody = o.newer
 			? R"([{"name":"3.30.0-ruthless","commit":{"sha":"ruthsha"}},{"name":"3.29.0","commit":{"sha":"newsha"}},{"name":"3.28.0","commit":{"sha":"oldsha"}}])"
@@ -644,7 +649,7 @@ void test_update(Rep& R)
 	}
 
 	std::vector<std::string> calls = c.net.allCalls();
-	R.chk(0, data_calls(calls) == 1 && has_call(calls, "raw.githubusercontent.com" + fl.rawPrefix + fl.newTag + "/data.json"),
+	R.chk(0, data_calls(calls) == 1 && has_call(calls, "raw.githubusercontent.com" + fl.rawPrefix + fl.ref() + "/data.json"),
 	      u8"只下載一次新 tag 的 data.json（路徑正確）");
 	R.chk(0, asset_calls(calls) == fl.neededAssets, u8"只下載資料實際引用的圖集（不多不少、共用的只抓一次）",
 	      "got=" + join(asset_calls(calls)));
@@ -801,7 +806,7 @@ void test_cache_write(Rep& R)
 	Opt o;
 	Ctx c(fl, o);
 	const std::string one = *fl.neededAssets.begin();
-	put(c.dir + L"PobTools\\cache\\" + (fl.atlas ? L"atlas_update" : L"pt_update") + L"\\" + widen(fl.newTag) +
+	put(c.dir + L"PobTools\\cache\\" + (fl.atlas ? L"atlas_update" : L"pt_update") + L"\\" + widen(fl.ref()) +
 	    L"\\assets\\" + widen(one) + L".part", "HALF");
 	bool ok = false;
 	View v = c.check(true, &ok);

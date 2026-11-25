@@ -52,9 +52,10 @@ static bool parse_semver(const std::string& s, std::tuple<int, int, int>* out)
 }
 
 bool PickAtlasRemote(const std::string& tagsBody, const std::string& headBody,
-                     std::string* tag, std::string* sha, std::string* err)
+                     std::string* tag, std::string* sha, bool* fromHead, std::string* err)
 {
 	std::string latestTag, latestSha;
+	bool head = false;
 	std::tuple<int, int, int> best{ -1, -1, -1 };
 	try {
 		ordered_json tags = ordered_json::parse(tagsBody);
@@ -85,20 +86,22 @@ bool PickAtlasRemote(const std::string& tagsBody, const std::string& headBody,
 			int a = 0, b = 0, c = 0, used = 0;
 			bool same = sscanf_s(msg.c_str(), "%d.%d.%d%n", &a, &b, &c, &used) == 3 &&
 				std::make_tuple(a, b, c) == best && !isdigit((unsigned char)msg[used]) && msg[used] != '.';
-			if (same && !hs.empty()) latestSha = hs; // "3.30.0c" yes, "3.31.0 preview"/"3.30.01" no
+			if (same && !hs.empty()) { latestSha = hs; head = true; } // "3.30.0c" yes, "3.31.0 preview"/"3.30.01" no
 		}
 	} catch (const std::exception&) {
 		// unparsable head: keep the tag
 	}
 	*tag = latestTag;
 	*sha = latestSha;
+	*fromHead = head;
 	return true;
 }
 
 bool AtlasNeedsUpdate(const std::string& localTag, const std::string& localSha,
-                      const std::string& remoteTag, const std::string& remoteSha)
+                      const std::string& remoteTag, const std::string& remoteSha, bool remoteFromHead)
 {
-	return remoteTag != localTag || (!localSha.empty() && !remoteSha.empty() && remoteSha != localSha);
+	return remoteTag != localTag ||
+	       (remoteFromHead && !localSha.empty() && !remoteSha.empty() && remoteSha != localSha);
 }
 
 // cdn url "https://web.poecdn.com/.../atlas-skills-4.jpg?bcad" -> "atlas-skills-4.jpg"
@@ -504,7 +507,8 @@ bool AtlasUpdater::doCheck(std::string* err)
 		if (!api.GetString(kHeadPath, headBody, &ignored, &stop_)) headBody.clear();
 	}
 	std::string latestTag, latestSha;
-	if (!PickAtlasRemote(tagsBody, headBody, &latestTag, &latestSha, err)) return false;
+	bool fromHead = false;
+	if (!PickAtlasRemote(tagsBody, headBody, &latestTag, &latestSha, &fromHead, err)) return false;
 
 	// current repoe-fork dataset version (best-effort; zh refresh only)
 	std::string repoeVer;
@@ -527,7 +531,7 @@ bool AtlasUpdater::doCheck(std::string* err)
 	AtlasUpdatePhase ph = AtlasUpdatePhase::UpToDate;
 	std::string msg; // stays empty when the zh rebuild failed: keep the old mapping, retry on a future check
 	bool zhRefreshed = false;
-	if (AtlasNeedsUpdate(tag_, sha_, latestTag, latestSha)) {
+	if (AtlasNeedsUpdate(tag_, sha_, latestTag, latestSha, fromHead)) {
 		ph = AtlasUpdatePhase::UpdateAvailable;
 		msg = latestTag == tag_
 			? u8"發現輿圖資料修訂 " + latestTag + u8"（" + latestSha.substr(0, 7) + u8"）"
