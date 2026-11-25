@@ -569,6 +569,24 @@ int RunAtlasDiffSelfTest(const std::wstring& exeDir)
 		check(!AtlasNeedsUpdate("3.30.0", "", "3.30.0", "headsha", true), "本機沒記 sha 時不靠 sha 判斷");
 		check(AtlasNeedsUpdate("3.29.1", "old", "3.30.0", "tagsha", false), "版號不同=有更新");
 		check(!AtlasNeedsUpdate("3.30.0", "headsha", "3.30.0", "tagsha", false), "已是修訂版、master 抓不到時不降回 tag");
+		check(PickAtlasRemote(tags, head("p3sha", "3.30.3"), &tag, &sha, &fh, &e) && tag == "3.30.0" && sha == "p3sha" && fh,
+		      "同聯盟升 patch 未打 tag(3.29.3 前例)也取 master");
+		check(PickAtlasRemote(tags, head("rsha", "3.30.0-ruthless"), &tag, &sha, &fh, &e) && sha == "tagsha" && !fh,
+		      "master 是 ruthless 版時仍取 tag");
+		check(PickAtlasRemote(tags, head("oldsha", "3.29.9"), &tag, &sha, &fh, &e) && sha == "tagsha" && !fh,
+		      "master 版號比 tag 舊時仍取 tag");
+		{
+			const std::wstring d = std::wstring(_wgetenv(L"TEMP")) + L"\\atlas_sha_selftest\\";
+			CreateDirectoryW(d.c_str(), nullptr);
+			CreateDirectoryW((d + L"Data").c_str(), nullptr);
+			write_file_utf8(d + L"Data\\atlas_index.json",
+				R"({"format":"pobtools-atlas-index","active":"3.30.0","versions":[{"tag":"3.30.0","sha":"bundled"}]})");
+			check(AtlasInstalledSha(d, "3.30.0", "stale") == "bundled", "隨包資料的 sha 優先於舊更新紀錄");
+			check(AtlasInstalledSha(d, "3.29.1", "rec") == "rec", "索引沒有該賽季時用更新紀錄");
+			DeleteFileW((d + L"Data\\atlas_index.json").c_str());
+			RemoveDirectoryW((d + L"Data").c_str());
+			RemoveDirectoryW(d.c_str());
+		}
 	}
 
 	rep.text +="\n--- sample report ---\n" + FormatAtlasTreeDiffReport(d);

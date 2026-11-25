@@ -80,6 +80,9 @@ bool PickAtlasRemote(const std::string& tagsBody, const std::string& headBody,
 // (a tag-only fallback must not "update" a head revision back to the tag).
 bool AtlasNeedsUpdate(const std::string& localTag, const std::string& localSha,
                       const std::string& remoteTag, const std::string& remoteSha, bool remoteFromHead);
+// sha of the installed `tag`: the atlas_index.json entry (follows the data an app
+// update ships), else the update record's sha.
+std::string AtlasInstalledSha(const std::wstring& exeDir, const std::string& tag, const std::string& recordSha);
 
 // "pob-zh.exe --atlas-update": headless check + download + import + zh mapping
 // (ignores the daily throttle). Prints the outcome; 0 on success/up-to-date.

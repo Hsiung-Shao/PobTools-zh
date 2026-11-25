@@ -84,9 +84,12 @@ bool PickAtlasRemote(const std::string& tagsBody, const std::string& headBody,
 			std::string msg = h[0].contains("commit") && h[0]["commit"].is_object()
 				? h[0]["commit"].value("message", std::string()) : std::string();
 			int a = 0, b = 0, c = 0, used = 0;
-			bool same = sscanf_s(msg.c_str(), "%d.%d.%d%n", &a, &b, &c, &used) == 3 &&
-				std::make_tuple(a, b, c) == best && !isdigit((unsigned char)msg[used]) && msg[used] != '.';
-			if (same && !hs.empty()) { latestSha = hs; head = true; } // "3.30.0c" yes, "3.31.0 preview"/"3.30.01" no
+			// same league (major.minor) and not older than the tag: "3.30.0c"/"3.30.3" yes,
+			// "3.31.0 preview"/"3.29.9"/"3.30.0-ruthless"/"3.30.01" no
+			const char nx = (sscanf_s(msg.c_str(), "%d.%d.%d%n", &a, &b, &c, &used) == 3) ? msg[used] : '.';
+			bool same = std::make_tuple(a, b) == std::make_tuple(std::get<0>(best), std::get<1>(best)) &&
+				std::make_tuple(a, b, c) >= best && !isdigit((unsigned char)nx) && nx != '.' && nx != '-';
+			if (same && !hs.empty()) { latestSha = hs; head = true; }
 		}
 	} catch (const std::exception&) {
 		// unparsable head: keep the tag
@@ -102,6 +105,14 @@ bool AtlasNeedsUpdate(const std::string& localTag, const std::string& localSha,
 {
 	return remoteTag != localTag ||
 	       (remoteFromHead && !localSha.empty() && !remoteSha.empty() && remoteSha != localSha);
+}
+
+std::string AtlasInstalledSha(const std::wstring& exeDir, const std::string& tag, const std::string& recordSha)
+{
+	AtlasVersionIndex idx;
+	idx.Load(exeDir);
+	const AtlasVersionEntry* e = idx.Find(tag);
+	return e && !e->sha.empty() ? e->sha : recordSha;
 }
 
 // cdn url "https://web.poecdn.com/.../atlas-skills-4.jpg?bcad" -> "atlas-skills-4.jpg"
@@ -480,6 +491,7 @@ void AtlasUpdater::loadRecord()
 			sha_ = v.value("sha", std::string());
 			repoe_ = v.value("repoe", std::string());
 			lastCheckUtc_ = v.value("lastCheckUtc", 0ll);
+			sha_ = AtlasInstalledSha(exeDir_, tag_, sha_); // an app update may have replaced the season's data
 		} catch (...) {
 			// corrupt record reads as "never updated": forces a fresh check
 			tag_.clear();
