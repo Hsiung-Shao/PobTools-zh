@@ -1857,7 +1857,7 @@ public:
 		const char* pickL = canProtect() ? u8"左鍵點節點可單獨查看｜右鍵大點＝保護不被替換" : u8"點一般節點可單獨查看";
 		float w = padX * 2.0f + sw + PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, hitL).x + gap + sw +
 		          PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, sockL).x;
-		if (pickable) w += gap + f->CalcTextSizeA(px, FLT_MAX, 0, pickL).x;
+		if (pickable) w += gap + sw + PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, pickL).x;
 		const float h = px + padY * 2.0f;
 		const ImVec2 p(mn.x + PobUi::D(16.0f), mx.y - PobUi::D(14.0f) - h);
 		if (p.x + w > mx.x || p.y < mn.y) return;   // canvas too small: no legend
@@ -1872,7 +1872,11 @@ public:
 		x += sw + PobUi::D(6.0f);
 		dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, sockL);
 		x += f->CalcTextSizeA(px, FLT_MAX, 0, sockL).x + gap;
-		if (pickable) dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, pickL);
+		if (pickable) {
+			dl->AddCircle(ImVec2(x + sw * 0.5f, cy), sw * 0.5f, Tok::TreeLinkOn, 16, 2.0f);
+			x += sw + PobUi::D(6.0f);
+			dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, pickL);
+		}
 	}
 
 	static PobUi::TreeKind kindOf(int ptKindV)
@@ -2994,7 +2998,7 @@ public:
 			centerPending_ = true;
 			mode = 0;
 			wants.clear();
-		} else if (testState_ == "protect") {
+		} else if (testState_ == "protect" || testState_ == "picked") {
 			// Militant Faith on the socket already chosen above, two notables
 			// protected, searching for Devotion, the first seed opened.
 			jewelType = 4;
@@ -3008,6 +3012,11 @@ public:
 			int marked = 0;
 			for (int idx : ptData.NodesInRadius(selSocket, 1800.0f))
 				if (ptData.nodes[idx].kind == kPtNotable && marked < 2) { ptProtected[idx] = 1; marked++; }
+			if (testState_ == "picked") {   // every third node in reach picked: the picked ring beside the seed halo
+				ptSelected.assign(ptData.nodes.size(), 0);
+				int k = 0;
+				for (int idx : ptData.NodesInRadius(selSocket, 1800.0f)) if (k++ % 3 == 0) ptSelected[idx] = 1;
+			}
 			mode = 0;
 			autoPick_ = true;
 			runSearch();

@@ -24,6 +24,7 @@ static const ImU32 kColHoverRing  = WithAlpha(Tok::Text, 110);
 static const ImU32 kColAffected   = Tok::TreeHit;                    // changed by the seed
 static const ImU32 kColReplaced   = Tok::TreeHit;                    // replaced: same hue, double ring
 static const ImU32 kColProtected  = Tok::Success;                    // user-protected: must not be replaced
+static const ImU32 kColPicked     = Tok::TreeLinkOn;                 // picked: the lit art is gold too, so ring it in another hue
 static const ImU32 kColSocket     = WithAlpha(PobUi::TreeKindColor(PobUi::TreeKind::Socket), 220);
 static const ImU32 kColSocketSel  = PobUi::TreeKindColor(PobUi::TreeKind::Socket);
 static const ImU32 kColSocketFill = WithAlpha(Tok::Surface2, 235);
@@ -320,6 +321,7 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 			dl->AddCircle(c, ring, h == kPtHiReplaced ? kColReplaced : kColAffected, 0, 3.5f);
 			if (h == kPtHiReplaced) dl->AddCircle(c, std::max(ring - 6.0f, 4.0f), kColReplaced, 0, 2.0f);
 		}
+		if (sel) dl->AddCircle(c, std::max((std::max(n.off.w, n.off.h) * 0.5f + 10.0f) * zoom_, 4.0f), kColPicked, 0, 3.0f);
 		// protected: a ring outside the seed halo, so both stay readable together
 		if (in.protectedMark && i < (int)in.protectedMark->size() && (*in.protectedMark)[i])
 			dl->AddCircle(c, std::max((std::max(n.off.w, n.off.h) * 0.5f + 30.0f) * zoom_, 11.0f),
