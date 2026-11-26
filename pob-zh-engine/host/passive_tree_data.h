@@ -88,12 +88,12 @@ public:
 
 	// Class start nodes are not drawn (not in `nodes`); kept only so Zorath's path
 	// to the class start can be walked. Empty for trees written before this field.
-	struct ClassStart { int classId = -1; int id = 0; std::vector<int> adj; }; // adj: node indices
+	struct ClassStart { int classId = -1; int id = 0; std::string name; std::vector<int> adj; }; // adj: node indices; name: "Marauder"
 	std::vector<ClassStart> classStarts;
 
 	// Ascendancy discs, drawn where the game puts them (outside the main tree). Kept apart from `nodes` so
 	// socket/path/LUT code never sees them. Empty for trees written before this field.
-	struct AscClass { std::string id, name; float x = 0, y = 0; PtSprite bg; }; // name: display name (POB builds store it)
+	struct AscClass { std::string id, name; int classId = -1; float x = 0, y = 0; PtSprite bg; }; // name: display name (POB builds store it); classId: its class start, -1 in older files
 	std::vector<AscClass> ascClasses;
 	std::vector<PtNode> ascNodes;        // kind: normal / notable / kPtAscStart; adj = ascNodes indices
 	std::vector<PtEdge> ascEdges;        // a/b index ascNodes
@@ -108,22 +108,15 @@ private:
 // ALLOCATED nodes only, from the socket to the start of `classId`. Returns the
 // GGG ids on the path, socket and class start included; empty when the socket
 // is not allocated, the class start is unknown, or no allocated path exists.
+// Every node of the tree as allocIds = the shortest path over the whole tree.
 std::set<int> PtShortestPathToClassStart(const PassiveTreeData& t, const std::set<int>& allocIds,
                                          int socketId, int classId);
-
-// Node index of the first socket (t.sockets order) with an allocated path to the
-// class start; -1 when there is none.
-int PtFirstSocketWithPath(const PassiveTreeData& t, const std::set<int>& allocIds, int classId);
 
 // PoB's pathDist for the "Filter Nodes" option: id -> how many unallocated
 // nodes must be taken to reach it (allocated = 0), for every node within
 // `maxDist`. Nodes farther away are absent.
 std::map<int, int> PtDistanceFromAllocated(const PassiveTreeData& t, const std::set<int>& allocIds,
                                            int maxDist);
-
-// The disc id for an Ascendancy as a PoB build names it (ascendClassName is the display name: Warden -> Raider).
-// Returns "" when no disc matches.
-std::string PtAscIdOfName(const PassiveTreeData& t, const std::string& name);
 
 // Headless check driven by "pob-zh.exe --passive-tree-selftest".
 int RunPassiveTreeSelfTest(const std::wstring& exeDir);

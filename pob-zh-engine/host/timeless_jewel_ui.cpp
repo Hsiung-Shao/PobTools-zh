@@ -7,12 +7,9 @@
 #include "passive_tree_data.h"
 #include "passive_tree_update.h"
 #include "passive_tree_view.h"
-#include "pob_build_spec.h"
-#include "pob_migrate.h" // PobBuildDir
 #include "timeless_jewel.h"
 #include "error_log.h"
 #include "timeless_jewel_abyss.h"
-#include "tj_cluster.h"
 #include "ui_theme.h"
 #include "ui_widgets.h"
 #include "ui_icons.h"
@@ -183,10 +180,11 @@ bool TjUiState::Load(const std::wstring& exeDir)
 		lastLegion = doc.value("lastLegion", 3);
 		lastAbyss = doc.value("lastAbyss", 8);
 		abyssMode = doc.value("abyssMode", false);
-		build = doc.value("build", std::string());
+		classId = doc.value("classId", -1);
+		asc = doc.value("asc", std::string());
 		return true;
 	} catch (...) {
-		realm = 0; platform = 0; league.clear(); lastLegion = 3; lastAbyss = 8; abyssMode = false; build.clear();
+		realm = 0; platform = 0; league.clear(); lastLegion = 3; lastAbyss = 8; abyssMode = false; classId = -1; asc.clear();
 		return false;
 	}
 }
@@ -201,7 +199,8 @@ bool TjUiState::Save(const std::wstring& exeDir) const
 	doc["lastLegion"] = lastLegion;
 	doc["lastAbyss"] = lastAbyss;
 	doc["abyssMode"] = abyssMode;
-	if (!build.empty()) doc["build"] = build;
+	if (classId >= 0) doc["classId"] = classId;
+	if (!asc.empty()) doc["asc"] = asc;
 	std::string out = doc.dump();
 	HANDLE f = CreateFileW(tj_ui_path(exeDir).c_str(), GENERIC_WRITE, 0, nullptr,
 	                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -657,8 +656,9 @@ public:
 			if (!tjUi.league.empty()) { tradeLeague = tjUi.league; leagueUserSet = true; }
 			const int t = tjUi.abyssMode ? tjUi.lastAbyss : tjUi.lastLegion;
 			if (t >= 1 && t <= kMaxJewelType && TJIsAbyss(t) == tjUi.abyssMode) jewelType = t;
+			classId_ = tjUi.classId;
+			asc_ = tjUi.asc;
 		}
-		refreshBuilds();
 		leagues.SetHost(kTradeRealms[tradeRealm].hostW);
 
 		templates = TJStatTemplates(*ds, jewelType);
@@ -946,7 +946,7 @@ public:
 			ensureBin(jewelType);
 		}
 		if (ImGui::IsItemHovered())
-			PobUi::Tooltip(u8"深淵珠寶的計算與查詢照 POB 2.68：讀你的 POB 流派配點，分數為權重 × 數值");
+			PobUi::Tooltip(u8"深淵珠寶的計算與查詢照 POB 2.68，分數為權重 × 數值");
 		x += PobUi::SegmentedWidth(kindLabels, 2) + gap;
 
 		at(x, H);
@@ -1319,8 +1319,8 @@ public:
 	{
 		if (!TJIsAbyss(jewelType)) return;
 		const char* desc = TJIsZorath(jewelType)
-			? u8"計算方式同原版POB。重奪惡意只改插槽到職業起點的已配點路徑，加上昇華的一個天賦；"
-			  u8"路徑取自下方選的流派，物品給的天賦（如希望之絲）不計入。"
+			? u8"計算方式同原版POB。重奪惡意只改插槽到職業起點的路徑，加上昇華的一個天賦；"
+			  u8"這裡的路徑取整棵樹上最短的一條，實際配點繞路時會不同。"
 			: u8"計算方式同原版POB：分數為「權重×數值」，鑰石不計分。實測樣本仍少，請以遊戲內實際結果為準。";
 		PobUi::Banner("##abyss", PobUi::BannerTone::Warn, PobIcon::TriangleAlert, u8"深淵珠寶是 3.29 新增", desc,
 		              false, nullptr, false);
@@ -1337,7 +1337,7 @@ public:
 			// to know which radius to walk, types 7-10 because the socket IS the key
 			// their file is indexed by, and Zorath because it is the place the user
 			// is asking us to look around.
-			return TJIsZorath(jewelType) ? u8"請先在天賦樹上點一個珠寶插槽（要是流派中已配點的插槽）"
+			return TJIsZorath(jewelType) ? u8"請先在天賦樹上點一個珠寶插槽"
 			       : TJIsAbyss(jewelType) ? u8"請先在天賦樹上點一個珠寶插槽（深淵珠寶的結果由插槽決定，沒有半徑）"
 			                              : u8"請先在天賦樹上點一個珠寶插槽（搜尋只計算該插槽半徑內的節點）";
 		}
@@ -1347,7 +1347,6 @@ public:
 			const std::string why = abyssBlocker();
 			if (!why.empty()) { *missing = true; return s + u8"｜" + why; }
 			if (TJIsZorath(jewelType)) s += u8"（路徑 " + std::to_string(zorathPath_.size()) + u8" 個天賦）";
-			else if (allocOnly_) s += u8"（只算已配點" + (allocDist_ > 0 ? u8"與距離 " + std::to_string(allocDist_) + u8" 內" : std::string()) + u8"）";
 			return s;
 		}
 		int picked = 0;
@@ -1463,66 +1462,71 @@ public:
 		if (!note.empty()) PobUi::Hint(note.c_str(), w, Tok::Warning);
 	}
 
-	// Abyss mode: which POB build the allocation comes from, and the filters
-	// PoB 2.68 applies with it (7-10: allocated only / distance; Zorath:
-	// required Ascendancy outcome, protected Ascendancy passives).
+	// Zorath: the class start its path runs to (shortest over the whole tree, no build needed) and the
+	// Ascendancy whose passives it can take (PoB 2.68: required outcome, protected passives).
 	void drawBuildSection()
 	{
-		if (!TJIsAbyss(jewelType)) return;
+		if (!TJIsZorath(jewelType)) return;
 		const float w = ImGui::GetContentRegionAvail().x;
 		const float H = PobUi::ControlH();
-		PobUi::Heading(u8"POB 流派");
+		PobUi::Heading(u8"職業起點");
 		ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
-		const char* refLbl = u8"重新整理";
-		const float rw = PobUi::ButtonWidth(refLbl, PobUi::BtnSize::Sm, PobIcon::Refresh);
-		std::vector<const char*> names;
-		for (const auto& n : buildNames_) names.push_back(n.c_str());
-		int sel = buildSel_;
-		if (!names.empty()) {
-			if (PobUi::Select("##build", &sel, names.data(), nullptr, (int)names.size(), w - rw - PobUi::D(8.0f), true) &&
-			    sel != buildSel_)
-				selectBuild(sel, true);
-		} else {
-			PobUi::Hint(u8"找不到 POB 流派檔（Builds 資料夾）", w - rw - PobUi::D(8.0f), Tok::Warning);
+		if (ptData.classStarts.empty()) {
+			PobUi::Hint(u8"天賦樹資料太舊（缺職業起點），請更新天賦樹", w, Tok::Warning);
+			ImGui::Dummy(ImVec2(0, PobUi::D(8.0f)));
+			return;
 		}
-		ImGui::SameLine(0.0f, PobUi::D(8.0f));
-		if (PobUi::Button(refLbl, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::Refresh)) refreshBuilds();
-		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"在 POB 存檔後按這裡，重新讀取流派清單與配點");
-		if (buildSel_ < 0 && !names.empty()) PobUi::Hint(u8"選一個流派：讀它目前的天賦配點", w);
-		else if (buildSel_ >= 0 && !buildOk_) PobUi::Hint((u8"讀不到這個流派：" + buildErr_).c_str(), w, Tok::Warning);
-		else if (buildOk_) {
-			std::string info = build_.className;
-			if (!ascClass().empty()) info += u8"／" + ascClass();
-			info += u8"｜已配點 " + std::to_string(build_.nodes.size());
-			PobUi::Hint(info.c_str(), w);
-			if (!build_.treeVersion.empty() && build_.treeVersion != ptData.TreeVersion())
-				PobUi::Hint((u8"流派的天賦樹版本 " + build_.treeVersion + u8" 與計算器的 " + ptData.TreeVersion() +
-				             u8" 不同，部分天賦可能對不上").c_str(), w, Tok::Warning);
+		loadClassNames();
+		const float sw = std::floor(PobUi::D(170.0f));
+		std::vector<const PassiveTreeData::ClassStart*> cls;
+		for (const auto& cs : ptData.classStarts) cls.push_back(&cs);
+		std::sort(cls.begin(), cls.end(), [](auto* a, auto* b) { return a->classId < b->classId; });
+		std::vector<std::string> cl;
+		int sel = -1;
+		for (size_t i = 0; i < cls.size(); i++) {
+			cl.push_back(zhOr(classZh_, cls[i]->name));
+			if (cls[i]->classId == classId_) sel = (int)i;
 		}
+		std::vector<const char*> cp;
+		for (const auto& l : cl) cp.push_back(l.c_str());
+		labelRow(u8"職業", u8"重奪惡意的路徑＝插槽到這個職業起點的最短路徑（整棵樹上最短的一條）",
+		         sw, H, [&]() {
+			if (PobUi::Select("##class", &sel, cp.data(), nullptr, (int)cp.size(), sw) && sel >= 0 &&
+			    cls[(size_t)sel]->classId != classId_) {
+				classId_ = cls[(size_t)sel]->classId;
+				asc_.clear(); protectAsc_.clear(); reqAscSel_ = 0;
+				tjUi.classId = classId_; tjUi.asc = asc_; saveTjUi();
+			}
+		});
+		if (classId_ < 0) {
+			PobUi::Hint(u8"選一個職業：路徑取插槽到該職業起點的最短距離", w);
+			ImGui::Dummy(ImVec2(0, PobUi::D(8.0f)));
+			return;
+		}
+		std::vector<const PassiveTreeData::AscClass*> ascs;
+		for (const auto& a : ptData.ascClasses) if (a.classId == classId_) ascs.push_back(&a);
+		std::vector<std::string> al{ u8"不計算昇華" };
+		int asel = 0;
+		for (size_t i = 0; i < ascs.size(); i++) {
+			al.push_back(zhOr(ascZh_, ascs[i]->id, ascs[i]->name));
+			if (ascs[i]->id == asc_) asel = (int)i + 1;
+		}
+		std::vector<const char*> ap;
+		for (const auto& l : al) ap.push_back(l.c_str());
+		labelRow(u8"昇華", u8"重奪惡意也會依種子改掉這個昇華的一個昇華天賦", sw, H, [&]() {
+			if (PobUi::Select("##asc", &asel, ap.data(), nullptr, (int)ap.size(), sw)) {
+				const std::string a = asel > 0 ? ascs[(size_t)asel - 1]->id : std::string();
+				if (a != asc_) { asc_ = a; protectAsc_.clear(); reqAscSel_ = 0; tjUi.asc = asc_; saveTjUi(); }
+			}
+		});
+		PobUi::Hint(u8"實際配點繞遠路時，路徑上的天賦會不同", w);
 		ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
-		if (!TJIsZorath(jewelType)) {
-			ImGui::BeginDisabled(!buildOk_);
-			labelRow(u8"只算已配點天賦", u8"同 POB 的 Filter Nodes：只有流派已配點的天賦計分；距離 > 0 時，再多算離已配點 N 格內的天賦。",
-			         PobUi::SwitchWidth(), H, [&]() { PobUi::Switch("##alloconly", &allocOnly_); });
-			ImGui::BeginDisabled(!allocOnly_);
-			labelRow(u8"節點距離", u8"0 = 只算已配點；1 = 再加上相鄰一格，依此類推（最多 10）",
-			         std::floor(PobUi::D(90.0f)), H, [&]() {
-				PobUi::PushControlFrame();
-				ImGui::SetNextItemWidth(std::floor(PobUi::D(90.0f)));
-				if (ImGui::InputInt("##allocdist", &allocDist_, 0, 0)) allocDist_ = std::clamp(allocDist_, 0, 10);
-				PobUi::PopControlFrame();
-			});
-			ImGui::EndDisabled();
-			ImGui::EndDisabled();
-		} else if (buildOk_) {
-			if (ascClass().empty()) {
-				PobUi::Hint(u8"這個流派沒有選昇華，昇華天賦的部分不計算。", w);
-			} else {
+		if (!ascClass().empty()) {
+			{
 				std::vector<std::string> lbl{ u8"不限" };
 				for (const auto& o : ascOutcomes_) lbl.push_back(o.second);
 				std::vector<const char*> lp;
 				for (const auto& l : lbl) lp.push_back(l.c_str());
-				const float sw = std::floor(PobUi::D(170.0f));
 				labelRow(u8"必要昇華結果", u8"同 POB：昇華天賦必須變成這一個，其餘種子不列出",
 				         sw, H, [&]() { PobUi::Select("##reqasc", &reqAscSel_, lp.data(), nullptr, (int)lp.size(), sw); });
 				if (!ascTargets_.empty()) {
@@ -1882,13 +1886,12 @@ public:
 			else {
 				const PtNode& sn = ptData.nodes[selSocket];
 				st = u8"插槽：" + (sn.nameZh.empty() ? sn.name : sn.nameZh);
-				if (detailSeed < 0) st += (treeAbyss && !zorath && buildOk_) ? u8"｜亮起的是流派已配點；搜尋後點右側種子預覽轉換"
-				                                                            : u8"｜選一個種子即可預覽轉換";
+				if (detailSeed < 0) st += u8"｜選一個種子即可預覽轉換";
 				// The circle is where we are looking for Zorath, not what the jewel
 				// hits; the 7-10 passives come from the jewel's own file and are not
 				// in a circle at all. Saying "radius" there would describe the wrong
 				// mechanic.
-				else if (zorath) st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜亮起的是插槽到職業起點的已配點路徑";
+				else if (zorath) st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜亮起的是插槽到職業起點的最短路徑";
 				else if (treeAbyss) st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜此插槽被征服的天賦以金框標示";
 				else st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜半徑內受影響節點以金框標示";
 			}
@@ -1970,11 +1973,8 @@ public:
 		tin.protectedMark = (canProtect() && !ptProtected.empty()) ? &ptProtected : nullptr;
 		tin.emphasize = emphNode;
 		tin.showAsc = treeAbyss;
-		tin.ascName = PtAscIdOfName(ptData, ascClass());
-		tin.ascLit = buildOk_ ? &build_.nodes : nullptr;   // the view only looks up ascendancy ids in it
+		tin.ascName = ascClass();
 		tin.ascHit = &ascHit_;
-		clusterStatus_.clear();
-		tin.cluster = treeAbyss ? clusterGraph() : nullptr;
 		const bool pickable = treeRadius;
 		tin.overlay = [this, pickable](ImDrawList* dl, ImVec2 mn, ImVec2 mx) { drawLegend(dl, mn, mx, pickable); };
 		// Test aid (POBTOOLS_TJ_STATE=protectclick): pin a notable under the canvas
@@ -2031,7 +2031,6 @@ public:
 			}
 		}
 		if (tout.hoveredNode >= 0) drawNodeTooltip(tout.hoveredNode);
-		else if (tout.hoveredCluster >= 0 && tin.cluster) drawClusterTooltip(tin.cluster->nodes[tout.hoveredCluster]);
 		else if (tout.hoveredAsc >= 0) drawAscTooltip(tout.hoveredAsc);
 		else if (testHoverNode_ >= 0) { drawNodeTooltip(testHoverNode_); dumpKeystoneOnce(); } // POBTOOLS_TJ_STATE=keystone
 	}
@@ -2070,9 +2069,9 @@ public:
 		const char* sockL = u8"珠寶插槽";
 		const char* clL = u8"星團珠寶格";
 		const char* pickL = canProtect() ? u8"左鍵點節點可單獨查看｜右鍵大點＝保護不被替換" : u8"點一般節點可單獨查看";
-		if (TJIsAbyss(jewelType) && buildOk_) {   // the lit nodes/links are the build (Zorath: its path)
+		if (TJIsZorath(jewelType) && !zorathPath_.empty()) {   // the lit nodes/links are Zorath's path
 			pickable = true;
-			pickL = TJIsZorath(jewelType) ? u8"亮起＝插槽到職業起點的已配點路徑" : u8"亮起＝流派已配點";
+			pickL = u8"亮起＝插槽到職業起點的最短路徑";
 		}
 		float w = padX * 2.0f + sw + PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, hitL).x + gap + sw +
 		          PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, sockL).x +
@@ -2097,8 +2096,6 @@ public:
 		dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, clL);
 		x += f->CalcTextSizeA(px, FLT_MAX, 0, clL).x + gap;
 		if (pickable) dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, pickL);
-		if (!clusterStatus_.empty())
-			dl->AddText(f, px, ImVec2(p.x + padX, p.y - px - PobUi::D(6.0f)), Tok::TextMuted, clusterStatus_.c_str());
 	}
 
 	static PobUi::TreeKind kindOf(int ptKindV)
@@ -2157,76 +2154,6 @@ public:
 		ImGui::PopTextWrapPos();
 		ImGui::EndTooltip();
 		ImGui::PopStyleVar();
-	}
-
-	void drawClusterTooltip(const TJClusterNode& n)
-	{
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(std::floor(16 * scale), std::floor(12 * scale)));
-		ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(440 * scale, FLT_MAX));
-		ImGui::BeginTooltip();
-		ImGui::PushTextWrapPos(400 * scale);
-		const std::string& nm = n.nameZh.empty() ? n.name : n.nameZh;
-		ImGui::TextColored(PobUi::TokV4(PobUi::TreeKindColor(kindOf(n.kind))), "%s", nm.empty() ? "?" : nm.c_str());
-		PobUi::Hint(n.alloc ? u8"（星團珠寶天賦，流派已配點）" : u8"（星團珠寶天賦）");
-		if (!n.stats.empty()) ImGui::Separator();
-		for (size_t i = 0; i < n.stats.size(); i++) {
-			const std::string& s = (i < n.statsZh.size() && !n.statsZh[i].empty()) ? n.statsZh[i] : n.stats[i];
-			ImGui::TextColored(PobUi::TokV4(Tok::Text), "%s", s.c_str());
-		}
-		ImGui::PopTextWrapPos();
-		ImGui::EndTooltip();
-		ImGui::PopStyleVar();
-	}
-
-	// The build's cluster jewels as POB expands them: a one-shot headless POB per build file version, fetched off the
-	// UI thread (seconds) and parsed here against the current tree. nullptr while loading / on failure / none socketed.
-	struct ClusterJob {
-		std::atomic<bool> done{ false };
-		bool ok = false;
-		std::string err;
-		nlohmann::json state, assets;
-	};
-	const TJClusterGraph* clusterGraph()
-	{
-		if (!buildOk_ || buildSel_ < 0 || buildSel_ >= (int)buildPaths_.size()) return nullptr;
-		const std::wstring path = buildPaths_[buildSel_];
-		std::wstring key = path;
-		WIN32_FILE_ATTRIBUTE_DATA fa{};
-		if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
-			key += L"|" + std::to_wstring(((unsigned long long)fa.ftLastWriteTime.dwHighDateTime << 32) | fa.ftLastWriteTime.dwLowDateTime);
-		auto found = clusterJobs_.find(key);
-		if (found == clusterJobs_.end()) {
-			// one POB at a time: while another build is loading, the one now selected waits its turn
-			if (clusterRunning_ && !clusterRunning_->done) { clusterStatus_ = u8"星團珠寶展開載入中…"; return nullptr; }
-			auto job = std::make_shared<ClusterJob>();
-			found = clusterJobs_.emplace(key, job).first;
-			clusterRunning_ = job;
-			std::thread([j = job, exe = exeDir, pob = FindPoe1Dir(exeDir), path, tv = ptData.TreeVersion()]() {
-				std::string e;
-				j->ok = TJClusterFetchSync(exe, pob, path, j->state, j->assets, &e, tv);
-				j->err = e;
-				j->done = true;
-			}).detach();
-		}
-		const std::shared_ptr<ClusterJob>& job = found->second;
-		if (!job->done) { clusterStatus_ = u8"星團珠寶展開載入中…"; return nullptr; }
-		if (!job->ok) {
-			clusterStatus_ = u8"星團珠寶無法展開：" + job->err;
-			return nullptr;
-		}
-		const std::wstring parsedKey = key + L"|" + widen(ptData.Version());
-		if (clusterParsedKey_ != parsedKey) {
-			clusterParsedKey_ = parsedKey;
-			std::string e;
-			if (!ParseClusterGraph(job->state, job->assets, ptData, clusterGraph_, &e)) {
-				clusterGraph_ = {};
-				clusterParseErr_ = e;
-			} else {
-				clusterParseErr_.clear();
-			}
-		}
-		if (!clusterParseErr_.empty()) { clusterStatus_ = u8"星團珠寶無法展開：" + clusterParseErr_; return nullptr; }
-		return clusterGraph_.nodes.empty() ? nullptr : &clusterGraph_;
 	}
 
 	void drawAscTooltip(int ascIdx)
@@ -2312,7 +2239,7 @@ public:
 				std::map<std::string, std::vector<int>> picks;
 				if (TJAbyssReadAscendancies(*blob, *abyssLut, detailSeed, picks))
 					for (const auto& kv : picks)
-						// the build's own Ascendancy only (all of them when no build Ascendancy is known); both are display names
+						// the chosen Ascendancy only (all of them when none is chosen); both are disc ids
 						if (ascClass().empty() || kv.first == ascClass()) ascHit_.insert(kv.second.begin(), kv.second.end());
 			}
 		}
@@ -3333,23 +3260,18 @@ public:
 			mode = 0;
 			wants.clear();
 		} else if (testState_ == "abyss" || testState_ == "zorath") {
-			// Abyss mode: Ulaman (or Zorath) on the first build's first allocated socket,
-			// one wanted stat, a search run and the first seed opened.
-			// POBTOOLS_TJ_BUILD = substring of the build name to use instead.
+			// Abyss mode: Ulaman (or Zorath) on the first socket, one wanted stat, a search run and the first
+			// seed opened. Zorath: POBTOOLS_TJ_CLASS = class id (default 1 Marauder), its first Ascendancy.
 			jewelType = testState_ == "zorath" ? 11 : 8;
 			templates = TJStatTemplates(*ds, jewelType);
 			templatesFor = jewelType;
 			ensureBin(jewelType);
-			wchar_t bn[128] = L"";
-			const std::string want = GetEnvironmentVariableW(L"POBTOOLS_TJ_BUILD", bn, 128) > 0 ? narrow(bn) : "";
-			int pick = buildPaths_.empty() ? -1 : 0;
-			for (int i = 0; i < (int)buildNames_.size(); i++)
-				if (!want.empty() && buildNames_[i].find(want) != std::string::npos) { pick = i; break; }
-			selectBuild(pick, false);
-			selSocket = -1;
-			for (int s : ptData.sockets)
-				if (selSocket < 0 && (testState_ == "zorath") != (build_.nodes.count(ptData.nodes[s].id) > 0)) selSocket = s;
-			// zorath starts on an unallocated socket: updateAbyssDerived must move it to an allocated one
+			wchar_t cn[16] = L"";
+			classId_ = GetEnvironmentVariableW(L"POBTOOLS_TJ_CLASS", cn, 16) > 0 ? _wtoi(cn) : 1;
+			asc_.clear(); protectAsc_.clear(); reqAscSel_ = 0;
+			for (const auto& a : ptData.ascClasses)
+				if (asc_.empty() && a.classId == classId_) asc_ = a.id;
+			selSocket = ptData.sockets.empty() ? -1 : ptData.sockets[0];
 			centerPending_ = true;
 			wants.clear();
 			const char* en = jewelType == 11 ? "+# to maximum Life" : "#% increased Impale Effect";
@@ -3448,44 +3370,43 @@ private:
 	}
 
 	// ---- Abyss mode helpers ----
-	void refreshBuilds()
-	{
-		// a failed star-cluster fetch is retried on refresh
-		for (auto it = clusterJobs_.begin(); it != clusterJobs_.end();)
-			it = it->second->done && !it->second->ok ? clusterJobs_.erase(it) : std::next(it);
-		const std::wstring keep = buildSel_ >= 0 && buildSel_ < (int)buildPaths_.size() ? buildPaths_[buildSel_]
-		                          : widen(tjUi.build);
-		buildPaths_.clear(); buildNames_.clear();
-		const std::wstring pob = FindPoe1Dir(exeDir);
-		if (!pob.empty()) {
-			const std::wstring dir = PobBuildDir(pob);
-			buildPaths_ = ListPobBuilds(dir);
-			for (const auto& p : buildPaths_) {
-				std::wstring n = p.size() > dir.size() + 1 ? p.substr(dir.size() + 1) : p;
-				if (n.size() > 4) n.resize(n.size() - 4); // ".xml"
-				buildNames_.push_back(narrow(n));
-			}
-		}
-		int sel = -1;
-		for (int i = 0; i < (int)buildPaths_.size(); i++) if (_wcsicmp(buildPaths_[i].c_str(), keep.c_str()) == 0) sel = i;
-		selectBuild(sel, false);
-	}
-
-	void selectBuild(int i, bool remember)
-	{
-		buildSel_ = i; buildOk_ = false; buildErr_.clear(); build_ = PobBuildSpec();
-		protectAsc_.clear(); reqAscSel_ = 0;
-		if (i >= 0 && i < (int)buildPaths_.size()) {
-			buildOk_ = LoadPobBuildSpec(buildPaths_[i], build_, &buildErr_);
-			if (remember) { tjUi.build = narrow(buildPaths_[i]); saveTjUi(); }
-		}
-		abyssKey_.clear();
-	}
-
-	// The build's Ascendancy as Zorath's file names it; "" = none chosen.
+	// The chosen Ascendancy's disc id, as Zorath's ASCS section keys it ("Raider", not the display name "Warden");
+	// "" = none or not of the chosen class.
 	std::string ascClass() const
 	{
-		return buildOk_ && build_.ascendClassName != "None" ? build_.ascendClassName : std::string();
+		for (const auto& a : ptData.ascClasses)
+			if (!asc_.empty() && a.id == asc_ && a.classId == classId_) return a.id;
+		return {};
+	}
+
+	// GGPK names for the class / Ascendancy pickers (ui.json, ascendancy_by_id.json); English when missing.
+	void loadClassNames()
+	{
+		if (classNamesLoaded_) return;
+		classNamesLoaded_ = true;
+		auto load = [&](const wchar_t* file, std::map<std::string, std::string>& out, bool onlyClasses) {
+			std::string content;
+			if (!read_file_utf8(exeDir + L"Data\\poe1\\zh-rTW\\" + file, content)) return;
+			try {
+				const nlohmann::json d = nlohmann::json::parse(content);
+				const nlohmann::json& e = d.at("entries");
+				if (!onlyClasses) {
+					for (const auto& [k, v] : e.items()) if (v.is_string()) out[k] = v.get<std::string>();
+					return;
+				}
+				for (const auto& cs : ptData.classStarts) {
+					auto it = e.find(cs.name);
+					if (it != e.end() && it->is_string()) out[cs.name] = it->get<std::string>();
+				}
+			} catch (...) {}   // names are cosmetic: a bad file just shows English
+		};
+		load(L"ui.json", classZh_, true);
+		load(L"ascendancy_by_id.json", ascZh_, false);
+	}
+	static std::string zhOr(const std::map<std::string, std::string>& m, const std::string& key, const std::string& en = {})
+	{
+		auto it = m.find(key);
+		return it != m.end() && !it->second.empty() ? it->second : en.empty() ? key : en;
 	}
 
 	std::string ascName(int id) const
@@ -3512,57 +3433,34 @@ private:
 		}
 	}
 
-	// Rebuild Zorath's path / the 7-10 allowed set / the protect candidates when
-	// anything they depend on changes. Cheap: two BFS over ~2000 nodes, one ASCS walk.
+	// Rebuild Zorath's path / the protect candidates when anything they depend on changes.
+	// Cheap: one BFS over ~2000 nodes, one ASCS walk.
 	void updateAbyssDerived()
 	{
-		if (!TJIsAbyss(jewelType)) { zorathAutoKey_.clear(); return; } // coming back to Zorath re-runs the auto-pick
-		// Zorath picked or build changed while the socket has no allocated path: move to one that has
-		// (only on that change, so a socket the user clicks afterwards stays picked)
-		const std::string autoKey = std::to_string(jewelType) + "|" + std::to_string(buildSel_) + "|" +
-		                            std::to_string(buildOk_) + "|" + std::to_string(build_.nodes.size()) + "|" + ptData.Version();
-		if (autoKey != zorathAutoKey_) {
-			zorathAutoKey_ = autoKey;
-			if (TJIsZorath(jewelType) && buildOk_ &&
-			    (selSocket < 0 || PtShortestPathToClassStart(ptData, build_.nodes, ptData.nodes[selSocket].id, build_.classId).empty())) {
-				const int s = PtFirstSocketWithPath(ptData, build_.nodes, build_.classId);
-				if (s >= 0) { selSocket = s; ptProtected.clear(); hiSig = -1; centerPending_ = true; }
-			}
-		}
-		const std::string key =std::to_string(jewelType) + "|" + std::to_string(selSocket) + "|" +
-		                        std::to_string(buildSel_) + "|" + std::to_string(buildOk_) + "|" +
-		                        std::to_string(allocOnly_) + "|" + std::to_string(allocDist_) + "|" +
+		if (!TJIsAbyss(jewelType)) return;
+		const std::string key = std::to_string(jewelType) + "|" + std::to_string(selSocket) + "|" +
+		                        std::to_string(classId_) + "|" + asc_ + "|" +
 		                        std::to_string(binOk && loadedBinType == jewelType) + "|" + ptData.Version();
 		if (key == abyssKey_) return;
 		abyssKey_ = key;
 		abyssVer_++;
-		zorathPath_.clear(); allowedIds_.clear(); ascTargets_.clear();
+		zorathPath_.clear(); ascTargets_.clear();
 		pathMask_.assign(ptData.nodes.size(), 0);
-		if (!buildOk_) return;
-		if (TJIsZorath(jewelType)) {
-			if (selSocket >= 0)
-				zorathPath_ = PtShortestPathToClassStart(ptData, build_.nodes, ptData.nodes[selSocket].id, build_.classId);
-			for (int id : zorathPath_) {
-				const int idx = ptData.IndexOfId(id);
-				if (idx >= 0) pathMask_[idx] = 1;
-			}
-			loadAbyssNames();
-			if (binOk && loadedBinType == jewelType && !ascClass().empty())
-				for (int id : TJAbyssAscendancyTargets(*blob, *abyssLut, ascClass()))
-					if (build_.nodes.count(id)) ascTargets_.push_back(id);
-			for (auto it = protectAsc_.begin(); it != protectAsc_.end();)
-				it = std::find(ascTargets_.begin(), ascTargets_.end(), *it) == ascTargets_.end() ? protectAsc_.erase(it) : ++it;
-		} else {
-			// 7-10: light the build's allocation so the user sees where the jewel sits in it
-			for (int id : build_.nodes) {
-				const int idx = ptData.IndexOfId(id);
-				if (idx >= 0) pathMask_[idx] = 1;
-			}
+		if (!TJIsZorath(jewelType) || classId_ < 0) return;   // 7-10 light nothing: the jewel's file lists its passives
+		if (selSocket >= 0) {
+			std::set<int> all;   // every passive "allocated" = the shortest path over the whole tree
+			for (const PtNode& n : ptData.nodes) all.insert(n.id);
+			zorathPath_ = PtShortestPathToClassStart(ptData, all, ptData.nodes[selSocket].id, classId_);
 		}
-		if (!TJIsZorath(jewelType) && allocOnly_) {
-			for (const auto& kv : PtDistanceFromAllocated(ptData, build_.nodes, allocDist_)) allowedIds_.push_back(kv.first);
-			if (allowedIds_.empty()) allowedIds_.push_back(-1); // filter on, nothing qualifies
+		for (int id : zorathPath_) {
+			const int idx = ptData.IndexOfId(id);
+			if (idx >= 0) pathMask_[idx] = 1;
 		}
+		loadAbyssNames();
+		if (binOk && loadedBinType == jewelType && !ascClass().empty())
+			ascTargets_ = TJAbyssAscendancyTargets(*blob, *abyssLut, ascClass());
+		for (auto it = protectAsc_.begin(); it != protectAsc_.end();)
+			it = std::find(ascTargets_.begin(), ascTargets_.end(), *it) == ascTargets_.end() ? protectAsc_.erase(it) : ++it;
 	}
 
 	// Why an Abyss search cannot run yet; "" when it can.
@@ -3571,11 +3469,8 @@ private:
 		if (!TJIsAbyss(jewelType)) return {};
 		if (TJIsZorath(jewelType)) {
 			if (ptData.classStarts.empty()) return u8"天賦樹資料太舊（缺職業起點），請更新天賦樹";
-			if (!buildOk_) return u8"重奪惡意需要角色配點：請先在左側選一個 POB 流派";
-			if (selSocket >= 0 && zorathPath_.empty())
-				return u8"這個插槽在流派中沒有配點，或沒有已配點的路徑通到職業起點";
-		} else if (allocOnly_ && !buildOk_) {
-			return u8"「只算已配點天賦」需要先選一個 POB 流派";
+			if (classId_ < 0) return u8"重奪惡意要先在左側選職業起點";
+			if (selSocket >= 0 && zorathPath_.empty()) return u8"這個插槽沒有路徑通到所選的職業起點";
 		}
 		return {};
 	}
@@ -3600,7 +3495,6 @@ private:
 			if (reqAscSel_ > 0 && reqAscSel_ <= (int)ascOutcomes_.size()) q.requiredAscOutcome = ascOutcomes_[reqAscSel_ - 1].first;
 			q.protectAscIds.assign(protectAsc_.begin(), protectAsc_.end());
 		} else {
-			q.allowedIds = allowedIds_;
 		}
 		return q;
 	}
@@ -3780,33 +3674,22 @@ private:
 	SearchJob job;
 	std::map<int, int> ptKind;
 
-	// ---- Abyss mode: the POB build the allocation comes from (PoB 2.68 searchSingleSocket) ----
-	std::vector<std::wstring> buildPaths_;
-	std::map<std::wstring, std::shared_ptr<ClusterJob>> clusterJobs_; // build path|mtime -> fetch (kept: switching back is instant)
-	std::shared_ptr<ClusterJob> clusterRunning_;                       // the fetch in flight (at most one)
-	TJClusterGraph clusterGraph_;
-	std::wstring clusterParsedKey_;
-	std::string clusterParseErr_, clusterStatus_;
-	std::vector<std::string> buildNames_;
-	int buildSel_ = -1;
-	PobBuildSpec build_;
-	bool buildOk_ = false;
-	std::string buildErr_;
-	bool allocOnly_ = false;      // 7-10: POB "Filter Nodes"
-	int allocDist_ = 0;           // 7-10: POB socketFilterDistance
+	// ---- Abyss mode: Zorath's class start and Ascendancy (PoB 2.68 searchSingleSocket) ----
+	int classId_ = -1;            // Zorath: class start the path runs to; -1 = none chosen
+	std::string asc_;             // Zorath: Ascendancy disc id ("Raider"); "" = none
+	bool classNamesLoaded_ = false;
+	std::map<std::string, std::string> classZh_, ascZh_; // English class / Ascendancy id -> GGPK name
 	int reqAscSel_ = 0;           // Zorath: 0 = any, else 1 + index into ascOutcomes_
 	std::vector<std::pair<std::string, std::string>> ascOutcomes_; // legion id, display name
 	std::set<int> protectAsc_;    // Zorath: Ascendancy passives a seed must not conquer
 	// derived from the above + socket + jewel; rebuilt when abyssKey_ changes
 	std::string abyssKey_;
-	std::string zorathAutoKey_;   // jewel/build the Zorath socket auto-pick last ran for
 	int abyssVer_ = 0;
 	std::set<int> zorathPath_;    // ids, socket and class start included
-	std::vector<char> pathMask_;  // node index -> lit on the tree: Zorath's path, or the build's allocation (7-10)
-	std::vector<int> allowedIds_; // 7-10 with allocOnly_; {-1} = nothing qualifies
+	std::vector<char> pathMask_;  // node index -> lit on the tree: Zorath's path
 	ImVec4 testCam_{ 0, 0, 0, 0 }; // POBTOOLS_TJ_CAM: zoom, x, y pinned every frame (screenshot aid)
 	std::set<int> ascHit_;        // Zorath: ascendancy node ids the detail seed conquers (gold ring on the disc)
-	std::vector<int> ascTargets_; // Zorath: the build's allocated Ascendancy passives the jewel can take
+	std::vector<int> ascTargets_; // Zorath: the chosen Ascendancy's passives the jewel can take
 	std::map<int, std::string> passiveZh_; // passives_by_id.json, for Ascendancy names
 };
 

@@ -544,6 +544,10 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 			if (v.contains("in")) for (const auto& nb : v["in"]) addNb(nb);
 			ordered_json cs;
 			cs["classId"] = v["classStartIndex"];
+			if (v["classStartIndex"].is_number_integer()) { // class name, so the calculator can offer the class starts
+				const long long ci = v["classStartIndex"].get<long long>();
+				if (ci >= 0 && ci < (long long)d["classes"].size()) cs["name"] = d["classes"][(size_t)ci].value("name", std::string());
+			}
 			cs["id"] = v.value("skill", atoi(key.c_str()));
 			cs["adj"] = std::move(adjOut);
 			outClassStarts.push_back(std::move(cs));
@@ -710,7 +714,8 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 				aEdges.push_back(std::move(je));
 			}
 			// class order as GGG lists it; the disc centre is the start node's group (POB draws Classes<id> there)
-			for (const auto& c : d["classes"]) {
+			for (size_t ci = 0; ci < d["classes"].size(); ci++) {
+				const ordered_json& c = d["classes"][ci];
 				if (!c.contains("ascendancies")) continue;
 				for (const auto& a : c["ascendancies"]) {
 					const std::string id = a.value("id", std::string());
@@ -720,6 +725,7 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 					ordered_json jc;
 					jc["id"] = id;
 					jc["name"] = a.value("name", id);
+					jc["classId"] = (int)ci;   // = classStartIndex of its class
 					jc["x"] = r2(grp.value("x", 0.0)); jc["y"] = r2(grp.value("y", 0.0));
 					ordered_json bg = sheets.uv("ascendancy", "Classes" + id);
 					if (!bg.is_null()) jc["bg"] = std::move(bg);

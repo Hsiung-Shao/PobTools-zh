@@ -138,6 +138,7 @@ bool PassiveTreeData::Load(const std::wstring& exeDir, std::string* err)
 				ClassStart cs;
 				cs.classId = jc.value("classId", -1);
 				cs.id = jc.value("id", 0);
+				cs.name = jc.value("name", std::string());
 				if (jc.contains("adj"))
 					for (const auto& ja : jc["adj"]) {
 						const int i = ja.get<int>();
@@ -152,6 +153,7 @@ bool PassiveTreeData::Load(const std::wstring& exeDir, std::string* err)
 				AscClass c;
 				c.id = jc.value("id", std::string());
 				c.name = jc.value("name", c.id);
+				c.classId = jc.value("classId", -1);
 				c.x = jc.value("x", 0.0f); c.y = jc.value("y", 0.0f);
 				if (jc.contains("bg")) parse_sprite(jc["bg"], c.bg);
 				ascClasses.push_back(std::move(c));
@@ -200,6 +202,19 @@ bool PassiveTreeData::Load(const std::wstring& exeDir, std::string* err)
 		if (err) *err = "passive_tree_poe1.json has no nodes";
 		return false;
 	}
+	// shortcut: tree files imported before the class fields (2026-11) get them from this table; an Ascendancy added
+	// later only arrives with a re-import, which writes the fields itself.
+	static const char* const kClassNames[] = { "Scion", "Marauder", "Ranger", "Witch", "Duelist", "Templar", "Shadow" };
+	static const std::map<std::string, int> kAscClass = {
+		{ "Ascendant", 0 }, { "Reliquarian", 0 }, { "Luminary", 0 }, { "Juggernaut", 1 }, { "Berserker", 1 },
+		{ "Chieftain", 1 }, { "Raider", 2 }, { "Deadeye", 2 }, { "Pathfinder", 2 }, { "Occultist", 3 },
+		{ "Elementalist", 3 }, { "Necromancer", 3 }, { "Slayer", 4 }, { "Gladiator", 4 }, { "Champion", 4 },
+		{ "Inquisitor", 5 }, { "Hierophant", 5 }, { "Guardian", 5 }, { "Assassin", 6 }, { "Trickster", 6 }, { "Saboteur", 6 },
+	};
+	for (ClassStart& cs : classStarts)
+		if (cs.name.empty() && cs.classId >= 0 && cs.classId < 7) cs.name = kClassNames[cs.classId];
+	for (AscClass& c : ascClasses)
+		if (c.classId < 0) { auto it = kAscClass.find(c.id); if (it != kAscClass.end()) c.classId = it->second; }
 	return true;
 }
 
@@ -224,16 +239,6 @@ int PassiveTreeData::IndexOfId(int id) const
 	for (int i = 0; i < (int)nodes.size(); i++)
 		if (nodes[i].id == id) return i;
 	return -1;
-}
-
-std::string PtAscIdOfName(const PassiveTreeData& t, const std::string& name)
-{
-	if (name.empty()) return {};
-	for (const PassiveTreeData::AscClass& c : t.ascClasses) // display name first: "Warden" is also a bloodline's id
-		if (c.name == name) return c.id;
-	for (const PassiveTreeData::AscClass& c : t.ascClasses)
-		if (c.id == name) return c.id;
-	return {};
 }
 
 // PoB PassiveSpec:GetShortestPathToClassStart: BFS from the socket through allocated nodes only, ending on
@@ -263,14 +268,6 @@ std::set<int> PtShortestPathToClassStart(const PassiveTreeData& t, const std::se
 			if (prev[(size_t)v] == -2 && alloc.count(t.nodes[(size_t)v].id)) { prev[(size_t)v] = u; q.push_back(v); }
 	}
 	return {};
-}
-
-int PtFirstSocketWithPath(const PassiveTreeData& t, const std::set<int>& alloc, int classId)
-{
-	for (int s : t.sockets)
-		if (s >= 0 && s < (int)t.nodes.size() && !PtShortestPathToClassStart(t, alloc, t.nodes[(size_t)s].id, classId).empty())
-			return s;
-	return -1;
 }
 
 // PoB socketFilterDistance: hops from the nearest allocated node (an allocated class start reaches its neighbours).
@@ -524,18 +521,31 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 				check(PtShortestPathToClassStart(d, broken, best.socketId, best.classId).empty(),
 				      "T4b 路徑中間斷一格且無繞路時回空", "");
 			}
-			// T4c 自動選插槽:選到的插槽在配點內且有路徑;T4d 全斷時回 -1
-			const int pickIdx = PtFirstSocketWithPath(d, expect, best.classId);
-			check(pickIdx >= 0 && expect.count(d.nodes[(size_t)pickIdx].id) &&
-			      !PtShortestPathToClassStart(d, expect, d.nodes[(size_t)pickIdx].id, best.classId).empty(),
-			      "T4c 自動選到有已配點路徑的插槽", "got idx=" + std::to_string(pickIdx));
-			if (best.P.size() >= 3) {
-				std::set<int> broken = expect;
-				broken.erase(idOf(best.P[1]));
-				const int b = PtFirstSocketWithPath(d, broken, best.classId);
-				check(b < 0 || d.nodes[(size_t)b].id != best.socketId, "T4d 插槽有配點但路徑斷了就不選它", "got idx=" + std::to_string(b));
-			}
+			// T4c 全樹當配點(職業起點模式):每個職業起點到每個插槽都有路徑,且含插槽與起點
+			std::set<int> all;
+			for (const PtNode& n : d.nodes) all.insert(n.id);
+			int miss = 0;
+			std::string missAt;
+			for (const PassiveTreeData::ClassStart& cs : d.classStarts)
+				for (int s : d.sockets) {
+					const std::set<int> p = PtShortestPathToClassStart(d, all, d.nodes[(size_t)s].id, cs.classId);
+					if (p.empty() || !p.count(cs.id) || !p.count(d.nodes[(size_t)s].id)) {
+						if (!miss++) missAt = std::to_string(cs.classId) + "->" + std::to_string(d.nodes[(size_t)s].id);
+					}
+				}
+			check(miss == 0, "T4c 全樹當配點時每個職業起點到每個插槽都有路徑", "缺 " + std::to_string(miss) + " 組,首筆 " + missAt);
 		}
+	}
+
+	// T4d 職業名與昇華所屬職業:7 個起點都有英文名,每個昇華的 classId 對得到一個起點
+	{
+		std::set<int> ids;
+		bool named = !d.classStarts.empty();
+		for (const PassiveTreeData::ClassStart& cs : d.classStarts) { ids.insert(cs.classId); named = named && !cs.name.empty(); }
+		int bad = 0;
+		for (const PassiveTreeData::AscClass& a : d.ascClasses) if (!ids.count(a.classId)) bad++;
+		check(named && d.classStarts.size() == 7 && !d.ascClasses.empty() && bad == 0, "T4d 職業起點有名稱、昇華都對得到職業",
+		      "starts=" + std::to_string(d.classStarts.size()) + " 昇華對不到=" + std::to_string(bad));
 	}
 
 	// T9 距離:配點 = 0,相鄰 = 1,與自己獨立 BFS 的結果逐筆相等
@@ -613,6 +623,21 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 			check(PtShortestPathToClassStart(d2, withSocket, socketId, someClass).empty(),
 			      "T10c 沒有 classStarts 時路徑查詢回空、不崩潰", "");
 		}
+		// T10d 舊格式(有起點、沒有職業名與昇華 classId)Load 後由固定表補上,與出貨樹相同
+		wrote = false;
+		try {
+			ordered_json doc = ordered_json::parse(content);
+			for (auto& cs : doc["classStarts"]) cs.erase("name");
+			for (auto& c : doc["asc"]["classes"]) c.erase("classId");
+			wrote = write_file_utf8(tmp + L"Data\\passive_tree_poe1.json", doc.dump());
+		} catch (...) { wrote = false; }
+		PassiveTreeData d3;
+		std::string err3;
+		bool same = wrote && d3.Load(tmp, &err3) && d3.classStarts.size() == d.classStarts.size() &&
+		            d3.ascClasses.size() == d.ascClasses.size();
+		for (size_t i = 0; same && i < d.classStarts.size(); i++) same = d3.classStarts[i].name == d.classStarts[i].name;
+		for (size_t i = 0; same && i < d.ascClasses.size(); i++) same = d3.ascClasses[i].classId == d.ascClasses[i].classId;
+		check(same, "T10d 舊格式樹檔缺職業名與昇華職業時由固定表補上、與出貨樹相同", err3);
 		std::filesystem::remove_all(tmp, ec);
 	}
 
@@ -622,11 +647,6 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 	for (const PassiveTreeData::AscClass& c : d.ascClasses) if (c.id == "Necromancer") necro = &c;
 	check(d.ascClasses.size() == 21 && necro != nullptr, "A1 出貨樹有 21 個昇華(含 Necromancer)",
 	      std::to_string(d.ascClasses.size()) + " 個");
-	// A7 POB 流派檔存昇華顯示名:Warden 要對到 id 為 Raider 的盤
-	check(PtAscIdOfName(d, "Warden") == "Raider" && PtAscIdOfName(d, "Necromancer") == "Necromancer" &&
-	          PtAscIdOfName(d, "").empty(),
-	      "A7 流派昇華名 Warden 對到 Raider 盤、Necromancer 照舊、空名不對任何盤",
-	      PtAscIdOfName(d, "Warden") + " / " + PtAscIdOfName(d, "Necromancer"));
 	// A2 Necromancer 位置 (1500,-9850)
 	check(necro && std::fabs(necro->x - 1500.0f) <= 1.0f && std::fabs(necro->y + 9850.0f) <= 1.0f,
 	      "A2 Necromancer 昇華盤位置為 (1500,-9850)",
