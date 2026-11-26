@@ -1873,7 +1873,7 @@ public:
 		dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, sockL);
 		x += f->CalcTextSizeA(px, FLT_MAX, 0, sockL).x + gap;
 		if (pickable) {
-			dl->AddCircle(ImVec2(x + sw * 0.5f, cy), sw * 0.5f, Tok::TreeLinkOn, 16, 2.0f);
+			dl->AddCircle(ImVec2(x + sw * 0.5f, cy), sw * 0.5f, Tok::Danger, 16, 2.0f);
 			x += sw + PobUi::D(6.0f);
 			dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, pickL);
 		}
