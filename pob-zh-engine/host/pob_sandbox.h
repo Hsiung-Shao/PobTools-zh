@@ -32,6 +32,6 @@ void CopyTree(const std::wstring& src, const std::wstring& dst, CopyStats& st, b
 // through the Data junction: the timeless-jewel .bin cache, which the MCP
 // host turns off (mcp_tools.lua M.mcp_setup). The writes left in POB's code
 // are dev-only or UI-only (tree download, mod cache, trade query).
-void LinkTree(const std::wstring& src, const std::wstring& dst, CopyStats& st);
+void LinkTree(const std::wstring& src, const std::wstring& dst, CopyStats& st, bool withBuilds = true);
 
 } // namespace PobSandbox

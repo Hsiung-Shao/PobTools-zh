@@ -33,7 +33,7 @@ static const wchar_t* kRawBase = L"/grindinggear/skilltree-export/";
 static const char* kUsedCats[] = {
 	"normalActive", "notableActive", "keystoneActive",
 	"normalInactive", "notableInactive", "keystoneInactive",
-	"frame", "mastery", "groupBackground",
+	"frame", "mastery", "groupBackground", "ascendancy",
 };
 static const char* kZoom = "0.3835";
 

@@ -510,6 +510,8 @@ if (WIN32)
         host/passive_tree_data.cpp
         host/passive_tree_view.cpp
         host/passive_import.cpp
+        host/pob_build_spec.cpp
+        host/pob_build_selftest.cpp
         host/passive_tree_update.cpp
         host/app_update.cpp
         # headless POB child (stdio JSON) + its self-test against a sandbox install

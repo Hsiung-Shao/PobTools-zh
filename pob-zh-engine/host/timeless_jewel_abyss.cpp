@@ -1,6 +1,8 @@
 #include "timeless_jewel_abyss.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <set>
 #include <stdio.h>
 #include <string>
@@ -8,6 +10,9 @@
 #include <windows.h>
 
 #include "passive_tree_data.h"
+#include "pob_build_spec.h"
+#include "win_util.h"
+#include <json.hpp>
 
 // Byte readers: every read is bounds-checked and reports failure rather than clamping. The files are
 // 70-100 MB of variable-length records; one bad length decodes everything after it into plausible
@@ -386,6 +391,159 @@ bool TJAbyssInScope(int scope, int nodeId, const TJDataset& ds,
 	return scope == 1 ? big : !big;
 }
 
+namespace {
+
+// Per-search state for TJAbyssScoreSeed, built once rather than per seed.
+struct AbyssScoreCtx {
+	TJWantMatcher matcher;
+	std::vector<int> allowed;   // sorted
+	std::vector<int> protect;   // sorted
+	// q.ascClass's pick per seed index, walked once (per-seed TJAbyssReadAscendancies re-skips si records: O(n^2))
+	std::vector<std::vector<int> > ascPicks;
+	bool ascOk = true;
+	AbyssScoreCtx(const TJSearchQuery& q, const std::string& blob, const TJAbyssLUT& lut)
+		: matcher(q.wants), allowed(q.allowedIds), protect(q.protectAscIds)
+	{
+		std::sort(allowed.begin(), allowed.end());
+		std::sort(protect.begin(), protect.end());
+		if (!lut.ok || lut.fmt != "ABYN" || q.ascClass.empty()) return;
+		std::map<std::string, size_t>::const_iterator it = lut.ascOffsets.find(q.ascClass);
+		if (it == lut.ascOffsets.end()) return;   // class absent: no pick (as before)
+		size_t o = it->second;
+		ascPicks.resize(lut.seedCount > 0 ? lut.seedCount : 0);
+		for (std::vector<int>& ids : ascPicks) {
+			int selected = 0;
+			if (!rd_u8(blob, o, selected)) { ascOk = false; return; }
+			for (int k = 0; k < selected; k++) {
+				int nid = 0;
+				if (!rd_u16(blob, o, nid)) { ascOk = false; return; }
+				ids.push_back(nid);
+			}
+		}
+	}
+};
+
+const TJEntry* abyss_entry(const TJDataset& ds, const TJAbyssComponent& c)
+{
+	return c.type == 1 ? TJNodeAt(ds, c.globalId) : c.type == 2 ? TJAdditionAt(ds, c.globalId) : nullptr;
+}
+
+bool abyss_score_seed(const AbyssScoreCtx& ctx, const TJDataset& ds, const std::string& blob, TJAbyssLUT& lut,
+                      const TJSearchQuery& q, int socketId, int seed, const std::map<int, int>* nodeKind,
+                      std::map<int, TJAbyssMod>& affected, TJSeedHit& hit, std::vector<TJAbyssScored>* detail)
+{
+	hit = TJSeedHit();
+	hit.seed = seed;
+	if (detail) detail->clear();
+	const bool byNode = lut.fmt == "ABYN";
+	const bool read = byNode ? TJAbyssReadNodes(ds, blob, lut, q.nodeIds, seed, affected)
+	                         : TJAbyssReadSocket(ds, blob, lut, socketId, seed, affected);
+	if (!read) return false;
+
+	// Zorath also takes one passive of the build's Ascendancy (PoB readAbyssJewelLUT with curAscendClassName).
+	std::set<int> ascIds;
+	if (byNode && !q.ascClass.empty()) {
+		if (!ctx.ascOk) return false;
+		const int si = TJAbyssSeedIndex(lut, seed);
+		if (si < 0) return false;
+		if (si < (int)ctx.ascPicks.size())
+			for (int id : ctx.ascPicks[si]) {
+				// PoB: a protected Ascendancy passive being conquered invalidates the seed
+				if (std::binary_search(ctx.protect.begin(), ctx.protect.end(), id)) return false;
+				TJAbyssMod m;
+				if (TJAbyssReadNode(ds, blob, lut, id, seed, m) && !m.empty()) { affected[id] = m; ascIds.insert(id); }
+			}
+	}
+
+	bool reqFound = q.requiredAscOutcome.empty();
+	std::set<const TJWantStat*> distinct;
+	for (std::map<int, TJAbyssMod>::const_iterator it = affected.begin(); it != affected.end(); ++it) {
+		const int id = it->first;
+		const bool isAsc = ascIds.count(id) != 0;
+		bool score;
+		if (isAsc) {
+			score = q.scope != 2; // an Ascendancy notable counts as a big passive
+		} else {
+			int kind = -1;
+			if (nodeKind) {
+				std::map<int, int>::const_iterator k = nodeKind->find(id);
+				if (k != nodeKind->end()) kind = k->second;
+			}
+			// PoB scoreNode: keystones, jewel sockets and class starts never score
+			score = kind != kPtKeystone && kind != kPtSocket && TJAbyssInScope(q.scope, id, ds, nodeKind);
+			// PoB "Filter Nodes" (7-10 only; Zorath's path is allocated by definition)
+			if (score && !byNode && !ctx.allowed.empty())
+				score = std::binary_search(ctx.allowed.begin(), ctx.allowed.end(), id);
+		}
+		TJAbyssScored d;
+		d.nodeId = id;
+		d.ascendancy = isAsc;
+		d.scored = score;
+		d.t = TJAbyssApply(ds, it->second);
+		d.lineWeight.assign(d.t.lines.size(), 0.0);
+		if (isAsc && !reqFound)
+			for (const TJAbyssComponent& c : it->second) {
+				const TJEntry* e = abyss_entry(ds, c);
+				if (!e || e->id != q.requiredAscOutcome) continue;
+				reqFound = true;
+				// PoB adds the required outcome as "<id>, 1, 0, 1": weight 1 x its first roll
+				double roll = 1.0;
+				if (!e->sortedStats.empty()) {
+					std::map<std::string, TJStatMod>::const_iterator sm = e->stats.find(e->sortedStats[0]);
+					if (sm != e->stats.end()) roll = TJAbyssRollFor(c, sm->second);
+				}
+				hit.weight += roll;
+				hit.matches++;
+			}
+		if (score && d.t.ok)
+			for (size_t li = 0; li < d.t.lines.size(); li++) {
+				const TJWantStat* w = ctx.matcher.Match(d.t.lines[li]);
+				if (!w) continue;
+				const std::string& ln = d.t.lines[li];
+				const bool hasNum = std::any_of(ln.begin(), ln.end(), [](char ch) { return isdigit((unsigned char)ch) != 0; });
+				// PoB: nodeWeight x roll (x1 when the stat has no roll)
+				d.lineWeight[li] = w->weight * (hasNum ? TJStatValue(ln) : 1.0);
+				hit.weight += d.lineWeight[li];
+				hit.matches++;
+				distinct.insert(w);
+			}
+		if (detail) detail->push_back(std::move(d));
+	}
+	hit.distinctWants = (int)distinct.size();
+	return reqFound;
+}
+
+} // namespace
+
+bool TJAbyssScoreSeed(const TJDataset& ds, const std::string& blob, TJAbyssLUT& lut,
+                      const TJSearchQuery& q, int socketId, int seed,
+                      const std::map<int, int>* nodeKind, TJSeedHit& hit,
+                      std::vector<TJAbyssScored>* detail)
+{
+	if (!lut.ok) return false;
+	const AbyssScoreCtx ctx(q, blob, lut);
+	std::map<int, TJAbyssMod> affected;
+	return abyss_score_seed(ctx, ds, blob, lut, q, socketId, seed, nodeKind, affected, hit, detail);
+}
+
+std::vector<int> TJAbyssAscendancyTargets(const std::string& blob, TJAbyssLUT& lut, const std::string& ascClass)
+{
+	std::set<int> ids;
+	if (!lut.ok || lut.fmt != "ABYN" || lut.ascOffsets.find(ascClass) == lut.ascOffsets.end()) return {};
+	// one walk of the class's block (records are tiny), not TJAbyssReadAscendancies per seed
+	size_t o = lut.ascOffsets[ascClass];
+	for (int s = 0; s < lut.seedCount; s++) {
+		int selected = 0;
+		if (!rd_u8(blob, o, selected)) break;
+		for (int k = 0; k < selected; k++) {
+			int nid = 0;
+			if (!rd_u16(blob, o, nid)) return std::vector<int>(ids.begin(), ids.end());
+			ids.insert(nid);
+		}
+	}
+	return std::vector<int>(ids.begin(), ids.end());
+}
+
 std::vector<TJSeedHit> TJAbyssSearch(const TJDataset& ds, const std::string& blob,
                                      TJAbyssLUT& lut, const TJSearchQuery& q,
                                      int socketId, int topN,
@@ -393,7 +551,7 @@ std::vector<TJSeedHit> TJAbyssSearch(const TJDataset& ds, const std::string& blo
                                      const volatile bool* cancel)
 {
 	std::vector<TJSeedHit> hits;
-	if (!lut.ok || q.wants.empty()) return hits;
+	if (!lut.ok) return hits;
 	const bool byNode = (lut.fmt == "ABYN");
 	if (byNode) {
 		// Zorath scores whatever the caller nominated; an empty list is refused (scoring the whole tree would answer an unasked question).
@@ -402,34 +560,16 @@ std::vector<TJSeedHit> TJAbyssSearch(const TJDataset& ds, const std::string& blo
 		return hits;
 	}
 
-	const TJWantMatcher matcher(q.wants);
+	const AbyssScoreCtx ctx(q, blob, lut);
 	std::map<int, TJAbyssMod> affected;
+	TJSeedHit h;
 	for (int seed = lut.seedMin; seed <= lut.seedMax; seed += lut.seedInc) {
 		if (cancel && *cancel) break;
-		const bool read = byNode
-			? TJAbyssReadNodes(ds, blob, lut, q.nodeIds, seed, affected)
-			: TJAbyssReadSocket(ds, blob, lut, socketId, seed, affected);
-		if (!read) continue;
-
-		double total = 0;
-		int matches = 0;
-		std::set<const TJWantStat*> distinct;
-		for (std::map<int, TJAbyssMod>::const_iterator it = affected.begin();
-		     it != affected.end(); ++it) {
-			if (!TJAbyssInScope(q.scope, it->first, ds, nodeKind)) continue;
-			TJTransform t = TJAbyssApply(ds, it->second);
-			if (!t.ok) continue;
-			for (size_t li = 0; li < t.lines.size(); li++) {
-				if (const TJWantStat* w = matcher.Match(t.lines[li])) {
-					total += w->weight;
-					matches++;
-					distinct.insert(w);
-				}
-			}
-		}
-		const bool covered = !q.requireAll || distinct.size() == q.wants.size();
-		if (matches > 0 && covered && total >= q.minTotalWeight)
-			hits.push_back({ seed, total, matches, (int)distinct.size() });
+		if (!abyss_score_seed(ctx, ds, blob, lut, q, socketId, seed, nodeKind, affected, h, nullptr)) continue;
+		const bool covered = !q.requireAll || h.distinctWants == (int)q.wants.size();
+		// no stats and no required outcome: every seed the scorer let through (protections); a required
+		// outcome alone still scores by its roll, as before
+		if ((q.wants.empty() && q.requiredAscOutcome.empty()) || (h.matches > 0 && covered && h.weight >= q.minTotalWeight)) hits.push_back(h);
 	}
 
 	std::sort(hits.begin(), hits.end(), [](const TJSeedHit& a, const TJSeedHit& b) {
@@ -615,6 +755,96 @@ static std::string join_lines(const std::vector<std::string>& v)
 	return s;
 }
 
+// ---- 計分規則(PoB 2.68.1 searchSingleSocket)的獨立參考算法 ----
+// 不經 TJAbyssSearch,只用已驗證的 reader / TJAbyssApply / TJWantMatcher 自己算預期值。
+
+static bool has_digit(const std::string& s)
+{
+	for (size_t i = 0; i < s.size(); i++)
+		if (isdigit((unsigned char)s[i])) return true;
+	return false;
+}
+
+// 一條命中行的分數:權重 x 數值(無數字的行 x1)。
+static double line_score(const TJWantStat& w, const std::string& line)
+{
+	return w.weight * (has_digit(line) ? TJStatValue(line) : 1.0);
+}
+
+// 一個 seed 的紀錄在規則下的總分:鑰石 / 插槽 / 不在樹上的節點不計分;allowed 非空時只算名單內節點。
+// includeKeystones 只給「若鑰石有計分會差多少」的對照用。
+static double ref_score(const TJDataset& ds, const std::map<int, TJAbyssMod>& rec, const TJWantMatcher& m,
+                        const std::map<int, int>& nodeKind, const std::set<int>* allowed,
+                        bool includeKeystones, int* matchedLines = nullptr)
+{
+	double total = 0;
+	for (std::map<int, TJAbyssMod>::const_iterator it = rec.begin(); it != rec.end(); ++it) {
+		if (allowed && !allowed->count(it->first)) continue;
+		std::map<int, int>::const_iterator k = nodeKind.find(it->first);
+		if (k == nodeKind.end() || k->second == kPtSocket) continue;
+		if (k->second == kPtKeystone && !includeKeystones) continue;
+		const TJTransform t = TJAbyssApply(ds, it->second);
+		for (size_t li = 0; li < t.lines.size(); li++)
+			if (const TJWantStat* w = m.Match(t.lines[li])) {
+				total += line_score(*w, t.lines[li]);
+				if (matchedLines) ++*matchedLines;
+			}
+	}
+	return total;
+}
+
+// 紀錄裡的節點是否全在樹上(避開「不在樹上算不算」的語意差異,挑 seed 時用)。
+static bool all_known(const std::map<int, TJAbyssMod>& rec, const std::map<int, int>& nodeKind)
+{
+	for (std::map<int, TJAbyssMod>::const_iterator it = rec.begin(); it != rec.end(); ++it)
+		if (!nodeKind.count(it->first)) return false;
+	return true;
+}
+
+// 一個修改的結果是哪個 legion 條目(例 "abyss_special_ascendancy_notable_4")。
+static std::string outcome_id(const TJDataset& ds, const TJAbyssMod& mod)
+{
+	if (mod.empty()) return "";
+	const TJEntry* e = mod[0].type == 1 ? TJNodeAt(ds, mod[0].globalId) : TJAdditionAt(ds, mod[0].globalId);
+	return e ? e->id : "";
+}
+
+// 依檔案格式(u8 數量 + u16 節點 id)逐 seed 走一遍某昇華的區段;獨立於 TJAbyssReadAscendancies。
+static bool asc_walk(const std::string& blob, const TJAbyssLUT& lut, const std::string& cls,
+                     std::vector<std::vector<int> >& out)
+{
+	out.clear();
+	std::map<std::string, size_t>::const_iterator it = lut.ascOffsets.find(cls);
+	if (it == lut.ascOffsets.end()) return false;
+	size_t o = it->second;
+	for (int s = 0; s < lut.seedCount; s++) {
+		int n = 0;
+		if (!rd_u8(blob, o, n)) return false;
+		std::vector<int> ids;
+		for (int k = 0; k < n; k++) {
+			int id = 0;
+			if (!rd_u16(blob, o, id)) return false;
+			ids.push_back(id);
+		}
+		out.push_back(ids);
+	}
+	return true;
+}
+
+static std::set<int> seeds_of(const std::vector<TJSeedHit>& hits)
+{
+	std::set<int> s;
+	for (size_t i = 0; i < hits.size(); i++) s.insert(hits[i].seed);
+	return s;
+}
+
+static const TJSeedHit* hit_for(const std::vector<TJSeedHit>& hits, int seed)
+{
+	for (size_t i = 0; i < hits.size(); i++)
+		if (hits[i].seed == seed) return &hits[i];
+	return nullptr;
+}
+
 int RunAbyssSelfTest(const std::wstring& exeDir)
 {
 	abyss_console();
@@ -735,6 +965,32 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 			      "without them it drops every one — which is why the map is passed in",
 			      std::to_string(keystonesBigWithoutTree) + "/" + std::to_string(keystones));
 			check(TJAbyssInScope(0, 999999, ds, &nodeKind), "scope 0 keeps everything");
+			// 附加傷害拆成兩行「X 至 0」「0 至 Y」,第二行的數值是 Y(POB roll2),不是開頭的 0
+			check(TJStatValue("Adds 0 to 26 Lightning Damage to Attacks") == 26.0 &&
+			      TJStatValue("Adds 2 to 0 Lightning Damage to Attacks") == 2.0,
+			      "「0 至 N」行的數值取 N", std::to_string(TJStatValue("Adds 0 to 26 Lightning Damage to Attacks")));
+			// 深淵鑰石不計分 → 選單不列只出現在鑰石上的詞綴(POB 選單排除 node.ks);永恆鑰石照列
+			{
+				auto listed = [&](int type, const std::string& en) {
+					for (const TJStatTemplate& t : TJStatTemplates(ds, type))
+						if (t.en == TJNormalizeStat(en)) return true;
+					return false;
+				};
+				check(!listed(8, "Take 30% less damage from Critical Strikes") &&
+				      !listed(10, "Maximum number of raised Spectres, Skeletons and Zombies is 1"),
+				      "深淵選單不列鑰石專屬詞綴");
+				check(listed(7, "Adds 0 to 26 Lightning Damage to Attacks"), "深淵選單仍列一般天賦詞綴");
+				bool eternalKs = false;
+				for (const TJEntry& e : ds.nodes)
+					if (e.ks && e.id.rfind("vaal", 0) == 0 && !e.sd.empty() && listed(1, e.sd[0])) eternalKs = true;
+				check(eternalKs, "永恆珠寶選單照舊列鑰石詞綴");
+				int missing = 0;
+				for (const TJEntry& e : ds.nodes)
+					if (e.ks && e.id.rfind("abyss", 0) == 0)
+						for (size_t i = 0; i < e.sd.size(); i++)
+							if (i >= e.sdZh.size() || e.sdZh[i].empty()) missing++;
+				check(missing == 0, "深淵鑰石每行都有中文", std::to_string(missing) + " 行缺");
+			}
 		}
 
 		// A5 seed addressing rejects what it cannot answer instead of guessing.
@@ -839,6 +1095,21 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 			}
 		}
 
+		// W3 不選詞綴時列出插槽的全部種子,編號遞增
+		{
+			TJSearchQuery qe;
+			qe.jewelType = 7;
+			qe.scope = 0;
+			const std::vector<TJSeedHit> all = TJAbyssSearch(ds, blob, lut, qe, 2491, 0, &nodeKind, nullptr);
+			bool inc = !all.empty();
+			for (size_t i = 0; i < all.size(); i++)
+				inc = inc && all[i].seed >= lut.seedMin && all[i].seed <= lut.seedMax &&
+				      (i == 0 || all[i - 1].seed < all[i].seed);
+			check(all.size() == (size_t)lut.seedCount && inc,
+			      "W3 TJAbyssSearch 不選詞綴時列出插槽的全部種子且編號遞增",
+			      std::to_string(all.size()) + " 個,預期 " + std::to_string(lut.seedCount));
+		}
+
 		// A8 a damaged container must be refused, not half-read (a chopped tail changes no header field; only the end-of-walk check catches it).
 		{
 			TJAbyssLUT bad;
@@ -883,6 +1154,17 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 			      "Tecrod and Ulaman conquer the same passives for the same (socket, seed)",
 			      std::to_string(compared) + " pairs compared");
 
+			// E2 Ulaman 查表的插槽清單必須含 6 個外圍大型星團插槽(55190, 2491, 7960, 46882, 21984, 32763)
+			{
+				const int want[] = { 55190, 2491, 7960, 46882, 21984, 32763 };
+				std::string missing;
+				for (int w : want)
+					if (std::find(lut8.socketIds.begin(), lut8.socketIds.end(), w) == lut8.socketIds.end())
+						missing += (missing.empty() ? "" : ",") + std::to_string(w);
+				check(missing.empty(), "E2 Ulaman 查表 socketIds 含 6 個外圍大型星團插槽",
+				      missing.empty() ? std::string() : "missing=" + missing);
+			}
+
 			// A10 the negative-roll rule. Stored negatives occur on only two of the four jewels; assert the
 			// stored value really is negative first, or the rule is "confirmed" by a case that never needed it.
 			std::map<int, TJAbyssMod> rec;
@@ -924,6 +1206,151 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 						if (e.id.rfind("abyss", 0) == 0 && kv.second.min < 0) haveNegRange = true;
 				check(haveNegRange,
 				      "an Abyss entry really does declare a negative range");
+			}
+
+			// T5 分數 = 權重 x 數值:Ulaman 插槽 2491,挑一個 seed 與一條數值 >= 2 的非鑰石行,權重 2。
+			// 舊規則(每命中一行加權重)會得到 2 x 行數,數值 >= 2 時必然不同,所以這題能抓到「沒乘數值」。
+			{
+				int pickSeed = 0;
+				std::string tmpl;
+				std::map<int, TJAbyssMod> rec;
+				for (int seed = 100; seed <= 600 && tmpl.empty(); seed++) {
+					if (!TJAbyssReadSocket(ds, ulaman, lut8, 2491, seed, rec) || !all_known(rec, nodeKind)) continue;
+					for (std::map<int, TJAbyssMod>::const_iterator it = rec.begin();
+					     it != rec.end() && tmpl.empty(); ++it) {
+						const int kind = nodeKind.find(it->first)->second;
+						if (kind == kPtKeystone || kind == kPtSocket) continue;
+						const TJTransform t = TJAbyssApply(ds, it->second);
+						for (size_t li = 0; li < t.lines.size(); li++)
+							if (TJStatValue(t.lines[li]) >= 2.0) {
+								tmpl = TJNormalizeStat(t.lines[li]);
+								pickSeed = seed;
+								break;
+							}
+					}
+				}
+				if (tmpl.empty()) {
+					check(false, "T5 Ulaman 插槽 2491 前 500 個 seed 找不到數值 >= 2 的非鑰石行");
+				} else {
+					TJSearchQuery q;
+					q.jewelType = 8;
+					q.scope = 0;
+					q.wants.push_back({ tmpl, 0.0, 2.0 });
+					const std::vector<TJSeedHit> hits = TJAbyssSearch(ds, ulaman, lut8, q, 2491, 0, &nodeKind, nullptr);
+					const TJWantMatcher m(q.wants);
+					int lines = 0;
+					const double expect = ref_score(ds, rec, m, nodeKind, nullptr, false, &lines);
+					const TJSeedHit* h = hit_for(hits, pickSeed);
+					check(h && std::fabs(h->weight - expect) < 1e-6,
+					      "T5a Ulaman 2491 的 seed 分數 = 權重 2 x 命中行數值總和",
+					      "seed " + std::to_string(pickSeed) + " 範本 [" + tmpl + "] 預期 " +
+					      std::to_string(expect) + " 得到 " + (h ? std::to_string(h->weight) : std::string("(無此 seed)")));
+					check(expect > 2.0 * lines + 1e-9, "T5b 此情境下新舊規則可區分(數值總和 > 命中行數)",
+					      "預期 " + std::to_string(expect) + " vs 舊規則 " + std::to_string(2.0 * lines));
+				}
+			}
+
+			// T6 鑰石不計分:挑一個會征服鑰石的 (插槽,seed 4096),詞綴設為該鑰石結果的行。
+			{
+				int sock = 0;
+				std::string tmpl;
+				std::map<int, TJAbyssMod> rec;
+				for (size_t si = 0; si < lut8.socketIds.size() && tmpl.empty(); si++) {
+					if (!TJAbyssReadSocket(ds, ulaman, lut8, lut8.socketIds[si], 4096, rec) ||
+					    !all_known(rec, nodeKind)) continue;
+					for (std::map<int, TJAbyssMod>::const_iterator it = rec.begin();
+					     it != rec.end() && tmpl.empty(); ++it) {
+						if (nodeKind.find(it->first)->second != kPtKeystone) continue;
+						const TJTransform t = TJAbyssApply(ds, it->second);
+						for (size_t li = 0; li < t.lines.size(); li++)
+							if (!has_digit(t.lines[li]) || TJStatValue(t.lines[li]) > 0.0) {
+								tmpl = TJNormalizeStat(t.lines[li]);
+								sock = lut8.socketIds[si];
+								break;
+							}
+					}
+				}
+				if (tmpl.empty()) {
+					check(false, "T6 seed 4096 在任何插槽都找不到征服鑰石的有效行");
+				} else {
+					TJSearchQuery q;
+					q.jewelType = 8;
+					q.scope = 0;
+					q.wants.push_back({ tmpl, 0.0, 1.0 });
+					const TJWantMatcher m(q.wants);
+					const double without = ref_score(ds, rec, m, nodeKind, nullptr, false);
+					const double with = ref_score(ds, rec, m, nodeKind, nullptr, true);
+					const std::vector<TJSeedHit> hits = TJAbyssSearch(ds, ulaman, lut8, q, sock, 0, &nodeKind, nullptr);
+					const TJSeedHit* h = hit_for(hits, 4096);
+					check(with > without + 1e-9, "T6a 此情境下鑰石若計分會改變分數(對照有鑑別力)",
+					      "插槽 " + std::to_string(sock) + " 範本 [" + tmpl + "] 含鑰石 " +
+					      std::to_string(with) + " vs 不含 " + std::to_string(without));
+					const bool ok = (without == 0.0) ? (h == nullptr)
+					                                 : (h && std::fabs(h->weight - without) < 1e-6);
+					check(ok, "T6b 鑰石的行不計分:seed 4096 只算非鑰石節點(預期 0 分時不入榜)",
+					      "預期 " + std::to_string(without) + " 得到 " +
+					      (h ? std::to_string(h->weight) : std::string("(不在結果中)")));
+				}
+			}
+
+			// T9 allowedIds(7-10 的「只算已配點」):挑 Tecrod 插槽 2491 裡同一範本出現在 >= 2 個不同節點的 seed,
+			// 名單只含其中一個節點 -> 只計該節點;不給名單 -> 兩個都計;名單只有未被征服的 id -> 不入榜。
+			{
+				int pickSeed = 0, nodeA = 0;
+				std::string tmpl;
+				for (int seed = 100; seed <= 1500 && tmpl.empty(); seed++) {
+					std::map<int, TJAbyssMod> rec;
+					if (!TJAbyssReadSocket(ds, blob, lut, 2491, seed, rec) || !all_known(rec, nodeKind)) continue;
+					std::map<std::string, std::set<int> > byTmpl;
+					for (std::map<int, TJAbyssMod>::const_iterator it = rec.begin(); it != rec.end(); ++it) {
+						const int kind = nodeKind.find(it->first)->second;
+						if (kind == kPtKeystone || kind == kPtSocket) continue;
+						const TJTransform t = TJAbyssApply(ds, it->second);
+						for (size_t li = 0; li < t.lines.size(); li++)
+							if (!has_digit(t.lines[li]) || TJStatValue(t.lines[li]) > 0.0)
+								byTmpl[TJNormalizeStat(t.lines[li])].insert(it->first);
+					}
+					for (std::map<std::string, std::set<int> >::const_iterator b = byTmpl.begin();
+					     b != byTmpl.end(); ++b)
+						if (b->second.size() >= 2) {
+							tmpl = b->first; pickSeed = seed; nodeA = *b->second.begin();
+							break;
+						}
+				}
+				if (tmpl.empty()) {
+					check(false, "T9 Tecrod 插槽 2491 前 1400 個 seed 找不到同範本出現在兩個節點的情況");
+				} else {
+					std::map<int, TJAbyssMod> rec;
+					TJAbyssReadSocket(ds, blob, lut, 2491, pickSeed, rec);
+					TJSearchQuery q;
+					q.jewelType = 7;
+					q.scope = 0;
+					q.wants.push_back({ tmpl, 0.0, 1.5 });
+					const TJWantMatcher m(q.wants);
+					const std::set<int> onlyA = { nodeA };
+					const double expectA = ref_score(ds, rec, m, nodeKind, &onlyA, false);
+					const double expectAll = ref_score(ds, rec, m, nodeKind, nullptr, false);
+
+					TJSearchQuery qa = q;
+					qa.allowedIds.push_back(nodeA);
+					const TJSeedHit* ha = hit_for(TJAbyssSearch(ds, blob, lut, qa, 2491, 0, &nodeKind, nullptr), pickSeed);
+					check(expectAll > expectA + 1e-9 && ha && std::fabs(ha->weight - expectA) < 1e-6,
+					      "T9e 有名單時只計名單內節點(其餘節點的相同詞綴不加分)",
+					      "seed " + std::to_string(pickSeed) + " 節點 " + std::to_string(nodeA) + " 預期 " +
+					      std::to_string(expectA) + "(全算為 " + std::to_string(expectAll) + ") 得到 " +
+					      (ha ? std::to_string(ha->weight) : std::string("(無此 seed)")));
+
+					const TJSeedHit* hall = hit_for(TJAbyssSearch(ds, blob, lut, q, 2491, 0, &nodeKind, nullptr), pickSeed);
+					check(hall && std::fabs(hall->weight - expectAll) < 1e-6,
+					      "T9f 不給名單時所有節點都計分(名單為空 = 不限制)",
+					      "預期 " + std::to_string(expectAll) + " 得到 " +
+					      (hall ? std::to_string(hall->weight) : std::string("(無此 seed)")));
+
+					TJSearchQuery qn = q;
+					qn.allowedIds.push_back(999999);
+					check(hit_for(TJAbyssSearch(ds, blob, lut, qn, 2491, 0, &nodeKind, nullptr), pickSeed) == nullptr,
+					      "T9g 名單內沒有任何被征服節點時該 seed 不入榜", "");
+				}
 			}
 		}
 	}
@@ -1028,6 +1455,214 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 				check(!zh.empty(), "given passives to judge, it finds seeds",
 				      std::to_string(zh.size()) + " hits");
 			}
+
+			// W4 重奪惡意不選詞綴(也不指定昇華):列出全部種子,編號遞增
+			{
+				TJSearchQuery qe;
+				qe.jewelType = 11;
+				qe.scope = 0;
+				qe.nodeIds.push_back(6);
+				qe.nodeIds.push_back(94);
+				qe.nodeIds.push_back(127);
+				qe.nodeIds.push_back(223);
+				const std::vector<TJSeedHit> all = TJAbyssSearch(ds, zorath, lz, qe, 2491, 0, &nodeKind, nullptr);
+				bool inc = !all.empty();
+				for (size_t i = 0; i < all.size(); i++)
+					inc = inc && all[i].seed >= lz.seedMin && all[i].seed <= lz.seedMax &&
+					      (i == 0 || all[i - 1].seed < all[i].seed);
+				check(all.size() == (size_t)lz.seedCount && inc,
+				      "W4 重奪惡意不選詞綴時列出全部種子且編號遞增",
+				      std::to_string(all.size()) + " 個,預期 " + std::to_string(lz.seedCount));
+			}
+
+			// T7 / T8 / T5c 昇華篩選與計分(Zorath,build 昇華 = Deadeye;路徑用固定的四個一般節點)。
+			// 預期集合都由「獨立走訪昇華區段 + TJAbyssReadNode」自己算,不經 TJAbyssSearch。
+			{
+				const std::string cls = "Deadeye";
+				std::vector<std::vector<int> > picks;   // 每個 seed 的 Deadeye 選點
+				if (!asc_walk(zorath, lz, cls, picks) || picks.size() != (size_t)lz.seedCount || picks[0].empty()) {
+					check(false, "T7/T8 讀取 Deadeye 昇華區段失敗");
+				} else {
+					// 獨立走訪必須與已驗證的 TJAbyssReadAscendancies 一致(否則下面的預期值不可信)
+					bool walkOk = true;
+					const int probeSeeds[] = { 100, 368, 4096, 8000 };
+					for (size_t i = 0; i < sizeof(probeSeeds) / sizeof(probeSeeds[0]); i++) {
+						std::map<std::string, std::vector<int> > a;
+						walkOk = walkOk && TJAbyssReadAscendancies(zorath, lz, probeSeeds[i], a) &&
+						         a[cls] == picks[(size_t)TJAbyssSeedIndex(lz, probeSeeds[i])];
+					}
+					check(walkOk, "T7z 獨立走訪的昇華選點與 TJAbyssReadAscendancies 一致(預期值依據)");
+
+					// seed -> 該 seed 的 Deadeye 選點結果(legion 條目 id 集合)
+					auto outcomes = [&](int seed) {
+						std::set<std::string> ids;
+						const std::vector<int>& p = picks[(size_t)TJAbyssSeedIndex(lz, seed)];
+						for (size_t i = 0; i < p.size(); i++) {
+							TJAbyssMod mod;
+							if (TJAbyssReadNode(ds, zorath, lz, p[i], seed, mod)) ids.insert(outcome_id(ds, mod));
+						}
+						return ids;
+					};
+
+					// 基準查詢:路徑節點 {6,94,127,223};詞綴取「前 600 個 seed 裡最常出現在這四個節點」的範本,讓基準 seed 夠多
+					const int pathIds[] = { 6, 94, 127, 223 };
+					TJSearchQuery base;
+					base.jewelType = 11;
+					base.scope = 0;
+					base.ascClass = cls;
+					for (int i = 0; i < 4; i++) base.nodeIds.push_back(pathIds[i]);
+					std::string tmpl;
+					{
+						std::map<std::string, int> freq;
+						for (int seed = 100; seed < 700; seed++) {
+							std::map<int, TJAbyssMod> rec0;
+							TJAbyssReadNodes(ds, zorath, lz, base.nodeIds, seed, rec0);
+							std::set<std::string> seen;
+							for (std::map<int, TJAbyssMod>::const_iterator it = rec0.begin(); it != rec0.end(); ++it) {
+								const TJTransform t = TJAbyssApply(ds, it->second);
+								for (size_t li = 0; li < t.lines.size(); li++) seen.insert(TJNormalizeStat(t.lines[li]));
+							}
+							for (std::set<std::string>::const_iterator s2 = seen.begin(); s2 != seen.end(); ++s2) freq[*s2]++;
+						}
+						int bestN = 0;
+						for (std::map<std::string, int>::const_iterator f = freq.begin(); f != freq.end(); ++f)
+							if (f->second > bestN) { bestN = f->second; tmpl = f->first; }
+					}
+					base.wants.push_back({ tmpl, 0.0, 1.0 });
+					const std::vector<TJSeedHit> B = TJAbyssSearch(ds, zorath, lz, base, 2491, 0, &nodeKind, nullptr);
+					const std::set<int> baseSeeds = seeds_of(B);
+					check(!tmpl.empty() && baseSeeds.size() > 40,
+					      "T7a 基準查詢(不加限制)有足夠多的 seed 可供篩選",
+					      "範本 [" + tmpl + "] " + std::to_string(baseSeeds.size()) + " 個 seed");
+
+					// T7 必要昇華結果:只留 Deadeye 選點結果 = R 的 seed
+					const std::set<std::string> r100 = outcomes(100);
+					const std::string R = r100.empty() ? std::string() : *r100.begin();
+					TJSearchQuery qreq = base;
+					qreq.requiredAscOutcome = R;
+					const std::vector<TJSeedHit> Q = TJAbyssSearch(ds, zorath, lz, qreq, 2491, 0, &nodeKind, nullptr);
+					std::set<int> expectReq;
+					for (std::set<int>::const_iterator s = baseSeeds.begin(); s != baseSeeds.end(); ++s)
+						if (outcomes(*s).count(R)) expectReq.insert(*s);
+					const std::set<int> gotReq = seeds_of(Q);
+					check(!R.empty() && gotReq == expectReq && !expectReq.empty() && expectReq.size() < baseSeeds.size(),
+					      "T7b 必要昇華結果 = 該結果者留下、其餘 seed 全部剔除",
+					      "要求 " + R + ";基準 " + std::to_string(baseSeeds.size()) + " -> 預期 " +
+					      std::to_string(expectReq.size()) + " 得到 " + std::to_string(gotReq.size()));
+					// 規格原文:結果 seed 的 ASCS(TJAbyssReadAscendancies)該昇華都含此結果
+					bool ascOk = !Q.empty();
+					for (size_t i = 0; i < Q.size() && i < 40; i++) {
+						std::map<std::string, std::vector<int> > a;
+						bool has = false;
+						if (TJAbyssReadAscendancies(zorath, lz, Q[i].seed, a))
+							for (size_t j = 0; j < a[cls].size(); j++) {
+								TJAbyssMod mod;
+								if (TJAbyssReadNode(ds, zorath, lz, a[cls][j], Q[i].seed, mod) && outcome_id(ds, mod) == R) has = true;
+							}
+						ascOk = ascOk && has;
+					}
+					check(ascOk, "T7c 前 40 個結果 seed 的昇華選點(ASCS)確實含必要結果", R);
+
+					// W5 不選詞綴只指定必要昇華結果:仍照昇華數值計分,最小總權重照樣生效(不是「依編號列全部」)
+					{
+						TJSearchQuery qr = qreq;
+						qr.wants.clear();
+						const std::vector<TJSeedHit> R0 = TJAbyssSearch(ds, zorath, lz, qr, 2491, 0, &nodeKind, nullptr);
+						double maxW = 0.0;
+						for (const TJSeedHit& h : R0) maxW = (std::max)(maxW, h.weight);
+						qr.minTotalWeight = maxW + 1.0;   // 高於所有種子:有生效就該全空
+						const std::vector<TJSeedHit> R1 = TJAbyssSearch(ds, zorath, lz, qr, 2491, 0, &nodeKind, nullptr);
+						check(!R0.empty() && R1.empty(),
+						      "W5 不選詞綴＋必要昇華結果時最小總權重照樣生效",
+						      "門檻 " + std::to_string(maxW + 1.0) + ";全部 " + std::to_string(R0.size()) + " -> " + std::to_string(R1.size()));
+					}
+
+					// T8 保護昇華天賦:TJAbyssAscendancyTargets = 全 seed 範圍會征服的昇華節點
+					const std::vector<int> targets = TJAbyssAscendancyTargets(zorath, lz, cls);
+					std::set<int> expectTargets;
+					for (size_t i = 0; i < picks.size(); i++) expectTargets.insert(picks[i].begin(), picks[i].end());
+					check(!targets.empty() && std::set<int>(targets.begin(), targets.end()) == expectTargets,
+					      "T8a Deadeye 的可征服昇華節點 = 全 seed 範圍選點的聯集",
+					      std::to_string(targets.size()) + " vs 預期 " + std::to_string(expectTargets.size()));
+					check(TJAbyssAscendancyTargets(zorath, lz, "NoSuchAscendancy").empty(),
+					      "T8b 昇華不存在時可征服節點為空");
+
+					// 挑一個「基準 seed 裡有的有、沒的也有」的保護節點,才有鑑別力
+					int prot = 0;
+					std::set<int> expectProt;
+					for (size_t ti = 0; ti < targets.size() && prot == 0; ti++) {
+						std::set<int> keep;
+						for (std::set<int>::const_iterator s = baseSeeds.begin(); s != baseSeeds.end(); ++s) {
+							const std::vector<int>& p = picks[(size_t)TJAbyssSeedIndex(lz, *s)];
+							if (std::find(p.begin(), p.end(), targets[ti]) == p.end()) keep.insert(*s);
+						}
+						if (!keep.empty() && keep.size() < baseSeeds.size()) { prot = targets[ti]; expectProt = keep; }
+					}
+					if (prot == 0) {
+						check(false, "T8c 找不到對基準 seed 有鑑別力的保護節點");
+					} else {
+						TJSearchQuery qp = base;
+						qp.protectAscIds.push_back(prot);
+						const std::set<int> gotProt = seeds_of(TJAbyssSearch(ds, zorath, lz, qp, 2491, 0, &nodeKind, nullptr));
+						check(gotProt == expectProt,
+						      "T8c 保護的昇華節點被該 seed 征服時剔除,沒被征服的保留",
+						      "保護節點 " + std::to_string(prot) + ";基準 " + std::to_string(baseSeeds.size()) +
+						      " -> 預期 " + std::to_string(expectProt.size()) + " 得到 " + std::to_string(gotProt.size()));
+					}
+
+					// T5c 昇華選點計分:選點算一個 notable,命中行 x 數值;無數字行 x1。
+					// 找 Deadeye 選點結果含「完全沒有數字的行」的 seed,詞綴設為那一行、權重 3。
+					int pickSeed = 0;
+					std::string plain;
+					for (size_t i = 0; i < picks.size() && plain.empty(); i++) {
+						const int seed = lz.seedMin + (int)i * lz.seedInc;
+						for (size_t j = 0; j < picks[i].size() && plain.empty(); j++) {
+							TJAbyssMod mod;
+							if (!TJAbyssReadNode(ds, zorath, lz, picks[i][j], seed, mod)) continue;
+							const TJTransform t = TJAbyssApply(ds, mod);
+							for (size_t li = 0; li < t.lines.size(); li++)
+								if (!has_digit(t.lines[li])) { plain = t.lines[li]; pickSeed = seed; break; }
+						}
+					}
+					if (plain.empty()) {
+						check(false, "T5c Deadeye 的選點結果找不到無數字的行");
+					} else {
+						TJSearchQuery q10;
+						q10.jewelType = 11;
+						q10.scope = 0;
+						q10.ascClass = cls;
+						q10.nodeIds = base.nodeIds;
+						q10.wants.push_back({ TJNormalizeStat(plain), 0.0, 3.0 });
+						const TJWantMatcher m(q10.wants);
+						std::map<int, TJAbyssMod> path;
+						TJAbyssReadNodes(ds, zorath, lz, q10.nodeIds, pickSeed, path);
+						double expect = ref_score(ds, path, m, nodeKind, nullptr, false);
+						const std::vector<int>& p = picks[(size_t)TJAbyssSeedIndex(lz, pickSeed)];
+						for (size_t j = 0; j < p.size(); j++) {   // 選點本身:昇華節點不在樹資料裡,仍算 notable
+							TJAbyssMod mod;
+							if (!TJAbyssReadNode(ds, zorath, lz, p[j], pickSeed, mod)) continue;
+							const TJTransform t = TJAbyssApply(ds, mod);
+							for (size_t li = 0; li < t.lines.size(); li++)
+								if (const TJWantStat* w = m.Match(t.lines[li])) expect += line_score(*w, t.lines[li]);
+						}
+						const TJSeedHit* h = hit_for(TJAbyssSearch(ds, zorath, lz, q10, 2491, 0, &nodeKind, nullptr), pickSeed);
+						check(expect >= 3.0 && h && std::fabs(h->weight - expect) < 1e-6,
+						      "T5c 昇華選點計入分數:無數字的命中行 x1(權重 3 -> 至少 3 分)",
+						      "seed " + std::to_string(pickSeed) + " 範本 [" + plain + "] 預期 " +
+						      std::to_string(expect) + " 得到 " + (h ? std::to_string(h->weight) : std::string("(無此 seed)")));
+
+						// 同一個查詢不指定昇華:選點不計分,該 seed 的分數少掉選點的那一份
+						TJSearchQuery q11 = q10;
+						q11.ascClass.clear();
+						const TJSeedHit* h2 = hit_for(TJAbyssSearch(ds, zorath, lz, q11, 2491, 0, &nodeKind, nullptr), pickSeed);
+						const double pathOnly = ref_score(ds, path, m, nodeKind, nullptr, false);
+						check((pathOnly == 0.0) ? (h2 == nullptr) : (h2 && std::fabs(h2->weight - pathOnly) < 1e-6),
+						      "T5d ascClass 為空時不讀昇華區段,只算路徑節點",
+						      "預期 " + std::to_string(pathOnly) + " 得到 " +
+						      (h2 ? std::to_string(h2->weight) : std::string("(不在結果中)")));
+					}
+				}
+			}
 		}
 	}
 
@@ -1049,4 +1684,55 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 		CloseHandle(h);
 	}
 	return failures == 0 ? 0 : 1;
+}
+
+// "--abyss-search <params.json>": the search the Abyss mode runs, from a POB build file, top hits to
+// abyss_search.txt as "seed<TAB>weight" (for A/B against POB's own Find Timeless Jewel). Params:
+// {build, jewel, socket, wants:[{tmpl,weight,min}], scope, requireAll, allocOnly, dist, ascOutcome, protect:[ids], top}
+int RunAbyssSearchCli(const std::wstring& exeDir, const std::wstring& paramsPath)
+{
+	abyss_console();
+	std::string out;
+	auto finish = [&](int code, const std::string& msg) {
+		if (!msg.empty()) out += msg + "\n";
+		abyss_write_report(exeDir, L"abyss_search.txt", out);
+		return code;
+	};
+	std::string text, err;
+	if (!read_file_utf8(paramsPath, text)) return finish(1, "cannot read params");
+	nlohmann::json p;
+	try { p = nlohmann::json::parse(text); } catch (const std::exception& e) { return finish(1, e.what()); }
+	TJDataset ds;
+	if (!ds.Load(exeDir + L"Data\\timeless_jewels.json", &err)) return finish(1, err);
+	PassiveTreeData tree;
+	if (!tree.Load(exeDir, &err)) return finish(1, err);
+	PobBuildSpec b;
+	if (!LoadPobBuildSpec(widen(p.value("build", std::string())), b, &err)) return finish(1, err);
+	const int jt = p.value("jewel", 8), socket = p.value("socket", 0);
+	std::string blob;
+	TJAbyssLUT lut;
+	if (!TJLoadBin(exeDir, ds, jt, blob, &err) || !TJAbyssParse(blob, jt, lut, &err)) return finish(1, err);
+	std::map<int, int> kind;
+	for (const PtNode& n : tree.nodes) kind[n.id] = n.kind;
+
+	TJSearchQuery q;
+	q.jewelType = jt;
+	q.scope = p.value("scope", 0);
+	q.requireAll = p.value("requireAll", false);
+	for (const auto& w : p.value("wants", nlohmann::json::array()))
+		q.wants.push_back({ w.value("tmpl", std::string()), w.value("min", 0.0), w.value("weight", 1.0) });
+	if (TJIsZorath(jt)) {
+		const std::set<int> path = PtShortestPathToClassStart(tree, b.nodes, socket, b.classId);
+		if (path.empty()) return finish(1, "no allocated path from the socket to the class start");
+		q.nodeIds.assign(path.begin(), path.end());
+		q.ascClass = b.ascendClassName;
+		q.requiredAscOutcome = p.value("ascOutcome", std::string());
+		for (const auto& id : p.value("protect", nlohmann::json::array())) q.protectAscIds.push_back(id.get<int>());
+	} else if (p.value("allocOnly", false)) {
+		for (const auto& kv : PtDistanceFromAllocated(tree, b.nodes, p.value("dist", 0))) q.allowedIds.push_back(kv.first);
+		if (q.allowedIds.empty()) q.allowedIds.push_back(-1);
+	}
+	for (const TJSeedHit& h : TJAbyssSearch(ds, blob, lut, q, socket, p.value("top", 0), &kind))
+		out += std::to_string(h.seed) + "\t" + std::to_string(h.weight) + "\n";
+	return finish(0, "");
 }

@@ -658,8 +658,17 @@ std::string TJNormalizeStat(const std::string& s)
 
 double TJStatValue(const std::string& s)
 {
-	for (size_t i = 0; i < s.size(); i++)
-		if (isdigit((unsigned char)s[i])) return strtod(s.c_str() + i, nullptr);
+	// First non-zero number: Abyss added damage splits into "Adds X to 0" / "Adds 0 to Y", and the
+	// second line's roll is Y. No eternal line starts with a bare 0, so 1-6 are unaffected.
+	for (size_t i = 0; i < s.size(); i++) {
+		if (!isdigit((unsigned char)s[i])) continue;
+		char* end = nullptr;
+		const double v = strtod(s.c_str() + i, &end);
+		if (v != 0.0) return v;
+		i = (size_t)(end - s.c_str());
+		if (i == 0 || i > s.size()) break;
+		i--;
+	}
 	return 0.0;
 }
 
@@ -691,6 +700,7 @@ std::vector<TJStatTemplate> TJStatTemplates(const TJDataset& ds, int jewelType)
 	auto add = [&](const std::vector<TJEntry>& v) {
 		for (const auto& e : v) {
 			if (!prefix.empty() && e.id.rfind(prefix, 0) != 0) continue; // other jewel
+			if (e.ks && TJIsAbyss(jewelType)) continue; // Abyss keystones never score (PoB lists exclude node.ks)
 			for (size_t i = 0; i < e.sd.size(); i++) {
 				if (e.sd[i].empty()) continue;
 				std::string en = TJNormalizeStat(e.sd[i]);
@@ -721,7 +731,7 @@ std::vector<TJSeedHit> TJSearch(const TJDataset& ds, const std::string& blob,
 {
 	std::vector<TJSeedHit> hits;
 	auto itMin = ds.seedMin.find(q.jewelType), itMax = ds.seedMax.find(q.jewelType);
-	if (itMin == ds.seedMin.end() || itMax == ds.seedMax.end() || q.wants.empty())
+	if (itMin == ds.seedMin.end() || itMax == ds.seedMax.end())
 		return hits;
 
 	const TJWantMatcher matcher(q.wants);
@@ -756,6 +766,7 @@ std::vector<TJSeedHit> TJSearch(const TJDataset& ds, const std::string& blob,
 		for (int id : q.protectIds)
 			if (TJApply(ds, blob, q.jewelType, seed, id, "Notable", {}).replaced) { spoiled = true; break; }
 		if (spoiled) continue;
+		if (q.wants.empty()) { hits.push_back({ seed, 0.0, 0, 0 }); continue; } // no stats: every seed that survives the protections
 		double total = 0;
 		int matches = 0;
 		std::set<const TJWantStat*> distinct;
@@ -1169,6 +1180,61 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 			}
 			check(consistent, "matcher and search count the same hits",
 			      std::to_string(sample.size()) + " seeds re-counted");
+		}
+
+		// W1/W2 不選詞綴(wants 空):不計分,通過保護條件的種子全部列出,依種子編號遞增
+		{
+			const int lo = ds.seedMin.at(3), hi = ds.seedMax.at(3);
+			const size_t total = (size_t)(hi - lo + 1);
+
+			TJSearchQuery qe;
+			qe.jewelType = 3;
+			qe.scope = 0;
+			const auto allSeeds = TJSearch(ds, blob, qe, 0, nullptr);
+			bool inc = !allSeeds.empty();
+			for (size_t i = 0; i < allSeeds.size(); i++) {
+				inc = inc && allSeeds[i].seed >= lo && allSeeds[i].seed <= hi &&
+				      (i == 0 || allSeeds[i - 1].seed < allSeeds[i].seed);
+			}
+			check(allSeeds.size() == total && inc,
+			      "W1 TJSearch 不選詞綴時列出全部種子且編號遞增",
+			      std::to_string(allSeeds.size()) + " 個,預期 " + std::to_string(total));
+
+			// W2 用激進的信仰(4):野蠻之鎖每個種子都替換大點,分不出保護有沒有生效
+			std::string mfb, mferr;
+			if (!TJLoadBin(exeDir, ds, 4, mfb, &mferr)) {
+				check(false, "W2 讀取激進的信仰查表", mferr);
+			} else {
+				const int mlo = ds.seedMin.at(4), mhi = ds.seedMax.at(4);
+				const size_t mtotal = (size_t)(mhi - mlo + 1);
+				// 挑一個「有些種子會替換、有些不會」的大點
+				int prot = 0;
+				std::set<int> expect;
+				int tried = 0;
+				for (const auto& kv : ds.nodeIndex) {
+					if (kv.second.first >= ds.sizeNotable) continue;
+					if (++tried > 40) break;
+					std::set<int> keep;
+					for (int s = mlo; s <= mhi; s++)
+						if (!TJApply(ds, mfb, 4, s, kv.first, "Notable", {}).replaced) keep.insert(s);
+					if (!keep.empty() && keep.size() < mtotal) { prot = kv.first; expect = keep; break; }
+				}
+				if (prot == 0) {
+					check(false, "W2 找不到有鑑別力的保護大點(有些種子替換、有些不替換)");
+				} else {
+					TJSearchQuery qp;
+					qp.jewelType = 4;
+					qp.scope = 0;
+					qp.protectIds.push_back(prot);
+					const auto kept = TJSearch(ds, mfb, qp, 0, nullptr);
+					std::set<int> got;
+					for (const auto& h : kept) got.insert(h.seed);
+					check(got == expect && kept.size() == got.size() && got.size() < mtotal,
+					      "W2 TJSearch 不選詞綴有保護天賦時只排除會替換它的種子",
+					      "保護 " + std::to_string(prot) + ";預期 " + std::to_string(expect.size()) +
+					      " 得到 " + std::to_string(got.size()) + " / 全部 " + std::to_string(mtotal));
+				}
+			}
 		}
 	} else {
 		check(false, "load BrutalRestraint.bin", err);
@@ -1731,6 +1797,42 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 			for (size_t i = 0; inOrder && i < sent.size(); i++) inOrder = sent[i] == (int)i;
 			check(inOrder && rounds == 4, "B7 144 個種子按 4 次剛好每個送一次",
 			      std::to_string(sent.size()) + " sent in " + std::to_string(rounds));
+		}
+
+		// 征服者「任意」:每個種子對每位征服者的 stat 各一條,count>=1
+		{
+			const std::vector<std::string> ids = { "explicit.a", "explicit.b", "explicit.c" };
+			nlohmann::json j;
+			try { j = nlohmann::json::parse(TradeQueryJsonAny(ids, { 2000, 2001 })); } catch (...) {}
+			const auto& st = j.is_object() ? j["query"]["stats"] : nlohmann::json();
+			std::set<std::string> pairs;
+			if (st.is_array() && st.size() == 1)
+				for (const auto& f : st[0]["filters"])
+					if (f["value"].value("min", -1) == f["value"].value("max", -2))
+						pairs.insert(f.value("id", "") + "|" + std::to_string(f["value"].value("min", -1)));
+			check(st.is_array() && st.size() == 1 && st[0].value("type", "") == "count" &&
+			          st[0]["value"].value("min", -1) == 1 && st[0]["filters"].size() == 6 && pairs.size() == 6 &&
+			          pairs.count("explicit.c|2001"),
+			      "T1 任意的交易查詢:2 個種子 × 3 位征服者 = 6 條、count>=1", j.dump().substr(0, 200));
+
+			const size_t per = TradeSeedsPerSearch(ids.size());
+			std::vector<int> sent;
+			bool capOk = per >= 1 && per * ids.size() <= kMaxTradeSeeds;
+			size_t next = 0, rounds = 0;
+			do {
+				const TradeBatch b = TradeNextBatch(40, next, per);
+				std::vector<int> seeds;
+				for (size_t i = b.begin; i < b.end; i++) { seeds.push_back(3000 + (int)i); sent.push_back((int)i); }
+				nlohmann::json q = nlohmann::json::parse(TradeQueryJsonAny(ids, seeds));
+				capOk = capOk && q["query"]["stats"][0]["filters"].size() == seeds.size() * ids.size() &&
+				        q["query"]["stats"][0]["filters"].size() <= kMaxTradeSeeds;
+				next = b.end;
+				rounds++;
+			} while (next < 40 && rounds < 20);
+			bool all = sent.size() == 40;
+			for (size_t i = 0; all && i < sent.size(); i++) all = sent[i] == (int)i;
+			check(capOk && all, "T2 任意分批:每批不超過 40 條，種子不漏不重",
+			      "per=" + std::to_string(per) + " sent=" + std::to_string(sent.size()) + " rounds=" + std::to_string(rounds));
 		}
 
 		// Remembered region/league/platform. Round-tripped through the real file

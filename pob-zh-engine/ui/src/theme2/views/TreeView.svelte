@@ -14,7 +14,7 @@
   import { onMount } from "svelte";
   import TreeSpecBar from "../components/TreeSpecBar.svelte";
   import TimelessJewelDialog from "$lib/ui/TimelessJewelDialog.svelte";
-  import { api, type MasteryChoice, type NodeInfo, type NodePower, type TattooOptions, type TooltipLine, type TreeSocket, type TreeState } from "$lib/bridge";
+  import { api, hostUrl, type MasteryChoice, type NodeInfo, type NodePower, type TattooOptions, type TooltipLine, type TreeSocket, type TreeState } from "$lib/bridge";
   import { copyText } from "$lib/clipboard";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
@@ -1271,7 +1271,12 @@
     {#if hover && !masteryMenu && !classConfirm && !attrMenu}
       <div class="tip" style:left={`${Math.min(mouse.x + 16, w - 336)}px`} style:top={`${Math.min(mouse.y + 16, h - 80)}px`}>
         <div class="tip-title">
-          <span class="name" class:keystone={hover.kind === "keystone"} class:notable={hover.kind === "notable"}>{nameOf(hover)}</span>
+          <span class="name-row">
+            <span class="name" class:keystone={hover.kind === "keystone"} class:notable={hover.kind === "notable"}>{nameOf(hover)}</span>
+            {#if !hoverJewel && hoverInfo?.recipeIcons}
+              <span class="oils">{#each hoverInfo.recipeIcons as src, i (i)}<img class="oil" src={hostUrl("pob", src)} alt={hoverInfo.recipe?.[i] ?? ""} />{/each}</span>
+            {/if}
+          </span>
           <span class="kind">{kindLabel(hover)}</span>
         </div>
         <div class="tip-body">
@@ -1659,6 +1664,21 @@
     gap: 1px;
     padding: 8px 12px 6px;
     border-bottom: 1px solid var(--edge-2);
+  }
+  /* name stays centred; the anoint oils sit at the title's right edge */
+  .tip-title {
+    position: relative;
+  }
+  .tip-title .oils {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    display: flex;
+    gap: 2px;
+  }
+  .tip-title .oil {
+    width: 1.4em;
+    height: 1.4em;
   }
   .tip-title .name {
     font-weight: 600;

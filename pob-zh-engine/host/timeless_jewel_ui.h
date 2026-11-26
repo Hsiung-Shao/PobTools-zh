@@ -42,12 +42,16 @@ constexpr size_t kMaxTradeSeeds = 40;
 // The ?q= payload. Language-independent: the same JSON works on every region.
 std::string TradeQueryJson(const std::string& tradeStatId, int seed);
 std::string TradeQueryJsonMulti(const std::string& tradeStatId, const std::vector<int>& seeds);
+// Conqueror "any": one filter per stat id x seed (count >= 1), cut at kMaxTradeSeeds filters.
+std::string TradeQueryJsonAny(const std::vector<std::string>& statIds, const std::vector<int>& seeds);
+// Seeds one search carries when each seed takes nIds filters.
+size_t TradeSeedsPerSearch(size_t nIds);
 
 // A group with more seeds than one search carries is sent a batch per click:
 // the [begin, end) slice of its rank-ordered seeds to send now, given where the
 // previous search stopped (`next`); past the end it starts over.
 struct TradeBatch { size_t begin, end; };
-TradeBatch TradeNextBatch(size_t total, size_t next);
+TradeBatch TradeNextBatch(size_t total, size_t next, size_t per = kMaxTradeSeeds);
 
 // Pure URL assembly (no browser launch) so --tj-selftest can assert on it.
 // Returns "" when league or query is empty. platform: 0 pc, 1 xbox, 2 sony,
@@ -66,6 +70,11 @@ struct TjUiState {
 	int realm = 0;
 	int platform = 0;
 	std::string league;
+	// the 永恆 / 深淵 mode and each mode's last jewel; Zorath's class start id and Ascendancy disc id
+	int lastLegion = 3, lastAbyss = 8;
+	bool abyssMode = false;
+	int classId = -1;
+	std::string asc;
 	bool Load(const std::wstring& exeDir);
 	bool Save(const std::wstring& exeDir) const;
 };

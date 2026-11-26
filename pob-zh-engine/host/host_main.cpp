@@ -62,6 +62,7 @@
 #include "timeless_jewel_abyss.h"
 #include "timeless_jewel_ui.h"
 #include "passive_tree_data.h"
+#include "pob_build_spec.h"
 #include "passive_import.h"
 #include "passive_tree_update.h"
 #include "app_update.h"
@@ -424,11 +425,17 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--abyss-selftest") {
 		return RunAbyssSelfTest(dir);
 	}
+	if (arg1 == L"--abyss-search") { // --abyss-search <params.json>
+		return RunAbyssSearchCli(dir, arg2);
+	}
 	if (arg1 == L"--abyss") { // --abyss <jewelType> <socketId> <seed>  (socket 0 = list)
 		return RunAbyssCli(dir, _wtoi(arg2.c_str()), _wtoi(arg3.c_str()), _wtoi(arg4.c_str()));
 	}
 
 	// Headless passive-tree data check (node/socket/radius counts; report file).
+	if (arg1 == L"--pob-build-selftest") { // build-file parsing for the Abyss jewel mode
+		return RunPobBuildSelfTest(dir);
+	}
 	if (arg1 == L"--passive-tree-selftest") {
 		return RunPassiveTreeSelfTest(dir);
 	}

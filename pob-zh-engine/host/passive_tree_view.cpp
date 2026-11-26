@@ -20,6 +20,7 @@ namespace Tok = PobUi::Tok;
 static ImU32 WithAlpha(ImU32 c, unsigned a) { return (c & 0x00FFFFFFu) | ((ImU32)a << 24); }
 static const ImU32 kColEdge       = WithAlpha(Tok::TreeLink, 150);
 static const ImU32 kColEdgeInRad  = WithAlpha(Tok::TreeHit, 150);
+static const ImU32 kColEdgeLit    = WithAlpha(Tok::Text, 210);
 static const ImU32 kColHoverRing  = WithAlpha(Tok::Text, 110);
 static const ImU32 kColAffected   = Tok::TreeHit;                    // changed by the seed
 static const ImU32 kColReplaced   = Tok::TreeHit;                    // replaced: same hue, double ring
@@ -27,6 +28,7 @@ static const ImU32 kColProtected  = Tok::Success;                    // user-pro
 static const ImU32 kColSocket     = WithAlpha(PobUi::TreeKindColor(PobUi::TreeKind::Socket), 220);
 static const ImU32 kColSocketSel  = PobUi::TreeKindColor(PobUi::TreeKind::Socket);
 static const ImU32 kColSocketFill = WithAlpha(Tok::Surface2, 235);
+static const ImU32 kColCluster    = Tok::FxPurple;                   // outer Large cluster-jewel socket
 static const ImU32 kColRadiusRing = WithAlpha(Tok::TreeHit, 217);    // opacity .85, as the design
 
 static const float kFocusMinZoom = 0.14f;
@@ -216,6 +218,7 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 
 	ImDrawList* dl = ImGui::GetWindowDrawList();
 	dl->PushClipRect(vpPos_, vpPos_ + vpSize_, true);
+	auto thickOf = [&] { return std::clamp(zoom_ * 14.0f, 1.0f, 5.0f); };
 
 	// group backgrounds
 	auto drawDecos = [&](const std::vector<PtDeco>& decos) {
@@ -241,8 +244,65 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 	};
 	drawDecos(d.groupbg);
 
+	// ascendancy discs: background, links, nodes (under the main tree's links and nodes)
+	int ascHover = -1;
+	if (in.showAsc && !d.ascClasses.empty()) {
+		auto img = [&](const PtSprite& sp, float x, float y, ImU32 tint) {
+			if (!sp.valid || sp.sheet >= (int)tex_.size()) return;
+			dl->AddImage((ImTextureID)(intptr_t)tex_[sp.sheet],
+			             worldToScreen(ImVec2(x - sp.w * 0.5f, y - sp.h * 0.5f)),
+			             worldToScreen(ImVec2(x + sp.w * 0.5f, y + sp.h * 0.5f)),
+			             ImVec2(sp.uv[0], sp.uv[1]), ImVec2(sp.uv[2], sp.uv[3]), tint);
+		};
+		auto own = [&](const std::string& asc) { return !in.ascName.empty() && asc == in.ascName; };
+		auto tintOf = [&](const std::string& asc) { return own(asc) ? IM_COL32_WHITE : IM_COL32(255, 255, 255, 128); };
+		for (const auto& c : d.ascClasses)
+			if (!cull(c.x, c.y, c.bg.w)) img(c.bg, c.x, c.y, tintOf(c.id));
+		for (const PtEdge& e : d.ascEdges) {
+			const PtNode& na = d.ascNodes[e.a];
+			const PtNode& nb = d.ascNodes[e.b];
+			if (cull(na.x, na.y, 900.0f) && cull(nb.x, nb.y, 900.0f)) continue;
+			ImU32 col = kColEdge;
+			if (!own(na.asc)) col = WithAlpha(col, ((col >> 24) & 0xFF) / 2);
+			const float t = thickOf();
+			if (e.hasArc) {
+				dl->PathArcTo(worldToScreen(ImVec2(e.cx, e.cy)), e.r * zoom_, e.a0, e.a0 + e.sweep,
+				              std::clamp((int)(e.sweep * 16.0f) + 4, 6, 48));
+				dl->PathStroke(col, 0, t);
+			} else {
+				dl->AddLine(worldToScreen(ImVec2(na.x, na.y)), worldToScreen(ImVec2(nb.x, nb.y)), col, t);
+			}
+		}
+		const ImVec2 mw = screenToWorld(io.MousePos);
+		float bestSq = 0.0f;
+		for (int i = 0; i < (int)d.ascNodes.size(); i++) {
+			const PtNode& n = d.ascNodes[i];
+			if (cull(n.x, n.y, 260.0f)) continue;
+			const ImU32 tint = tintOf(n.asc);
+			img(n.off, n.x, n.y, tint);
+			if (n.kind == kPtNormal || n.kind == kPtNotable) {
+				const PtFrame& fr = d.ascFrames[n.kind == kPtNotable ? 1 : 0];
+				img(fr.off, n.x, n.y, tint);
+			}
+			const float half = std::max(n.off.w, n.off.h) * 0.5f;
+			if (in.ascHit && in.ascHit->count(n.id))
+				dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)), std::max((half + 22.0f) * zoom_, 8.0f), kColAffected, 0, 3.5f);
+			if (hovered && n.kind != kPtAscStart) {
+				const float dx = n.x - mw.x, dy = n.y - mw.y, r = half + 16.0f;
+				if (dx * dx + dy * dy <= r * r && (ascHover == -1 || dx * dx + dy * dy < bestSq)) {
+					ascHover = i; bestSq = dx * dx + dy * dy;
+				}
+			}
+		}
+		if (ascHover >= 0) {
+			const PtNode& n = d.ascNodes[ascHover];
+			dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)),
+			              std::max((std::max(n.off.w, n.off.h) * 0.5f + 16.0f) * zoom_, 5.0f), kColHoverRing, 0, 2.0f);
+		}
+	}
+
 	// edges
-	float thick = std::clamp(zoom_ * 14.0f, 1.0f, 5.0f);
+	const float thick = thickOf();
 	const float emargin = 900.0f;
 	for (const PtEdge& e : d.edges) {
 		const PtNode& na = d.nodes[e.a];
@@ -253,8 +313,10 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 		    (na.y > wmax.y + emargin && nb.y > wmax.y + emargin))
 			continue;
 		bool inRad = hiOf(e.a) && hiOf(e.b);
-		ImU32 col = inRad ? kColEdgeInRad : kColEdge;
-		float t = inRad ? thick * 1.2f : thick;
+		auto picked = [&](int i) { return in.selected && i < (int)in.selected->size() && (*in.selected)[i]; };
+		const bool lit = picked(e.a) && picked(e.b);   // allocated path, like the game's lit links
+		ImU32 col = inRad ? kColEdgeInRad : lit ? kColEdgeLit : kColEdge;
+		float t = (inRad || lit) ? thick * 1.4f : thick;
 		if (e.hasArc) {
 			ImVec2 c = worldToScreen(ImVec2(e.cx, e.cy));
 			int segs = std::clamp((int)(e.sweep * 16.0f) + 4, 6, 48);
@@ -288,8 +350,10 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 			ImVec2 c = worldToScreen(ImVec2(n.x, n.y));
 			bool sel = (i == in.selectedSocket);
 			float rad = (sel ? 26.0f : 20.0f) * zoom_ + 3.0f;
+			if (n.cluster) rad *= 1.3f;
 			dl->AddCircleFilled(c, rad, kColSocketFill, 20);
-			dl->AddCircle(c, rad, sel ? kColSocketSel : kColSocket, 20, sel ? 3.5f : 2.0f);
+			dl->AddCircle(c, rad, sel ? kColSocketSel : n.cluster ? kColCluster : kColSocket, 20, sel ? 3.5f : 2.0f);
+			if (n.cluster) dl->AddCircle(c, rad + 4.0f, kColCluster, 20, 2.0f); // second ring: tells it apart from a plain socket
 			if (sel) dl->AddCircleFilled(c, rad * 0.45f, kColSocketSel, 16);
 			continue;
 		}
@@ -350,5 +414,6 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 	ImGui::PopStyleColor();
 
 	out.hoveredNode = hover_;
+	out.hoveredAsc = hover_ < 0 ? ascHover : -1;
 	return out;
 }

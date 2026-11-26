@@ -180,6 +180,18 @@ struct TJSearchQuery {
 	// dropped, whatever it scores. Independent of nodeIds/scope -- a protected
 	// node need not be one that is scored. Empty = no constraint.
 	std::vector<int> protectIds;
+
+	// ---- Abyss jewels only (types 7-11); the Legion search ignores these. ----
+	// 7-10: only these conquered passives score (POB "Filter Nodes"); empty = all.
+	std::vector<int> allowedIds;
+	// Zorath: the build's Ascendancy as the file names it ("Juggernaut"); empty =
+	// no Ascendancy section is read.
+	std::string ascClass;
+	// Zorath: the legion node id ("abyss_special_ascendancy_notable_N") the
+	// Ascendancy pick must become; empty = any.
+	std::string requiredAscOutcome;
+	// Zorath: Ascendancy passives a seed must not conquer.
+	std::vector<int> protectAscIds;
 };
 
 struct TJSeedHit {
@@ -189,7 +201,8 @@ struct TJSeedHit {
 	int distinctWants = 0; // how many distinct wanted stats this seed satisfies
 };
 
-// Scan the whole seed range and rank seeds by matched weight. `progress`, if set,
+// Scan the whole seed range and rank seeds by matched weight. No wanted stats = every seed that passes the
+// protections, by seed number. `progress`, if set,
 // is polled to allow cancellation (search runs on a worker thread in the UI).
 std::vector<TJSeedHit> TJSearch(const TJDataset& ds, const std::string& blob,
                                 const TJSearchQuery& q, int topN,

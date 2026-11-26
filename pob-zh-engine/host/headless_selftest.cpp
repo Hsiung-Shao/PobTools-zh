@@ -657,6 +657,10 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 					for (auto& r : nr["recipe"]) if (t.find(r.get<std::string>()) == std::string::npos) lineOk = false;
 				}
 				check("node_info: a notable's anoint recipe follows its name", recipeOk && lineOk, nr.dump().substr(0, 300));
+				// PoE1: each oil also comes with POB's icon file, drawn beside the name in the tooltip
+				bool iconOk = recipeOk && nr.contains("recipeIcons") && nr["recipeIcons"].is_array() && nr["recipeIcons"].size() == 3;
+				if (iconOk) for (auto& r : nr["recipeIcons"]) if (!r.is_string() || r.get<std::string>().rfind("TreeData/", 0) != 0) iconOk = false;
+				check("node_info: the anoint recipe carries its oil icons", iconOk, nr.dump().substr(0, 300));
 			}
 
 			// click on, click off: state and stats must return to where they were
