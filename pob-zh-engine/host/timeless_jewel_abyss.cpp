@@ -551,7 +551,7 @@ std::vector<TJSeedHit> TJAbyssSearch(const TJDataset& ds, const std::string& blo
                                      const volatile bool* cancel)
 {
 	std::vector<TJSeedHit> hits;
-	if (!lut.ok || (q.wants.empty() && q.requiredAscOutcome.empty())) return hits;
+	if (!lut.ok) return hits;
 	const bool byNode = (lut.fmt == "ABYN");
 	if (byNode) {
 		// Zorath scores whatever the caller nominated; an empty list is refused (scoring the whole tree would answer an unasked question).
@@ -567,7 +567,8 @@ std::vector<TJSeedHit> TJAbyssSearch(const TJDataset& ds, const std::string& blo
 		if (cancel && *cancel) break;
 		if (!abyss_score_seed(ctx, ds, blob, lut, q, socketId, seed, nodeKind, affected, h, nullptr)) continue;
 		const bool covered = !q.requireAll || h.distinctWants == (int)q.wants.size();
-		if (h.matches > 0 && covered && h.weight >= q.minTotalWeight) hits.push_back(h);
+		// no stats: every seed the scorer let through (protections, required Ascendancy outcome)
+		if (q.wants.empty() || (h.matches > 0 && covered && h.weight >= q.minTotalWeight)) hits.push_back(h);
 	}
 
 	std::sort(hits.begin(), hits.end(), [](const TJSeedHit& a, const TJSeedHit& b) {
@@ -1093,6 +1094,21 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 			}
 		}
 
+		// W3 不選詞綴時列出插槽的全部種子,編號遞增
+		{
+			TJSearchQuery qe;
+			qe.jewelType = 7;
+			qe.scope = 0;
+			const std::vector<TJSeedHit> all = TJAbyssSearch(ds, blob, lut, qe, 2491, 0, &nodeKind, nullptr);
+			bool inc = !all.empty();
+			for (size_t i = 0; i < all.size(); i++)
+				inc = inc && all[i].seed >= lut.seedMin && all[i].seed <= lut.seedMax &&
+				      (i == 0 || all[i - 1].seed < all[i].seed);
+			check(all.size() == (size_t)lut.seedCount && inc,
+			      "W3 TJAbyssSearch 不選詞綴時列出插槽的全部種子且編號遞增",
+			      std::to_string(all.size()) + " 個,預期 " + std::to_string(lut.seedCount));
+		}
+
 		// A8 a damaged container must be refused, not half-read (a chopped tail changes no header field; only the end-of-walk check catches it).
 		{
 			TJAbyssLUT bad;
@@ -1437,6 +1453,25 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 					TJAbyssSearch(ds, zorath, lz, qz, 2491, 10, &nodeKind, nullptr);
 				check(!zh.empty(), "given passives to judge, it finds seeds",
 				      std::to_string(zh.size()) + " hits");
+			}
+
+			// W4 重奪惡意不選詞綴(也不指定昇華):列出全部種子,編號遞增
+			{
+				TJSearchQuery qe;
+				qe.jewelType = 11;
+				qe.scope = 0;
+				qe.nodeIds.push_back(6);
+				qe.nodeIds.push_back(94);
+				qe.nodeIds.push_back(127);
+				qe.nodeIds.push_back(223);
+				const std::vector<TJSeedHit> all = TJAbyssSearch(ds, zorath, lz, qe, 2491, 0, &nodeKind, nullptr);
+				bool inc = !all.empty();
+				for (size_t i = 0; i < all.size(); i++)
+					inc = inc && all[i].seed >= lz.seedMin && all[i].seed <= lz.seedMax &&
+					      (i == 0 || all[i - 1].seed < all[i].seed);
+				check(all.size() == (size_t)lz.seedCount && inc,
+				      "W4 重奪惡意不選詞綴時列出全部種子且編號遞增",
+				      std::to_string(all.size()) + " 個,預期 " + std::to_string(lz.seedCount));
 			}
 
 			// T7 / T8 / T5c 昇華篩選與計分(Zorath,build 昇華 = Deadeye;路徑用固定的四個一般節點)。

@@ -201,7 +201,8 @@ struct TJSeedHit {
 	int distinctWants = 0; // how many distinct wanted stats this seed satisfies
 };
 
-// Scan the whole seed range and rank seeds by matched weight. `progress`, if set,
+// Scan the whole seed range and rank seeds by matched weight. No wanted stats = every seed that passes the
+// protections, by seed number. `progress`, if set,
 // is polled to allow cancellation (search runs on a worker thread in the UI).
 std::vector<TJSeedHit> TJSearch(const TJDataset& ds, const std::string& blob,
                                 const TJSearchQuery& q, int topN,

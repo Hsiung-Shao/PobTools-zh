@@ -437,7 +437,7 @@ struct SearchJob {
 		cancel = false; done = false; running = true;
 		results.clear();
 		th = std::thread([this, ds, blob, q]() {
-			auto r = TJSearch(*ds, *blob, q, 500, &cancel);
+			auto r = TJSearch(*ds, *blob, q, q.wants.empty() ? 0 : 500, &cancel); // no stats: every seed, nothing to rank by
 			results = std::move(r);
 			running = false; done = true;
 		});
@@ -460,7 +460,7 @@ struct SearchJob {
 		results.clear();
 		th = std::thread([this, ds, blob, lut = std::move(lut), q, socketId,
 		                  nodeKind = std::move(nodeKind)]() mutable {
-			auto r = TJAbyssSearch(*ds, *blob, lut, q, socketId, 500, &nodeKind, &cancel);
+			auto r = TJAbyssSearch(*ds, *blob, lut, q, socketId, q.wants.empty() ? 0 : 500, &nodeKind, &cancel);
 			results = std::move(r);
 			running = false; done = true;
 		});
@@ -1696,18 +1696,17 @@ public:
 		drawHintBlock(hint, ksNote, w, noSocket);
 		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f) - ImGui::GetStyle().ItemSpacing.y));
 		const std::string abyssWhy = abyssBlocker();
-		const bool canSearch = !busy && !wants.empty() && selSocket >= 0 && abyssWhy.empty();
+		const bool canSearch = !busy && selSocket >= 0 && abyssWhy.empty();
 		if (PobUi::Button(busy ? u8"搜尋中…" : u8"搜尋這個插槽", PobUi::BtnKind::Primary, PobUi::BtnSize::Lg, nullptr, w,
 		                  canSearch))
 			runSearch();
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !canSearch && !busy)
-			PobUi::Tooltip(wants.empty() ? u8"先加入至少一條想要的詞綴"
-			               : selSocket < 0 ? u8"先在天賦樹上點一個珠寶插槽" : abyssWhy.c_str());
+			PobUi::Tooltip(selSocket < 0 ? u8"先在天賦樹上點一個珠寶插槽" : abyssWhy.c_str());
 	}
 
 	void runSearch()
 	{
-		if (job.running.load() || wants.empty() || selSocket < 0) return;
+		if (job.running.load() || selSocket < 0) return;
 		if (!ensureBin(jewelType)) {
 			showError(u8"讀不到這顆珠寶的查表資料", binErr, false);
 			return;
@@ -1717,6 +1716,7 @@ public:
 		tradeNext_.clear();   // every search starts its groups at the first batch
 		const bool isAbyss = TJIsAbyss(jewelType);
 		const TJSearchQuery q = makeQuery();
+		searchNoWants_ = q.wants.empty();
 		detailSeed = -1;
 		searchProtected_ = !q.protectIds.empty();
 		jobReported_ = false;
@@ -2393,7 +2393,7 @@ public:
 				                      : u8"降低最小值或最小總權重、關掉「必須包含全部詞綴」，或把範圍改成全部節點。");
 			else
 				PobUi::EmptyState("##noresult", PobIcon::Search, u8"還沒有搜尋結果",
-				                  u8"在左側加入想要的詞綴、在樹上選好插槽，再按「搜尋這個插槽」。");
+				                  u8"在樹上選好插槽，再按「搜尋這個插槽」。左側加入想要的詞綴會依權重排序；不加詞綴就列出全部種子。");
 			return;
 		}
 
@@ -2403,7 +2403,7 @@ public:
 			const float w = ImGui::GetContentRegionAvail().x;
 			PobUi::Heading((u8"找到 " + std::to_string(job.results.size()) + u8" 個種子").c_str());
 			const float lineH = ImGui::GetItemRectSize().y;
-			const char* sortHint = u8"依權重排序";
+			const char* sortHint = searchNoWants_ ? u8"依種子編號排序" : u8"依權重排序";
 			const ImFont* sf = PobUi::Fonts().small ? PobUi::Fonts().small : ImGui::GetFont();
 			const float hw = ((ImFont*)sf)->CalcTextSizeA(sf->FontSize, FLT_MAX, 0.0f, sortHint).x;
 			ImGui::SetCursorScreenPos(ImVec2(p.x + w - hw, p.y + std::floor((lineH - sf->FontSize) * 0.5f)));
@@ -2688,6 +2688,7 @@ public:
 		char wmeta[48], cmeta[48];
 		snprintf(wmeta, sizeof(wmeta), u8"權重 %.1f", h.weight);
 		snprintf(cmeta, sizeof(cmeta), u8"詞綴 %d/%d", h.distinctWants, nw);
+		if (searchNoWants_) wmeta[0] = cmeta[0] = 0; // nothing was scored
 		const float metaW = small->CalcTextSizeA(small->FontSize, FLT_MAX, 0.0f, wmeta).x + PobUi::D(10.0f) +
 		                    small->CalcTextSizeA(small->FontSize, FLT_MAX, 0.0f, cmeta).x;
 
@@ -2850,7 +2851,8 @@ public:
 			x += PobUi::IconWidth(PobIcon::ChevronDown, px) + PobUi::D(4.0f);
 		}
 		char lbl[64], note[64];
-		snprintf(lbl, sizeof(lbl), u8"命中 %d 個節點", matches);
+		if (searchNoWants_ && matches == 0) snprintf(lbl, sizeof(lbl), u8"全部種子");
+		else snprintf(lbl, sizeof(lbl), u8"命中 %d 個節點", matches);
 		// past the cap the note says how many go to the trade site per click (the
 		// button names the batch, its tooltip says why)
 		if (seeds.size() > tradePerSearch()) snprintf(note, sizeof(note), u8"%d 個種子・每次查 %d 個", count, (int)tradePerSearch());
@@ -3219,6 +3221,12 @@ public:
 			tradeHintShown = testState_ == "resultsseed";
 			if (testState_ == "tradepanel") openTrade_ = true;
 			if (testState_ == "noleague") tradeLeague.clear();
+			runSearch();
+		} else if (testState_ == "nowants") {   // search with no stats: every seed, by number
+			mode = 0;
+			groupResults = true;
+			autoPick_ = true;
+			wants.clear();
 			runSearch();
 		} else if (testState_ == "seed") {
 			mode = 1;
@@ -3628,6 +3636,7 @@ private:
 	std::vector<char> ptSelected;                // per-node: user-picked focus set (1 = picked)
 	std::vector<char> ptProtected;               // per-node: notable the search must not let be replaced
 	bool searchProtected_ = false;               // the last search carried a protection (empty-state wording)
+	bool searchNoWants_ = false;                 // the last search had no stats: every seed, by number
 	int selVersion = 0;                          // bumps on any selection change
 	std::map<int, TJTransform> ptTrans;          // node index -> transform (affected only)
 	std::vector<StatGroup> statGroups;

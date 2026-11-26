@@ -731,7 +731,7 @@ std::vector<TJSeedHit> TJSearch(const TJDataset& ds, const std::string& blob,
 {
 	std::vector<TJSeedHit> hits;
 	auto itMin = ds.seedMin.find(q.jewelType), itMax = ds.seedMax.find(q.jewelType);
-	if (itMin == ds.seedMin.end() || itMax == ds.seedMax.end() || q.wants.empty())
+	if (itMin == ds.seedMin.end() || itMax == ds.seedMax.end())
 		return hits;
 
 	const TJWantMatcher matcher(q.wants);
@@ -766,6 +766,7 @@ std::vector<TJSeedHit> TJSearch(const TJDataset& ds, const std::string& blob,
 		for (int id : q.protectIds)
 			if (TJApply(ds, blob, q.jewelType, seed, id, "Notable", {}).replaced) { spoiled = true; break; }
 		if (spoiled) continue;
+		if (q.wants.empty()) { hits.push_back({ seed, 0.0, 0, 0 }); continue; } // no stats: every seed that survives the protections
 		double total = 0;
 		int matches = 0;
 		std::set<const TJWantStat*> distinct;
@@ -1179,6 +1180,61 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 			}
 			check(consistent, "matcher and search count the same hits",
 			      std::to_string(sample.size()) + " seeds re-counted");
+		}
+
+		// W1/W2 不選詞綴(wants 空):不計分,通過保護條件的種子全部列出,依種子編號遞增
+		{
+			const int lo = ds.seedMin.at(3), hi = ds.seedMax.at(3);
+			const size_t total = (size_t)(hi - lo + 1);
+
+			TJSearchQuery qe;
+			qe.jewelType = 3;
+			qe.scope = 0;
+			const auto allSeeds = TJSearch(ds, blob, qe, 0, nullptr);
+			bool inc = !allSeeds.empty();
+			for (size_t i = 0; i < allSeeds.size(); i++) {
+				inc = inc && allSeeds[i].seed >= lo && allSeeds[i].seed <= hi &&
+				      (i == 0 || allSeeds[i - 1].seed < allSeeds[i].seed);
+			}
+			check(allSeeds.size() == total && inc,
+			      "W1 TJSearch 不選詞綴時列出全部種子且編號遞增",
+			      std::to_string(allSeeds.size()) + " 個,預期 " + std::to_string(total));
+
+			// W2 用激進的信仰(4):野蠻之鎖每個種子都替換大點,分不出保護有沒有生效
+			std::string mfb, mferr;
+			if (!TJLoadBin(exeDir, ds, 4, mfb, &mferr)) {
+				check(false, "W2 讀取激進的信仰查表", mferr);
+			} else {
+				const int mlo = ds.seedMin.at(4), mhi = ds.seedMax.at(4);
+				const size_t mtotal = (size_t)(mhi - mlo + 1);
+				// 挑一個「有些種子會替換、有些不會」的大點
+				int prot = 0;
+				std::set<int> expect;
+				int tried = 0;
+				for (const auto& kv : ds.nodeIndex) {
+					if (kv.second.first >= ds.sizeNotable) continue;
+					if (++tried > 40) break;
+					std::set<int> keep;
+					for (int s = mlo; s <= mhi; s++)
+						if (!TJApply(ds, mfb, 4, s, kv.first, "Notable", {}).replaced) keep.insert(s);
+					if (!keep.empty() && keep.size() < mtotal) { prot = kv.first; expect = keep; break; }
+				}
+				if (prot == 0) {
+					check(false, "W2 找不到有鑑別力的保護大點(有些種子替換、有些不替換)");
+				} else {
+					TJSearchQuery qp;
+					qp.jewelType = 4;
+					qp.scope = 0;
+					qp.protectIds.push_back(prot);
+					const auto kept = TJSearch(ds, mfb, qp, 0, nullptr);
+					std::set<int> got;
+					for (const auto& h : kept) got.insert(h.seed);
+					check(got == expect && kept.size() == got.size() && got.size() < mtotal,
+					      "W2 TJSearch 不選詞綴有保護天賦時只排除會替換它的種子",
+					      "保護 " + std::to_string(prot) + ";預期 " + std::to_string(expect.size()) +
+					      " 得到 " + std::to_string(got.size()) + " / 全部 " + std::to_string(mtotal));
+				}
+			}
 		}
 	} else {
 		check(false, "load BrutalRestraint.bin", err);
