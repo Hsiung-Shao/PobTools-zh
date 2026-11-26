@@ -567,8 +567,9 @@ std::vector<TJSeedHit> TJAbyssSearch(const TJDataset& ds, const std::string& blo
 		if (cancel && *cancel) break;
 		if (!abyss_score_seed(ctx, ds, blob, lut, q, socketId, seed, nodeKind, affected, h, nullptr)) continue;
 		const bool covered = !q.requireAll || h.distinctWants == (int)q.wants.size();
-		// no stats: every seed the scorer let through (protections, required Ascendancy outcome)
-		if (q.wants.empty() || (h.matches > 0 && covered && h.weight >= q.minTotalWeight)) hits.push_back(h);
+		// no stats and no required outcome: every seed the scorer let through (protections); a required
+		// outcome alone still scores by its roll, as before
+		if ((q.wants.empty() && q.requiredAscOutcome.empty()) || (h.matches > 0 && covered && h.weight >= q.minTotalWeight)) hits.push_back(h);
 	}
 
 	std::sort(hits.begin(), hits.end(), [](const TJSeedHit& a, const TJSeedHit& b) {
@@ -1561,6 +1562,20 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 						ascOk = ascOk && has;
 					}
 					check(ascOk, "T7c 前 40 個結果 seed 的昇華選點(ASCS)確實含必要結果", R);
+
+					// W5 不選詞綴只指定必要昇華結果:仍照昇華數值計分,最小總權重照樣生效(不是「依編號列全部」)
+					{
+						TJSearchQuery qr = qreq;
+						qr.wants.clear();
+						const std::vector<TJSeedHit> R0 = TJAbyssSearch(ds, zorath, lz, qr, 2491, 0, &nodeKind, nullptr);
+						double maxW = 0.0;
+						for (const TJSeedHit& h : R0) maxW = (std::max)(maxW, h.weight);
+						qr.minTotalWeight = maxW + 1.0;   // 高於所有種子:有生效就該全空
+						const std::vector<TJSeedHit> R1 = TJAbyssSearch(ds, zorath, lz, qr, 2491, 0, &nodeKind, nullptr);
+						check(!R0.empty() && R1.empty(),
+						      "W5 不選詞綴＋必要昇華結果時最小總權重照樣生效",
+						      "門檻 " + std::to_string(maxW + 1.0) + ";全部 " + std::to_string(R0.size()) + " -> " + std::to_string(R1.size()));
+					}
 
 					// T8 保護昇華天賦:TJAbyssAscendancyTargets = 全 seed 範圍會征服的昇華節點
 					const std::vector<int> targets = TJAbyssAscendancyTargets(zorath, lz, cls);

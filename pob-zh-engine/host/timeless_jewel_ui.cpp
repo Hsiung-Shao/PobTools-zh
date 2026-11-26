@@ -1622,7 +1622,8 @@ public:
 
 		// the picked stats: 詞綴 / 最小值 / 權重 / 移除
 		if (wants.empty()) {
-			PobUi::Hint(u8"還沒有詞綴：在上方輸入關鍵字，從清單點選加入。", ImGui::GetContentRegionAvail().x);
+			PobUi::Hint(u8"還沒有詞綴：在上方輸入關鍵字，從清單點選加入。不加詞綴直接搜尋會依編號列出全部種子（最小總權重與範圍不作用）。",
+			            ImGui::GetContentRegionAvail().x);
 		} else {
 			pushTableStyle();
 			if (ImGui::BeginTable("##wants", 4, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit)) {
@@ -1716,7 +1717,7 @@ public:
 		tradeNext_.clear();   // every search starts its groups at the first batch
 		const bool isAbyss = TJIsAbyss(jewelType);
 		const TJSearchQuery q = makeQuery();
-		searchNoWants_ = q.wants.empty();
+		searchNoWants_ = q.wants.empty() && q.requiredAscOutcome.empty(); // nothing scored: listed by seed number
 		detailSeed = -1;
 		searchProtected_ = !q.protectIds.empty();
 		jobReported_ = false;
@@ -2386,7 +2387,10 @@ public:
 			return;
 		}
 		if (job.results.empty()) {
-			if (job.done.load())
+			if (job.done.load() && searchNoWants_)
+				PobUi::EmptyState("##noresult", PobIcon::Search, u8"沒有符合條件的種子",
+				                  u8"每個種子都會改掉你保護的天賦。取消幾個保護再搜尋一次。");
+			else if (job.done.load())
 				PobUi::EmptyState("##noresult", PobIcon::Search, u8"沒有符合條件的種子",
 				                  searchProtected_
 				                      ? u8"符合詞綴的種子都會替換掉你保護的大點。在樹上右鍵取消幾個保護，或放寬詞綴條件。"
@@ -2851,7 +2855,7 @@ public:
 			x += PobUi::IconWidth(PobIcon::ChevronDown, px) + PobUi::D(4.0f);
 		}
 		char lbl[64], note[64];
-		if (searchNoWants_ && matches == 0) snprintf(lbl, sizeof(lbl), u8"全部種子");
+		if (searchNoWants_ && matches == 0) snprintf(lbl, sizeof(lbl), u8"符合條件的種子");
 		else snprintf(lbl, sizeof(lbl), u8"命中 %d 個節點", matches);
 		// past the cap the note says how many go to the trade site per click (the
 		// button names the batch, its tooltip says why)
