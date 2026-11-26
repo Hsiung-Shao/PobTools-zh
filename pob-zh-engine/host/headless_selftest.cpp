@@ -1097,8 +1097,14 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 
 			// Build list management (New, New Folder, Rename, Copy, Delete) under the sandbox's build folder, then back to the sample build.
 			{
+				// Save As on a file-less build starts in the folder it was made in (Build.lua dbFileSubPath)
+				json sb, sh;
+				bool okSb = child.Call("new_build", json{{"name", "bridge_sub"}, {"subPath", "zz_sub/"}}, sb, 120000)
+				            && child.Call("get_build_header", json::object(), sh, 30000);
+				check("new_build{subPath}: the header names the folder Save As starts in",
+				      okSb && sh.value("dbFileSubPath", "") == "zz_sub/", sh.dump().substr(0, 200));
 				json nb;
-				bool okNb = child.Call("new_build", json{{"name", "bridge_new"}}, nb, 120000);
+				bool okNb = child.Call("new_build", json{{"name", "bridge_new"}, {"subPath", ""}}, nb, 120000);
 				json nbi;
 				bool okNbi = okNb && child.Call("get_build_info", json::object(), nbi, 30000);
 				check("new_build: an unnamed, file-less build with no points spent",

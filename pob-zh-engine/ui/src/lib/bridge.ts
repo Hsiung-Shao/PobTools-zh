@@ -781,6 +781,8 @@ export interface DdField {
 export interface BuildHeader {
   buildName: string;
   dbFileName?: string;
+  /** the folder under POB's build folder this build saves into ("" = top) */
+  dbFileSubPath?: string;
   unsaved: boolean;
   level: number;
   levelAuto: boolean;
