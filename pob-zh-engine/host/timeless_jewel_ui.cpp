@@ -437,7 +437,7 @@ struct SearchJob {
 		cancel = false; done = false; running = true;
 		results.clear();
 		th = std::thread([this, ds, blob, q]() {
-			auto r = TJSearch(*ds, *blob, q, q.wants.empty() ? 0 : 500, &cancel); // no stats: every seed, nothing to rank by
+			auto r = TJSearch(*ds, *blob, q, q.wants.empty() && q.requiredAscOutcome.empty() ? 0 : 500, &cancel); // nothing scored: every seed
 			results = std::move(r);
 			running = false; done = true;
 		});
@@ -460,7 +460,7 @@ struct SearchJob {
 		results.clear();
 		th = std::thread([this, ds, blob, lut = std::move(lut), q, socketId,
 		                  nodeKind = std::move(nodeKind)]() mutable {
-			auto r = TJAbyssSearch(*ds, *blob, lut, q, socketId, q.wants.empty() ? 0 : 500, &nodeKind, &cancel);
+			auto r = TJAbyssSearch(*ds, *blob, lut, q, socketId, q.wants.empty() && q.requiredAscOutcome.empty() ? 0 : 500, &nodeKind, &cancel);
 			results = std::move(r);
 			running = false; done = true;
 		});
@@ -1622,7 +1622,9 @@ public:
 
 		// the picked stats: 詞綴 / 最小值 / 權重 / 移除
 		if (wants.empty()) {
-			PobUi::Hint(u8"還沒有詞綴：在上方輸入關鍵字，從清單點選加入。不加詞綴直接搜尋會依編號列出全部種子（最小總權重與範圍不作用）。",
+			const bool reqAsc = TJIsZorath(jewelType) && reqAscSel_ > 0; // required outcome still scores by its roll
+			PobUi::Hint(reqAsc ? u8"還沒有詞綴：在上方輸入關鍵字，從清單點選加入。"
+			                   : u8"還沒有詞綴：在上方輸入關鍵字，從清單點選加入。不加詞綴直接搜尋會依編號列出全部種子（最小總權重與範圍不作用）。",
 			            ImGui::GetContentRegionAvail().x);
 		} else {
 			pushTableStyle();
