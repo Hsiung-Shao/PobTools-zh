@@ -1862,6 +1862,7 @@ function M.get_build_header()
 	local h = {
 		buildName = b.buildName,
 		dbFileName = b.dbFileName or nil,
+		dbFileSubPath = b.dbFileSubPath or nil,
 		classes = classes, secondaryAscendancies = secondary, classPick = class_current(b.spec),
 		unsaved = b.unsaved and true or false,
 		level = b.characterLevel,

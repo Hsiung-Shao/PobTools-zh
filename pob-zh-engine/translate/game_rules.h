@@ -14,6 +14,10 @@ struct GameRules {
     ** drawn strings never carry GGPK markup, so stripping would eat POB's own
     ** "[...]" around a crafting row's lines. PoE1 strips (GGPK "[a|b]" markup). */
     bool stat_keep_input_brackets;
+    /* Reverse lookup: a bracket-stripped copy of a "[a|b]" row may replace an
+    ** existing plain row. PoE2's markup rows are its own wording; in PoE1 files
+    ** they are PoE2 strays and must not steal 增加 15% 暴擊率 from PoE1's row. */
+    bool stripped_reverse_wins;
 };
 
 extern const GameRules kGameRulesPoe1;

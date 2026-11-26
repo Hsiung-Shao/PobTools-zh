@@ -277,6 +277,10 @@ int RunPasteSelftest()
 	check_eq("附加的小型天賦給予：被捷光環影響時，增加 10% 傷害 (enchant)",
 	         "Added Small Passive Skills grant: 10% increased Damage while affected by a Herald (enchant)",
 	         "same rule, a different inner stat");
+	// 去標記的 PoE2 條目「增加 15% [Critical|暴擊率]」不得蓋掉 PoE1 的 Critical Strike
+	check_eq("附加的小型天賦給予：增加 15% 暴擊率 (enchant)",
+	         "Added Small Passive Skills grant: 15% increased Critical Strike Chance (enchant)",
+	         "暴擊率星團附魔不被 PoE2 標記條目蓋成 Critical Hit");
 	// "grant:" vs "also grant:" is decided by the " (enchant)" suffix, not by the
 	// Chinese wording (GGG uses 小型 and 小 for both in its stat data); matches
 	// POB's own export: enchant = "grant:", rolled suffix = "also grant:".
@@ -522,6 +526,8 @@ int RunPasteSelftestPoe2()
 	      "GGG markup on the unique's name is read as the shown words");
 	check(inItem("藥劑以外的生命恢復無法使生命恢復到高於貧血狀態 — 無法變動的值").find(" - Unscalable Value") != std::string::npos,
 	      "PoE2's unscalable marker (無法變動的值) becomes POB's ' - Unscalable Value'");
+	check(inItem("增加 15% 暴擊率").find("15% increased Critical Hit Chance") != std::string::npos,
+	      "PoE2 暴擊率反查成 Critical Hit,不被 PoE1 混入的 Critical Strike 蓋掉");
 
 	printf("\npaste selftest (PoE2): %d passed, %d failed\n", g_pass, g_fail);
 	return g_fail == 0 ? 0 : 1;
