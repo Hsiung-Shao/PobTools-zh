@@ -1498,6 +1498,7 @@ public:
 				tjUi.classId = classId_; tjUi.asc = asc_; saveTjUi();
 			}
 		});
+		if (sel < 0) classId_ = -1; // saved class not in this tree: ask again instead of blaming the socket
 		if (classId_ < 0) {
 			PobUi::Hint(u8"選一個職業：路徑取插槽到該職業起點的最短距離", w);
 			ImGui::Dummy(ImVec2(0, PobUi::D(8.0f)));
@@ -1519,7 +1520,7 @@ public:
 				if (a != asc_) { asc_ = a; protectAsc_.clear(); reqAscSel_ = 0; tjUi.asc = asc_; saveTjUi(); }
 			}
 		});
-		PobUi::Hint(u8"實際配點繞遠路時，路徑上的天賦會不同", w);
+		PobUi::Hint(u8"實際配點繞遠路、或同樣短的路線不只一條時，路徑上的天賦會不同", w);
 		ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 		if (!ascClass().empty()) {
 			{
@@ -2211,7 +2212,7 @@ public:
 				}
 			}
 		} else {
-			// Legion: the socket's neighbourhood IS the affected set; Zorath: the build's path to its class start.
+			// Legion: the socket's neighbourhood IS the affected set; Zorath: the shortest path to the chosen class start.
 			if (zorathDetail) {
 				for (int id : zorathPath_) {
 					const int idx = ptData.IndexOfId(id);
@@ -3494,7 +3495,6 @@ private:
 			q.ascClass = ascClass();
 			if (reqAscSel_ > 0 && reqAscSel_ <= (int)ascOutcomes_.size()) q.requiredAscOutcome = ascOutcomes_[reqAscSel_ - 1].first;
 			q.protectAscIds.assign(protectAsc_.begin(), protectAsc_.end());
-		} else {
 		}
 		return q;
 	}

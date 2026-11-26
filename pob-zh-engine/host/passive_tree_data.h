@@ -93,7 +93,7 @@ public:
 
 	// Ascendancy discs, drawn where the game puts them (outside the main tree). Kept apart from `nodes` so
 	// socket/path/LUT code never sees them. Empty for trees written before this field.
-	struct AscClass { std::string id, name; int classId = -1; float x = 0, y = 0; PtSprite bg; }; // name: display name (POB builds store it); classId: its class start, -1 in older files
+	struct AscClass { std::string id, name; int classId = -1; float x = 0, y = 0; PtSprite bg; }; // name: English display name; classId: its class start, -1 in older files
 	std::vector<AscClass> ascClasses;
 	std::vector<PtNode> ascNodes;        // kind: normal / notable / kPtAscStart; adj = ascNodes indices
 	std::vector<PtEdge> ascEdges;        // a/b index ascNodes

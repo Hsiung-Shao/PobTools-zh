@@ -521,7 +521,7 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 				check(PtShortestPathToClassStart(d, broken, best.socketId, best.classId).empty(),
 				      "T4b 路徑中間斷一格且無繞路時回空", "");
 			}
-			// T4c 全樹當配點(職業起點模式):每個職業起點到每個插槽都有路徑,且含插槽與起點
+			// T4c 全樹當配點(職業起點模式):每組 起點→插槽 的路徑長度=獨立 BFS 的最短跳數+2(插槽到鄰點+起點)
 			std::set<int> all;
 			for (const PtNode& n : d.nodes) all.insert(n.id);
 			int miss = 0;
@@ -529,11 +529,20 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 			for (const PassiveTreeData::ClassStart& cs : d.classStarts)
 				for (int s : d.sockets) {
 					const std::set<int> p = PtShortestPathToClassStart(d, all, d.nodes[(size_t)s].id, cs.classId);
-					if (p.empty() || !p.count(cs.id) || !p.count(d.nodes[(size_t)s].id)) {
+					std::map<int, int> dist{ { s, 0 } };
+					std::vector<int> q{ s };
+					int hops = -1;
+					for (size_t h = 0; h < q.size() && hops < 0; h++) {
+						const int u = q[h];
+						if (std::find(cs.adj.begin(), cs.adj.end(), u) != cs.adj.end()) { hops = dist[u]; break; }
+						for (int v : d.nodes[(size_t)u].adj)
+							if (!dist.count(v)) { dist[v] = dist[u] + 1; q.push_back(v); }
+					}
+					if (hops < 0 || (int)p.size() != hops + 2 || !p.count(cs.id) || !p.count(d.nodes[(size_t)s].id)) {
 						if (!miss++) missAt = std::to_string(cs.classId) + "->" + std::to_string(d.nodes[(size_t)s].id);
 					}
 				}
-			check(miss == 0, "T4c 全樹當配點時每個職業起點到每個插槽都有路徑", "缺 " + std::to_string(miss) + " 組,首筆 " + missAt);
+			check(miss == 0, "T4c 全樹當配點時每個職業起點到每個插槽的路徑都是最短", "缺 " + std::to_string(miss) + " 組,首筆 " + missAt);
 		}
 	}
 
@@ -543,7 +552,12 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 		bool named = !d.classStarts.empty();
 		for (const PassiveTreeData::ClassStart& cs : d.classStarts) { ids.insert(cs.classId); named = named && !cs.name.empty(); }
 		int bad = 0;
-		for (const PassiveTreeData::AscClass& a : d.ascClasses) if (!ids.count(a.classId)) bad++;
+		for (const PassiveTreeData::AscClass& a : d.ascClasses) {
+			if (!ids.count(a.classId)) bad++;
+			static const std::map<std::string, int> spot = { { "Raider", 2 }, { "Necromancer", 3 }, { "Ascendant", 0 } };
+			const auto it = spot.find(a.id);
+			if (it != spot.end() && it->second != a.classId) bad++;
+		}
 		check(named && d.classStarts.size() == 7 && !d.ascClasses.empty() && bad == 0, "T4d 職業起點有名稱、昇華都對得到職業",
 		      "starts=" + std::to_string(d.classStarts.size()) + " 昇華對不到=" + std::to_string(bad));
 	}
@@ -625,15 +639,16 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 		}
 		// T10d 舊格式(有起點、沒有職業名與昇華 classId)Load 後由固定表補上,與出貨樹相同
 		wrote = false;
+		size_t stripped = 0; // the shipped file must really carry the fields, or both sides take the fallback
 		try {
 			ordered_json doc = ordered_json::parse(content);
-			for (auto& cs : doc["classStarts"]) cs.erase("name");
-			for (auto& c : doc["asc"]["classes"]) c.erase("classId");
+			for (auto& cs : doc["classStarts"]) stripped += cs.erase("name");
+			for (auto& c : doc["asc"]["classes"]) stripped += c.erase("classId");
 			wrote = write_file_utf8(tmp + L"Data\\passive_tree_poe1.json", doc.dump());
 		} catch (...) { wrote = false; }
 		PassiveTreeData d3;
 		std::string err3;
-		bool same = wrote && d3.Load(tmp, &err3) && d3.classStarts.size() == d.classStarts.size() &&
+		bool same = wrote && stripped == d.classStarts.size() + d.ascClasses.size() && d3.Load(tmp, &err3) && d3.classStarts.size() == d.classStarts.size() &&
 		            d3.ascClasses.size() == d.ascClasses.size();
 		for (size_t i = 0; same && i < d.classStarts.size(); i++) same = d3.classStarts[i].name == d.classStarts[i].name;
 		for (size_t i = 0; same && i < d.ascClasses.size(); i++) same = d3.ascClasses[i].classId == d.ascClasses[i].classId;

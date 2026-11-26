@@ -19,8 +19,6 @@
 #include <string>
 #include <vector>
 
-struct TJClusterGraph; // tj_cluster.h
-
 // Per-node highlight class the caller computes (parallel to data.nodes).
 enum : unsigned char {
 	kPtHiNone = 0,
@@ -39,17 +37,13 @@ struct PassiveTreeInput {
 	// Ascendancy discs (d.asc*): the build's own ascendancy solid, the others half transparent, as POB.
 	bool showAsc = false;
 	std::string ascName;                                  // the build's ascendancy id ("" = none solid)
-	const std::set<int>* ascLit = nullptr;                // allocated ascendancy node ids
 	const std::set<int>* ascHit = nullptr;                // ascendancy node ids the seed changes (gold ring)
-	// Cluster jewel passives the build has socketed (POB's own expansion; display only, above the main tree).
-	const TJClusterGraph* cluster = nullptr;
 	// Drawn last, inside the canvas clip, with the canvas rect (legend, notes).
 	std::function<void(ImDrawList*, ImVec2 min, ImVec2 max)> overlay;
 };
 
 struct PassiveTreeOutput {
 	int hoveredNode = -1;                    // node under the cursor (-1 none)
-	int hoveredCluster = -1;                 // cluster node (in.cluster->nodes index) under the cursor
 	int hoveredAsc = -1;                     // ascendancy node (d.ascNodes index) under the cursor, when showAsc
 	int clickedSocket = -1;                  // a socket clicked this frame (-1 none)
 	int clickedNode = -1;                    // a non-socket node clicked this frame (-1 none)

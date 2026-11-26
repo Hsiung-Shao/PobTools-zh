@@ -2,7 +2,6 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 
 #include "passive_tree_view.h"
-#include "tj_cluster.h"
 #include "editor_util.h"   // EdReadFile / EdWiden
 #include "image_tex.h"
 #include "launcher_config.h" // FindPoe1Dir
@@ -257,17 +256,15 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 		};
 		auto own = [&](const std::string& asc) { return !in.ascName.empty() && asc == in.ascName; };
 		auto tintOf = [&](const std::string& asc) { return own(asc) ? IM_COL32_WHITE : IM_COL32(255, 255, 255, 128); };
-		auto litId = [&](int id) { return in.ascLit && in.ascLit->count(id); };
 		for (const auto& c : d.ascClasses)
 			if (!cull(c.x, c.y, c.bg.w)) img(c.bg, c.x, c.y, tintOf(c.id));
 		for (const PtEdge& e : d.ascEdges) {
 			const PtNode& na = d.ascNodes[e.a];
 			const PtNode& nb = d.ascNodes[e.b];
 			if (cull(na.x, na.y, 900.0f) && cull(nb.x, nb.y, 900.0f)) continue;
-			const bool lit = own(na.asc) && litId(na.id) && litId(nb.id);
-			ImU32 col = lit ? kColEdgeLit : kColEdge;
+			ImU32 col = kColEdge;
 			if (!own(na.asc)) col = WithAlpha(col, ((col >> 24) & 0xFF) / 2);
-			const float t = lit ? thickOf() * 1.4f : thickOf();
+			const float t = thickOf();
 			if (e.hasArc) {
 				dl->PathArcTo(worldToScreen(ImVec2(e.cx, e.cy)), e.r * zoom_, e.a0, e.a0 + e.sweep,
 				              std::clamp((int)(e.sweep * 16.0f) + 4, 6, 48));
@@ -281,12 +278,11 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 		for (int i = 0; i < (int)d.ascNodes.size(); i++) {
 			const PtNode& n = d.ascNodes[i];
 			if (cull(n.x, n.y, 260.0f)) continue;
-			const bool lit = own(n.asc) && litId(n.id);
 			const ImU32 tint = tintOf(n.asc);
-			img(lit ? n.on : n.off, n.x, n.y, tint);
+			img(n.off, n.x, n.y, tint);
 			if (n.kind == kPtNormal || n.kind == kPtNotable) {
 				const PtFrame& fr = d.ascFrames[n.kind == kPtNotable ? 1 : 0];
-				img(lit ? fr.on : fr.off, n.x, n.y, tint);
+				img(fr.off, n.x, n.y, tint);
 			}
 			const float half = std::max(n.off.w, n.off.h) * 0.5f;
 			if (in.ascHit && in.ascHit->count(n.id))
@@ -397,58 +393,6 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 			              kColHoverRing, 0, 2.0f);
 	}
 
-	// cluster jewel passives: links (an end on the main tree is its Large socket), then icons + frames
-	int clusterHover = -1;
-	if (in.cluster) {
-		const TJClusterGraph& g = *in.cluster;
-		auto at = [&](int i, bool mainEnd) {
-			return mainEnd ? ImVec2(d.nodes[i].x, d.nodes[i].y) : ImVec2(g.nodes[i].x, g.nodes[i].y);
-		};
-		for (const TJClusterEdge& e : g.edges) {
-			const ImVec2 pa = at(e.a, e.aMain), pb = at(e.b, e.bMain);
-			if (cull(pa.x, pa.y, emargin) && cull(pb.x, pb.y, emargin)) continue;
-			// the socket end counts as lit when the cluster end is (POB lights the entry link that way)
-			const bool la = e.aMain || g.nodes[e.a].alloc, lb = e.bMain || g.nodes[e.b].alloc;
-			const bool lit = la && lb && !(e.aMain && e.bMain);
-			const ImU32 col = lit ? kColEdgeLit : kColEdge;
-			const float t = lit ? thick * 1.4f : thick;
-			if (e.hasArc) {
-				dl->PathArcTo(worldToScreen(ImVec2(e.cx, e.cy)), e.r * zoom_, e.a0, e.a0 + e.sweep,
-				              std::clamp((int)(e.sweep * 16.0f) + 4, 6, 48));
-				dl->PathStroke(col, 0, t);
-			} else {
-				dl->AddLine(worldToScreen(pa), worldToScreen(pb), col, t);
-			}
-		}
-		auto img = [&](const PtSprite& sp, float x, float y) {
-			if (!sp.valid || sp.sheet >= (int)tex_.size()) return;
-			dl->AddImage((ImTextureID)(intptr_t)tex_[sp.sheet],
-			             worldToScreen(ImVec2(x - sp.w * 0.5f, y - sp.h * 0.5f)),
-			             worldToScreen(ImVec2(x + sp.w * 0.5f, y + sp.h * 0.5f)),
-			             ImVec2(sp.uv[0], sp.uv[1]), ImVec2(sp.uv[2], sp.uv[3]));
-		};
-		const ImVec2 mw = screenToWorld(io.MousePos);
-		float bestSq = 0.0f;
-		for (int i = 0; i < (int)g.nodes.size(); i++) {
-			const TJClusterNode& n = g.nodes[i];
-			if (cull(n.x, n.y, 260.0f)) continue;
-			if (n.kind != kPtSocket) img(n.alloc ? n.on : n.off, n.x, n.y);
-			img(n.alloc ? n.frameOn : n.frameOff, n.x, n.y);
-			const float half = std::max({ n.frameOff.w, n.frameOff.h, n.off.w, n.off.h, 60.0f }) * 0.5f;
-			if (hovered && hover_ < 0) {
-				const float dx = n.x - mw.x, dy = n.y - mw.y, r = half + 16.0f;
-				if (dx * dx + dy * dy <= r * r && (clusterHover == -1 || dx * dx + dy * dy < bestSq)) {
-					clusterHover = i; bestSq = dx * dx + dy * dy;
-				}
-			}
-		}
-		if (clusterHover >= 0) {
-			const TJClusterNode& n = g.nodes[clusterHover];
-			const float half = std::max({ n.frameOff.w, n.frameOff.h, n.off.w, n.off.h, 60.0f }) * 0.5f;
-			dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)), std::max((half + 16.0f) * zoom_, 5.0f), kColHoverRing, 0, 2.0f);
-		}
-	}
-
 	// emphasized node picked from the side list: a bright pulsing ring
 	if (in.emphasize >= 0 && in.emphasize < (int)d.nodes.size()) {
 		const PtNode& n = d.nodes[in.emphasize];
@@ -471,6 +415,5 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 
 	out.hoveredNode = hover_;
 	out.hoveredAsc = hover_ < 0 ? ascHover : -1;
-	out.hoveredCluster = clusterHover;
 	return out;
 }
