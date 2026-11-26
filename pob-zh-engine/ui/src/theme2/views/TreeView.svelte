@@ -1274,7 +1274,7 @@
           <span class="name-row">
             <span class="name" class:keystone={hover.kind === "keystone"} class:notable={hover.kind === "notable"}>{nameOf(hover)}</span>
             {#if !hoverJewel && hoverInfo?.recipeIcons}
-              {#each hoverInfo.recipeIcons as src, i (i)}<img class="oil" src={hostUrl("pob", src)} alt={hoverInfo.recipe?.[i] ?? ""} />{/each}
+              <span class="oils">{#each hoverInfo.recipeIcons as src, i (i)}<img class="oil" src={hostUrl("pob", src)} alt={hoverInfo.recipe?.[i] ?? ""} />{/each}</span>
             {/if}
           </span>
           <span class="kind">{kindLabel(hover)}</span>
@@ -1665,11 +1665,16 @@
     padding: 8px 12px 6px;
     border-bottom: 1px solid var(--edge-2);
   }
-  /* the anoint oils sit beside the name, as in POB's own tooltip */
-  .tip-title .name-row {
+  /* name stays centred; the anoint oils sit at the title's right edge */
+  .tip-title {
+    position: relative;
+  }
+  .tip-title .oils {
+    position: absolute;
+    top: 8px;
+    right: 12px;
     display: flex;
-    align-items: center;
-    gap: 4px;
+    gap: 2px;
   }
   .tip-title .oil {
     width: 1.4em;
