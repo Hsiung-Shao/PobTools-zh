@@ -753,6 +753,9 @@ export interface NodeInfo {
   allocated: boolean;
   header?: string;
   lines: TooltipLine[];
+  /** anoint oils (Chinese names), and for PoE1 their icons under POB's folder */
+  recipe?: string[];
+  recipeIcons?: string[];
   stats: string[];
   statsZh: string[];
   masteryEffects?: { effect: number; stats: string[] }[];
