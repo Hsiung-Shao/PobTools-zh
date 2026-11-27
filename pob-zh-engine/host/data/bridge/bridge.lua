@@ -5632,8 +5632,13 @@ local function popup_state()
 				if ctl.listBuildFlag ~= false or not ctl.list then run_list_builder(ctl) ctl.listBuildFlag = false end
 				entry.kind = "nodes"
 				local opts = {}
+				local sc = ctl.controls.sort
+				if sc and sc.list then entry.sortOptions = dd_options(sc) entry.sortSel = sc.selIndex end
+				local ranked = ctl.sortDetail and ctl.sortDetail.stat
 				for i, node in ipairs(ctl.list or {}) do
 					opts[i] = { id = node.id, label = node.dn, labelZh = tr(node.dn) }
+					local pw = ranked and node.measuredPower
+					if type(pw) == "number" and pw == pw and pw ~= math.huge and pw ~= -math.huge then opts[i].power = pw end
 					if ctl.selValue == node then entry.sel = i end
 				end
 				entry.options = opts
@@ -5707,7 +5712,10 @@ function M.item_edit_popup(p)
 		local ctl = ctls[p.name or ""]
 		if not ctl then error("no control " .. tostring(p.name), 0) end
 		with_popup(function()
-			if p.name == "notableDB" then
+			if p.name == "notableDB" and p.sort ~= nil then
+				-- POB's own "Sort by …" dropdown: SetSel → SetSortMode, popup_state rebuilds the list
+				if ctl.controls.sort then ctl.controls.sort:SetSel(tonumber(p.sort) or 1) end
+			elseif p.name == "notableDB" then
 				local want = tonumber(p.value)
 				for i, node in ipairs(ctl.list or {}) do
 					if node.id == want then ctl:SelectIndex(i) ctl.selIndex = i break end
@@ -5838,9 +5846,12 @@ function M.equip_primary(p)
 end
 
 
+-- "unique" | "rare" | "viscera" (3.30 beta) -> main.<kind>DB / ItemsTab.controls.<kind>DB
+local function db_kind(k) return (k == "rare" or k == "viscera") and k or "unique" end
+
 local function wait_db(kind)
 	local m = main()
-	local db = kind == "rare" and m.rareDB or m.uniqueDB
+	local db = m[kind .. "DB"]
 	if not db then error("item database missing", 0) end
 	local pumps = 0
 	while db.loading and pumps < 2000 do
@@ -5852,7 +5863,7 @@ local function wait_db(kind)
 end
 
 local function db_control(tab, kind)
-	local ctl = kind == "rare" and tab.controls.rareDB or tab.controls.uniqueDB
+	local ctl = tab.controls[kind .. "DB"]
 	if not ctl then error("ItemsTab has no " .. tostring(kind) .. " database control", 0) end
 	if not ctl.leaguesAndTypesLoaded then ctl:LoadLeaguesAndTypes() end
 	return ctl
@@ -5861,7 +5872,7 @@ end
 -- item_db_options{kind}: the ItemDBControl's filter dropdowns.
 function M.item_db_options(p)
 	local b = ensure_build()
-	local kind = p and p.kind == "rare" and "rare" or "unique"
+	local kind = db_kind(p and p.kind)
 	wait_db(kind)
 	local ctl = db_control(b.itemsTab, kind)
 	local c = ctl.controls
@@ -5886,7 +5897,7 @@ local DB_STAT_SORT_MAX = 300
 function M.item_db(p)
 	local b = ensure_build()
 	p = p or {}
-	local kind = p.kind == "rare" and "rare" or "unique"
+	local kind = db_kind(p.kind)
 	local db = wait_db(kind)
 	local ctl = db_control(b.itemsTab, kind)
 	local c = ctl.controls
@@ -5953,6 +5964,7 @@ probe("classes.ItemsTab.AddCrucibleModifierToDisplayItem", function()
 	local c = class_of("ItemsTab")
 	return type(c) == "table" and type(c.AddCrucibleModifierToDisplayItem) == "function"
 end, "itemCrucible")
+probe("main.visceraDB (3.30 Wickerman)", function() return type(main().visceraDB) == "table" end, "visceraDB")
 -- The stat-difference block itself is AddItemTooltip's business (a separate
 -- AddItemStatDifferences on beta, inline on master); the bridge only toggles
 -- showStatDifferences and names the slot.

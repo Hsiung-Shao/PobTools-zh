@@ -3,6 +3,7 @@
 #include "atlas_i18n.h"
 #include "atlas_stat_agg.h" // FindStatNumbers: line -> template + numbers
 #include "atlas_update.h"   // GenerateAtlasZhMapping (fresh-preservation selftest)
+#include "atlas_version_index.h"
 
 #include <json.hpp> // nlohmann::ordered_json (selftest output validation)
 
@@ -583,6 +584,17 @@ int RunAtlasDiffSelfTest(const std::wstring& exeDir)
 				R"({"format":"pobtools-atlas-index","active":"3.30.0","versions":[{"tag":"3.30.0","sha":"bundled"}]})");
 			check(AtlasInstalledSha(d, "3.30.0", "stale") == "bundled", "隨包資料的 sha 優先於舊更新紀錄");
 			check(AtlasInstalledSha(d, "3.29.1", "rec") == "rec", "索引沒有該賽季時用更新紀錄");
+			// 索引被舊檔蓋回(部署漏蓋/舊程式寫回),賽季資料夾自帶的 sha 才是真值
+			const std::wstring sd = AtlasVersionIndex::VersionDir(d, "3.30.0");
+			CreateDirectoryW((d + L"Data\\atlas_versions").c_str(), nullptr);
+			CreateDirectoryW(sd.c_str(), nullptr);
+			write_file_utf8(sd + L"version.json", R"({"sha":"dirsha"})");
+			const std::string inst = AtlasInstalledSha(d, "3.30.0", "stale");
+			check(inst == "dirsha", "資料夾內 sha 優先於索引");
+			check(!AtlasNeedsUpdate("3.30.0", inst, "3.30.0", "dirsha", true), "資料夾已是遠端修訂時不提示更新");
+			DeleteFileW((sd + L"version.json").c_str());
+			RemoveDirectoryW(sd.c_str());
+			RemoveDirectoryW((d + L"Data\\atlas_versions").c_str());
 			DeleteFileW((d + L"Data\\atlas_index.json").c_str());
 			RemoveDirectoryW((d + L"Data").c_str());
 			RemoveDirectoryW(d.c_str());

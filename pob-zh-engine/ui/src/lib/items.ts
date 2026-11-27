@@ -13,8 +13,11 @@ export function rarityColor(r: string | undefined): string {
   return (r && RARITY_COLOR[r]) || "var(--ink-0)";
 }
 
+/** 3.30 Wickerman (Viscera) slots; POB shows them only on a 3_30 tree. */
+const WICKERMAN_SLOTS = new Set(["Head", "Body", "Arm", "Leg"]);
+
 export interface SlotGroup {
-  key: "weapons" | "armour" | "jewellery" | "flasks" | "abyssal" | "jewels";
+  key: "weapons" | "armour" | "jewellery" | "flasks" | "wickerman" | "abyssal" | "jewels";
   slots: ItemSlot[];
 }
 
@@ -28,6 +31,7 @@ export function groupSlots(slots: ItemSlot[]): SlotGroup[] {
   const armour: ItemSlot[] = [];
   const jewellery: ItemSlot[] = [];
   const flasks: ItemSlot[] = [];
+  const wickerman: ItemSlot[] = [];
   const jewels: ItemSlot[] = [];
   const abyssalByParent = new Map<string, ItemSlot[]>();
   for (const s of slots) {
@@ -41,6 +45,7 @@ export function groupSlots(slots: ItemSlot[]): SlotGroup[] {
     if (s.nodeId != null) jewels.push(s);
     else if (s.name.startsWith("Weapon")) weapons.push(s);
     else if (s.isFlask) flasks.push(s);
+    else if (WICKERMAN_SLOTS.has(s.name)) wickerman.push(s);
     else if (/^(Amulet|Ring|Belt)/.test(s.name)) jewellery.push(s);
     else armour.push(s);
   }
@@ -50,6 +55,7 @@ export function groupSlots(slots: ItemSlot[]): SlotGroup[] {
   if (armour.length) out.push({ key: "armour", slots: withAbyssal(armour) });
   if (jewellery.length) out.push({ key: "jewellery", slots: withAbyssal(jewellery) });
   if (flasks.length) out.push({ key: "flasks", slots: flasks });
+  if (wickerman.length) out.push({ key: "wickerman", slots: wickerman });
   if (jewels.length) out.push({ key: "jewels", slots: jewels });
   return out;
 }

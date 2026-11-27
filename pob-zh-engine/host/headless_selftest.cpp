@@ -1640,6 +1640,33 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				check("item_edit_popup{anoint}: the notable list, and a node's own effect plus AppendAnointTooltip's comparison",
 				      okPa && nodeOpts > 100 && okTip && tipLines >= 3 && hasCompare,
 				      okPa ? "nodes=" + std::to_string(nodeOpts) + " tipLines=" + std::to_string(tipLines) : pa.dump().substr(0, 300));
+				// 塗油排序:選 POB 自己的「Sort by Life」後，清單依增減值由大到小、每列帶數值
+				{
+					int lifeIdx = 0, sortN = 0;
+					if (okPa) for (auto& c : pa["controls"]) if (c.value("name", "") == "notableDB" && c.contains("sortOptions")) {
+						sortN = (int)c["sortOptions"].size();
+						for (int i = 0; i < sortN; i++)
+							if (c["sortOptions"][i].value("label", "") == "Sort by Life") lifeIdx = i + 1;
+					}
+					json ps;
+					bool okSort = lifeIdx > 0 && child.Call("item_edit_popup", json{{"action", "pick"}, {"name", "notableDB"}, {"sort", lifeIdx}}, ps, 300000);
+					int withPower = 0, sel = 0;
+					bool ordered = true;
+					double prev = 1e300;
+					if (okSort) for (auto& c : ps["controls"]) if (c.value("name", "") == "notableDB") {
+						sel = c.value("sortSel", 0);
+						for (auto& o : c["options"]) if (o.contains("power")) {
+							double v = o["power"].get<double>();
+							if (v > prev + 1e-9) ordered = false;
+							prev = v;
+							withPower++;
+						}
+					}
+					check("item_edit_popup{anoint}: POB's own sort list; sorting by Life ranks the notables by their gain",
+					      okSort && sel == lifeIdx && withPower > 100 && ordered,
+					      "sortOptions=" + std::to_string(sortN) + " sel=" + std::to_string(sel) + " withPower=" + std::to_string(withPower) +
+					      (ordered ? "" : " (out of order)"));
+				}
 				child.Call("item_edit_cancel", json::object(), cancelA, 60000);
 			}
 

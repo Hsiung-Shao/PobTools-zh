@@ -212,6 +212,8 @@ export interface Caps {
   siteImport?: boolean;
   itemEnchant?: boolean;
   itemCrucible?: boolean;
+  /** 3.30 beta: the Viscera item database (Wickerman slots). */
+  visceraDB?: boolean;
   itemInfluence?: boolean;
   itemModLineToggle?: boolean;
   abyssJewels?: boolean;
@@ -972,8 +974,9 @@ export interface ItemTooltip {
   /** The pasted text was Chinese and went through the reverse translator. */
   reversed?: boolean;
 }
+export type DbKind = "unique" | "rare" | "viscera";
 export interface ItemDbPage {
-  kind: "unique" | "rare";
+  kind: DbKind;
   total: number;
   page: number;
   size: number;
@@ -988,7 +991,7 @@ export interface DdOption {
   labelZh: string;
 }
 export interface ItemDbOptions {
-  kind: "unique" | "rare";
+  kind: DbKind;
   slot: DdOption[];
   type: DdOption[];
   searchMode: DdOption[];
@@ -998,7 +1001,7 @@ export interface ItemDbOptions {
   sort?: (DdOption & { sortMode: string; stat?: string })[];
 }
 export interface ItemDbQuery {
-  kind: "unique" | "rare";
+  kind: DbKind;
   slot?: number;
   type?: number;
   league?: number;
@@ -1062,8 +1065,12 @@ export interface ItemEditPopupControl {
   name: string;
   kind: "dropdown" | "edit" | "slider" | "check" | "button" | "nodes";
   enabled: boolean;
-  options?: (DdOption & { id?: number })[];
+  /** notable lists: power = the gain under the chosen "Sort by" stat */
+  options?: (DdOption & { id?: number; power?: number })[];
   sel?: number;
+  /** notable lists: POB's own "Sort by …" dropdown */
+  sortOptions?: DdOption[];
+  sortSel?: number;
   text?: string;
   value?: number;
   state?: boolean;
@@ -1434,7 +1441,7 @@ export const api = {
   deleteItemSet: (id: number) => bridge.call<Committed>("delete_item_set", { id }, 60000),
   setWeaponSwap: (on: boolean) => bridge.call<Committed>("set_weapon_swap", { on }, 60000),
   itemDb: (p: ItemDbQuery) => bridge.call<ItemDbPage>("item_db", p, 300000),
-  itemDbOptions: (kind: "unique" | "rare") => bridge.call<ItemDbOptions>("item_db_options", { kind }, 180000),
+  itemDbOptions: (kind: DbKind) => bridge.call<ItemDbOptions>("item_db_options", { kind }, 180000),
   sortItems: () => bridge.call<Committed>("sort_items", {}, 60000),
   deleteUnusedItems: () => bridge.call<Committed & { deleted: number }>("delete_unused_items", {}, 60000),
   deleteAllItems: () => bridge.call<Committed>("delete_all_items", {}, 60000),
@@ -1445,8 +1452,9 @@ export const api = {
   itemEditState: () => bridge.call<ItemEditState>("item_edit_state", {}, 60000),
   itemEditSet: (p: ItemEditSetParams) => bridge.call<ItemEditState>("item_edit_set", p, 60000),
   itemEditAffix: (p: { index: number; sel?: number; roll?: number }) => bridge.call<ItemEditState>("item_edit_affix", p, 60000),
-  itemEditPopup: (p: { kind?: ItemEditPopupKind; action: "open" | "pick" | "apply" | "cancel"; slot?: number; name?: string; sel?: number; text?: string; state?: boolean; value?: number; button?: string }) =>
-    bridge.call<ItemEditPopup & Partial<ItemEditState>>("item_edit_popup", p, 120000),
+  itemEditPopup: (p: { kind?: ItemEditPopupKind; action: "open" | "pick" | "apply" | "cancel"; slot?: number; name?: string; sel?: number; text?: string; state?: boolean; value?: number; sort?: number; button?: string }) =>
+    // a sort recalculates the build once per notable
+    bridge.call<ItemEditPopup & Partial<ItemEditState>>("item_edit_popup", p, p.sort != null ? 300000 : 120000),
   itemEditPopupTip: (name: string, value: number) => bridge.call<{ id: number; tooltip: TooltipLine[] }>("item_edit_popup", { action: "tip", name, value }, 120000),
   itemEditCommit: (equip: boolean) => bridge.call<Committed & { id: number; added: boolean; item: ItemSummary }>("item_edit_commit", { equip }, 60000),
   itemEditCancel: () => bridge.call<{ ok: boolean }>("item_edit_cancel", {}, 60000),

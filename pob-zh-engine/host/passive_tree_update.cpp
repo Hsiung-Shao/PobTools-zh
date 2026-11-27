@@ -110,7 +110,7 @@ static std::string read_bundled_tree_version(const std::wstring& exeDir)
 }
 
 // newest bare TreeData\3_NN folder in the local PoB install ({0,0} when none)
-static std::pair<int, int> newest_pob_tree_version(const std::wstring& exeDir)
+std::pair<int, int> PassiveNewestPobTreeVersion(const std::wstring& exeDir)
 {
 	std::pair<int, int> best{ 0, 0 };
 	std::wstring base = FindPoe1Dir(exeDir);
@@ -155,7 +155,7 @@ bool PassiveTreeUpdater::doCheck(std::string* err)
 	parse_folder_ver(currentVer_, &current); // "" parses false -> {0,0}: anything is newer
 
 	// a. local PoB TreeData (PoB self-updated before us: sheets are local)
-	std::pair<int, int> localBest = newest_pob_tree_version(exeDir_);
+	std::pair<int, int> localBest = PassiveNewestPobTreeVersion(exeDir_);
 
 	// b. GitHub skilltree-export tags (best-effort; local result stands alone)
 	std::pair<int, int> remoteBest{ 0, 0 };

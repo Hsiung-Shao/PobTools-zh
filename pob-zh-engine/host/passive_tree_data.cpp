@@ -1,5 +1,6 @@
 #include "passive_tree_data.h"
 #include "timeless_jewel.h" // selftest: nodeIndex coverage vs the tree
+#include "passive_tree_update.h" // selftest: bundled tree vs local POB
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -338,6 +339,14 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 	      (int)d.nodes.size(), (int)d.edges.size(), (int)d.sockets.size());
 
 	check(d.nodes.size() > 1500, "node count", std::to_string(d.nodes.size()));
+	{
+		// a bundled tree older than the POB next to us makes the jewel view offer an update on every launch
+		int a = 0, b = 0;
+		sscanf_s(d.TreeVersion().c_str(), "%d_%d", &a, &b);
+		std::pair<int, int> pob = PassiveNewestPobTreeVersion(exeDir);
+		check(std::make_pair(a, b) >= pob, "bundled tree not older than local POB",
+		      d.TreeVersion() + " vs POB " + std::to_string(pob.first) + "_" + std::to_string(pob.second));
+	}
 	// the PoE1 main tree carries 21 jewel sockets (cluster sockets live in proxy
 	// groups and are filtered); 20 leaves headroom for GGG adding one
 	check(d.sockets.size() >= 20, "socket count", std::to_string(d.sockets.size()));

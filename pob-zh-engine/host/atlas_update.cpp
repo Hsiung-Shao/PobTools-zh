@@ -109,6 +109,15 @@ bool AtlasNeedsUpdate(const std::string& localTag, const std::string& localSha,
 
 std::string AtlasInstalledSha(const std::wstring& exeDir, const std::string& tag, const std::string& recordSha)
 {
+	// the season folder's own stamp travels with its files; the index can be restored to a stale copy
+	std::string stamp;
+	if (read_file_utf8(AtlasVersionIndex::VersionDir(exeDir, tag) + L"version.json", stamp)) {
+		try {
+			std::string s = ordered_json::parse(stamp).value("sha", std::string());
+			if (!s.empty()) return s;
+		} catch (...) {
+		}
+	}
 	AtlasVersionIndex idx;
 	idx.Load(exeDir);
 	const AtlasVersionEntry* e = idx.Find(tag);
@@ -679,6 +688,11 @@ bool AtlasUpdater::doUpdate(std::string* err)
 	setPhase(AtlasUpdatePhase::Importing, u8"匯入 " + tag + u8" 中…");
 	std::string sum;
 	if (!ImportAtlasTreeData(cacheDir + L"data.json", seasonDir, err, &sum)) return false;
+	if (!latestSha_.empty()) {
+		ordered_json stamp;
+		stamp["sha"] = latestSha_;
+		write_file_utf8(seasonDir + L"version.json", stamp.dump());
+	}
 
 	// zh mapping into the same season folder; best-effort (English falls back)
 	std::string zhNote, repoeVer;

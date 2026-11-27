@@ -11,6 +11,7 @@
   import { clampPreview } from "$lib/previewClamp";
   import PobText from "$lib/ui/PobText.svelte";
   import Select from "$lib/ui/Select.svelte";
+  import { formatSignedNumber } from "$lib/gemDps";
 
   let {
     item,
@@ -125,7 +126,7 @@
     const r = await run(() => api.itemEditPopup({ kind, action: "open", slot }));
     if (r) popup = r as ItemEditPopup;
   }
-  async function pick(name: string, patch: { sel?: number; text?: string; state?: boolean; value?: number }) {
+  async function pick(name: string, patch: { sel?: number; text?: string; state?: boolean; value?: number; sort?: number }) {
     const r = await run(() => api.itemEditPopup({ action: "pick", name, ...patch }));
     if (r) popup = r as ItemEditPopup;
   }
@@ -247,12 +248,16 @@
               <input class="slider" type="range" min="0" max="1" step="0.01" value={c.value ?? 0} onchange={(e) => pick(c.name, { value: Number(e.currentTarget.value) })} />
             {:else if c.kind === "nodes" && c.options}
               <div class="nodes">
+                {#if c.sortOptions?.length}
+                  <Select class="sm wide" value={c.sortSel ?? 1} options={optsOf(c.sortOptions)} onchange={(v) => pick(c.name, { sort: Number(v) })} />
+                {/if}
                 <input class="input sm" placeholder={t("edit.search")} bind:value={popupSearch} />
                 <div class="nlist" onmouseleave={() => clearTimeout(nodeTipTimer)} role="presentation">
                   {#each filterOpts(c.options, popupSearch).slice(0, 200) as { o, i }}
                     <label class="nrow" class:on={c.sel === i + 1} onmouseenter={() => hoverNode(c.name, o.id)}>
                       <input type="radio" name="node" checked={c.sel === i + 1} onchange={() => pick(c.name, { value: o.id })} />
                       <span>{o.labelZh || o.label}</span>
+                      {#if o.power != null}<span class="npow" class:dim={o.power <= 0}>{formatSignedNumber(o.power)}</span>{/if}
                     </label>
                   {/each}
                 </div>
@@ -826,6 +831,14 @@
   }
   .nrow.on {
     background: var(--gold-soft);
+  }
+  .npow {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    color: var(--ok);
+  }
+  .npow.dim {
+    color: var(--ink-3);
   }
   .report {
     font-size: var(--fs-xs);

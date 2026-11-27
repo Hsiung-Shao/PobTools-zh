@@ -16,6 +16,7 @@
 #include "data_updater.h"
 
 #include <string>
+#include <utility>
 
 enum class PassiveUpdatePhase {
 	Idle,            // nothing to report (includes throttled-away checks)
@@ -59,3 +60,6 @@ private:
 // "pob-zh.exe --pt-update": headless check + download + import (ignores the
 // daily throttle). Prints the outcome; 0 on success/up-to-date.
 int RunPassiveTreeUpdateCli(const std::wstring& exeDir);
+
+// newest bare TreeData_NN folder of the local PoB install ({0,0} when none)
+std::pair<int, int> PassiveNewestPobTreeVersion(const std::wstring& exeDir);
