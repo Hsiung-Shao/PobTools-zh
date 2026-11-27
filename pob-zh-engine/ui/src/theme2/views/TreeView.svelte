@@ -1671,14 +1671,15 @@
   }
   .tip-title .oils {
     position: absolute;
-    top: 8px;
-    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    right: 8px;
     display: flex;
     gap: 2px;
   }
   .tip-title .oil {
-    width: 1.4em;
-    height: 1.4em;
+    width: 2.2em;
+    height: 2.2em;
   }
   .tip-title .name {
     font-weight: 600;
