@@ -40,8 +40,7 @@ export function dpsDeltaText(d: { delta?: number | null; pct?: number | null }):
   return "";
 }
 
-/** A notable's gain under an anoint "Sort by" stat. */
-/** Stats like attack speed or crit multiplier gain fractions: under 10 keep two decimals. */
+/** A notable's gain under an anoint "Sort by" stat; fractional stats (attack speed, crit multi) keep two decimals under 10. */
 export function formatSignedGain(n: number): string {
   if (Math.abs(n) >= 10) return formatSignedNumber(n);
   const r = Math.round(n * 100) / 100;
