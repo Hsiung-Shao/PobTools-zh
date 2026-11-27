@@ -2089,7 +2089,7 @@ public:
 		dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), (Tok::Canvas & 0x00FFFFFFu) | 0xCC000000u, PobUi::D(6.0f));
 		float x = p.x + padX;
 		const float cy = p.y + h * 0.5f;
-		dl->AddCircle(ImVec2(x + sw * 0.5f, cy), sw * 0.5f, Tok::TreeHit, 16, 2.0f);
+		dl->AddCircle(ImVec2(x + sw * 0.5f, cy), sw * 0.5f, Tok::Danger, 16, 2.0f);
 		x += sw + PobUi::D(6.0f);
 		dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, hitL);
 		x += f->CalcTextSizeA(px, FLT_MAX, 0, hitL).x + gap;
@@ -2103,7 +2103,7 @@ public:
 		x += f->CalcTextSizeA(px, FLT_MAX, 0, clL).x + gap;
 		if (pickable) {
 			if (pickRing) {   // picked nodes are ringed red on the tree
-				dl->AddCircle(ImVec2(x + sw * 0.5f, cy), sw * 0.5f, Tok::Danger, 16, 2.0f);
+				dl->AddCircle(ImVec2(x + sw * 0.5f, cy), sw * 0.5f, Tok::FxWhite, 16, 2.0f);
 				x += sw + PobUi::D(6.0f);
 			}
 			dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, pickL);

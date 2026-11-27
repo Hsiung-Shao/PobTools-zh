@@ -22,10 +22,10 @@ static const ImU32 kColEdge       = WithAlpha(Tok::TreeLink, 150);
 static const ImU32 kColEdgeInRad  = WithAlpha(Tok::TreeHit, 150);
 static const ImU32 kColEdgeLit    = WithAlpha(Tok::Text, 210);
 static const ImU32 kColHoverRing  = WithAlpha(Tok::Text, 110);
-static const ImU32 kColAffected   = Tok::TreeHit;                    // changed by the seed
-static const ImU32 kColReplaced   = Tok::TreeHit;                    // replaced: same hue, double ring
+static const ImU32 kColAffected   = Tok::Danger;                     // changed by the seed: red, apart from the gold radius ring
+static const ImU32 kColReplaced   = Tok::Danger;                     // replaced: same hue, double ring
 static const ImU32 kColProtected  = Tok::Success;                    // user-protected: must not be replaced
-static const ImU32 kColPicked     = Tok::Danger;                     // picked: the lit art and seed halo are gold, so ring it red
+static const ImU32 kColPicked     = Tok::FxWhite;                    // picked: white, apart from the red seed ring and gold radius
 static const ImU32 kColSocket     = WithAlpha(PobUi::TreeKindColor(PobUi::TreeKind::Socket), 220);
 static const ImU32 kColSocketSel  = PobUi::TreeKindColor(PobUi::TreeKind::Socket);
 static const ImU32 kColSocketFill = WithAlpha(Tok::Surface2, 235);
@@ -379,7 +379,7 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 				             ImVec2(f.uv[0], f.uv[1]), ImVec2(f.uv[2], f.uv[3]));
 			}
 		}
-		// a node the seed changes: a gold (TreeHit) halo ring; a REPLACED node gets a second inner ring (same hue, one legend swatch).
+		// a node the seed changes: a red halo ring; a REPLACED node gets a second inner ring (same hue, one legend swatch).
 		if (h) {
 			// zoomed out, a small thick auto-segmented ring filled in to an orange square: keep a gap and a true circle
 			const float ring = std::max(std::max(n.off.w, n.off.h) * 0.5f * zoom_ + 7.0f, 12.0f);
