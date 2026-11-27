@@ -691,7 +691,8 @@ bool AtlasUpdater::doUpdate(std::string* err)
 	if (!latestSha_.empty()) {
 		ordered_json stamp;
 		stamp["sha"] = latestSha_;
-		write_file_utf8(seasonDir + L"version.json", stamp.dump());
+		// a stale stamp would outrank the index and re-offer this update forever
+		if (!write_file_utf8(seasonDir + L"version.json", stamp.dump())) DeleteFileW((seasonDir + L"version.json").c_str());
 	}
 
 	// zh mapping into the same season folder; best-effort (English falls back)

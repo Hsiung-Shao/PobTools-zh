@@ -39,3 +39,11 @@ export function dpsDeltaText(d: { delta?: number | null; pct?: number | null }):
   if (typeof d.delta === "number" && Number.isFinite(d.delta)) return formatSignedNumber(d.delta);
   return "";
 }
+
+/** A notable's gain under an anoint "Sort by" stat. */
+/** Stats like attack speed or crit multiplier gain fractions: under 10 keep two decimals. */
+export function formatSignedGain(n: number): string {
+  if (Math.abs(n) >= 10) return formatSignedNumber(n);
+  const r = Math.round(n * 100) / 100;
+  return `${sign(r)}${Math.abs(r).toFixed(2)}`;
+}

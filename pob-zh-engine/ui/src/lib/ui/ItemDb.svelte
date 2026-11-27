@@ -69,6 +69,7 @@
     untrack(() => {
       delete opts.unique;
       delete opts.rare;
+      delete opts.viscera;
       void loadOptions(kind).then(() => search(false));
     });
   });

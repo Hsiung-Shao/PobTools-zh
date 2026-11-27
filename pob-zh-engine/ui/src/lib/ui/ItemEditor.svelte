@@ -11,7 +11,7 @@
   import { clampPreview } from "$lib/previewClamp";
   import PobText from "$lib/ui/PobText.svelte";
   import Select from "$lib/ui/Select.svelte";
-  import { formatSignedNumber } from "$lib/gemDps";
+  import { formatSignedGain } from "$lib/gemDps";
 
   let {
     item,
@@ -257,7 +257,7 @@
                     <label class="nrow" class:on={c.sel === i + 1} onmouseenter={() => hoverNode(c.name, o.id)}>
                       <input type="radio" name="node" checked={c.sel === i + 1} onchange={() => pick(c.name, { value: o.id })} />
                       <span>{o.labelZh || o.label}</span>
-                      {#if o.power != null}<span class="npow" class:dim={o.power <= 0}>{formatSignedNumber(o.power)}</span>{/if}
+                      {#if o.power != null}<span class="npow" class:dim={o.power <= 0}>{formatSignedGain(o.power)}</span>{/if}
                     </label>
                   {/each}
                 </div>
