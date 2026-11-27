@@ -215,6 +215,7 @@
   function groupTitle(key: string): string {
     if (key === "weapons") return data?.useSecondWeaponSet ? t("items.weaponSet2") : t("items.weaponSet1");
     if (key === "jewels") return t("items.jewels");
+    if (key === "wickerman") return t("items.wickerman");
     return "";
   }
 

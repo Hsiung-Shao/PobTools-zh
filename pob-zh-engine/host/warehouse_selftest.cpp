@@ -945,6 +945,33 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		rep.check("T12h a summary is refused as the session start",
 		          !withSummary.SetSessionStartAndSave(scratch, "poe1", L, sm.utc) &&
 		              withSummary.sessionStartUtc == s2.utc);
+
+		// Deleting one snapshot (right-click in the list). File now: s1, s2 (start), sm.
+		WarehouseHistory stale;
+		stale.Load(scratch, "poe1", L);
+		Snapshot s4;
+		s4.utc = 1800002400;
+		s4.league = L;
+		WarehouseHistory other;
+		other.Load(scratch, "poe1", L);
+		other.AppendAndSave(scratch, "poe1", L, s4); // another panel adds one after `stale` loaded
+		WarehouseHistory del1;
+		rep.check("T12i 刪除一份快照：只少那一份，其他面板新增的也保留",
+		          stale.DeleteAndSave(scratch, "poe1", L, sm.utc) && del1.Load(scratch, "poe1", L) &&
+		              del1.snaps.size() == 3 && !del1.FindByUtc(sm.utc) && del1.FindByUtc(s4.utc) &&
+		              stale.snaps.size() == 3);
+		WarehouseHistory del2;
+		rep.check("T12j 刪除起點：起點改成剩下最舊的完整快照",
+		          stale.DeleteAndSave(scratch, "poe1", L, s2.utc) && del2.Load(scratch, "poe1", L) &&
+		              del2.snaps.size() == 2 && del2.sessionStartUtc == s1.utc);
+		WarehouseHistory del3;
+		rep.check("T12k 刪除不存在的快照：回 false、檔案不變",
+		          !stale.DeleteAndSave(scratch, "poe1", L, 1234) && del3.Load(scratch, "poe1", L) &&
+		              del3.snaps.size() == 2);
+		stale.DeleteAndSave(scratch, "poe1", L, s1.utc);
+		WarehouseHistory del4;
+		rep.check("T12l 刪到剩一份：那份成為起點",
+		          del4.Load(scratch, "poe1", L) && del4.snaps.size() == 1 && del4.sessionStartUtc == s4.utc);
 	}
 
 	// snapshot-card money ("14d 64c", the Wealthy-Exile format)

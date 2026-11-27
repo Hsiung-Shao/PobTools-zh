@@ -146,7 +146,7 @@ void CopyTree(const std::wstring& src, const std::wstring& dst, CopyStats& st, b
 	CopyRel(src, dst, L"", st, includeBuilds);
 }
 
-void LinkTree(const std::wstring& src, const std::wstring& dst, CopyStats& st)
+void LinkTree(const std::wstring& src, const std::wstring& dst, CopyStats& st, bool withBuilds)
 {
 	MkdirP(dst);
 	st.dirs++;
@@ -158,7 +158,7 @@ void LinkTree(const std::wstring& src, const std::wstring& dst, CopyStats& st)
 		if (n == L"." || n == L"..") continue;
 		const std::wstring s = src + L"\\" + n, d = dst + L"\\" + n;
 		if (_wcsicmp(n.c_str(), L"Builds") == 0) {
-			if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) CopyRel(s, d, n, st, true);
+			if (withBuilds && (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) CopyRel(s, d, n, st, true);
 			continue;
 		}
 		if (ShouldSkip(n, true)) continue;

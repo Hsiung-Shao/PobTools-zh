@@ -1115,8 +1115,8 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 
 		// T4: 節點數與連通性。
 		if (is330) {
-			rep.check(d.nodes.size() == 967 && d.masteries.size() == 149 && d.TotalPoints() == 150,
-			          u8"[多選T4] 3.30 樹為 967 節點、149 個 mastery、150 點",
+			rep.check(d.nodes.size() == 969 && d.masteries.size() == 149 && d.TotalPoints() == 150,
+			          u8"[多選T4] 3.30.0c 樹為 969 節點、149 個 mastery、150 點",
 			          std::to_string(d.nodes.size()) + "/" + std::to_string(d.masteries.size()) + "/" +
 			              std::to_string(d.TotalPoints()));
 		}

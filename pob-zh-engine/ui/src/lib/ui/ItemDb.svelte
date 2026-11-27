@@ -4,7 +4,7 @@
      新增 / 新增並裝備、雙擊編輯副本、Ctrl+點擊新增並裝備。 -->
 <script lang="ts">
   import { untrack } from "svelte";
-  import { api, type ItemDbOptions, type ItemDbPage, type ItemSummary } from "$lib/bridge";
+  import { api, type DbKind, type ItemDbOptions, type ItemDbPage, type ItemSummary } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { rarityColor } from "$lib/items";
   import { app } from "$lib/state.svelte";
@@ -22,8 +22,8 @@
     onleave: () => void;
   } = $props();
 
-  let kind = $state<"unique" | "rare">("unique");
-  const opts = $state<Partial<Record<"unique" | "rare", ItemDbOptions>>>({});
+  let kind = $state<DbKind>("unique");
+  const opts = $state<Partial<Record<DbKind, ItemDbOptions>>>({});
   let sel = $state({ slot: 1, type: 1, league: 1, requirement: 1, obtainable: 1, searchMode: 1 });
   let query = $state("");
   let sortMode = $state("");
@@ -36,7 +36,7 @@
 
   const o = $derived(opts[kind]);
 
-  async function loadOptions(k: "unique" | "rare") {
+  async function loadOptions(k: DbKind) {
     if (opts[k]) return;
     const r = await app.run(() => api.itemDbOptions(k));
     if (r) opts[k] = r;
@@ -49,7 +49,7 @@
       if (r) db = r;
     }, 150);
   }
-  async function switchKind(k: "unique" | "rare") {
+  async function switchKind(k: DbKind) {
     kind = k;
     sel = { slot: 1, type: 1, league: 1, requirement: 1, obtainable: 1, searchMode: 1 };
     db = null;
@@ -69,6 +69,7 @@
     untrack(() => {
       delete opts.unique;
       delete opts.rare;
+      delete opts.viscera;
       void loadOptions(kind).then(() => search(false));
     });
   });
@@ -84,6 +85,7 @@
     <span class="seg">
       <button class:on={kind === "unique"} onclick={() => switchKind("unique")}>{t("items.dbUnique")}</button>
       <button class:on={kind === "rare"} onclick={() => switchKind("rare")}>{t("items.dbRare")}</button>
+      {#if app.has("visceraDB")}<button class:on={kind === "viscera"} onclick={() => switchKind("viscera")}>{t("items.dbViscera")}</button>{/if}
     </span>
     <input class="input sm grow" placeholder={t("items.dbSearch")} bind:value={query} oninput={() => search()} />
     {#if o}

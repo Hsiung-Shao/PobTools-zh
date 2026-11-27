@@ -100,10 +100,32 @@ std::string TradeQueryJson(const std::string& tradeStatId, int seed)
 	return q;
 }
 
-TradeBatch TradeNextBatch(size_t total, size_t next)
+size_t TradeSeedsPerSearch(size_t nIds)
+{
+	return nIds ? (std::max)((size_t)1, kMaxTradeSeeds / nIds) : kMaxTradeSeeds;
+}
+
+std::string TradeQueryJsonAny(const std::vector<std::string>& statIds, const std::vector<int>& seeds)
+{
+	std::string filters;
+	size_t n = 0;
+	for (int s : seeds)
+		for (const std::string& id : statIds) {
+			if (n >= kMaxTradeSeeds) break;
+			char f[256];
+			snprintf(f, sizeof(f), "%s{\"id\":\"%s\",\"value\":{\"min\":%d,\"max\":%d}}", n ? "," : "", id.c_str(), s, s);
+			filters += f;
+			n++;
+		}
+	return "{\"query\":{\"status\":{\"option\":\"securable\"},\"stats\":[{\"type\":\"count\","
+	       "\"value\":{\"min\":1},\"filters\":[" + filters + "]}]"
+	       "},\"sort\":{\"price\":\"asc\"}}";
+}
+
+TradeBatch TradeNextBatch(size_t total, size_t next, size_t per)
 {
 	const size_t begin = next < total ? next : 0;
-	return { begin, (std::min)(total, begin + kMaxTradeSeeds) };
+	return { begin, (std::min)(total, begin + (per ? per : kMaxTradeSeeds)) };
 }
 
 // Query JSON matching ANY of several seeds (PoE "count" stat group, one filter
@@ -155,9 +177,14 @@ bool TjUiState::Load(const std::wstring& exeDir)
 		realm = doc.value("realm", 0);
 		platform = doc.value("platform", 0);
 		league = doc.value("league", std::string());
+		lastLegion = doc.value("lastLegion", 3);
+		lastAbyss = doc.value("lastAbyss", 8);
+		abyssMode = doc.value("abyssMode", false);
+		classId = doc.value("classId", -1);
+		asc = doc.value("asc", std::string());
 		return true;
 	} catch (...) {
-		realm = 0; platform = 0; league.clear();
+		realm = 0; platform = 0; league.clear(); lastLegion = 3; lastAbyss = 8; abyssMode = false; classId = -1; asc.clear();
 		return false;
 	}
 }
@@ -169,6 +196,11 @@ bool TjUiState::Save(const std::wstring& exeDir) const
 	doc["realm"] = realm;
 	doc["platform"] = platform;
 	if (!league.empty()) doc["league"] = league;
+	doc["lastLegion"] = lastLegion;
+	doc["lastAbyss"] = lastAbyss;
+	doc["abyssMode"] = abyssMode;
+	if (classId >= 0) doc["classId"] = classId;
+	if (!asc.empty()) doc["asc"] = asc;
 	std::string out = doc.dump();
 	HANDLE f = CreateFileW(tj_ui_path(exeDir).c_str(), GENERIC_WRITE, 0, nullptr,
 	                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -405,7 +437,7 @@ struct SearchJob {
 		cancel = false; done = false; running = true;
 		results.clear();
 		th = std::thread([this, ds, blob, q]() {
-			auto r = TJSearch(*ds, *blob, q, 500, &cancel);
+			auto r = TJSearch(*ds, *blob, q, q.wants.empty() && q.requiredAscOutcome.empty() ? 0 : 500, &cancel); // nothing scored: every seed
 			results = std::move(r);
 			running = false; done = true;
 		});
@@ -428,7 +460,7 @@ struct SearchJob {
 		results.clear();
 		th = std::thread([this, ds, blob, lut = std::move(lut), q, socketId,
 		                  nodeKind = std::move(nodeKind)]() mutable {
-			auto r = TJAbyssSearch(*ds, *blob, lut, q, socketId, 500, &nodeKind, &cancel);
+			auto r = TJAbyssSearch(*ds, *blob, lut, q, socketId, q.wants.empty() && q.requiredAscOutcome.empty() ? 0 : 500, &nodeKind, &cancel);
 			results = std::move(r);
 			running = false; done = true;
 		});
@@ -622,6 +654,10 @@ public:
 			tradeRealm = std::clamp(tjUi.realm, 0, kTradeRealmCount - 1);
 			tradePlatform = kTradeRealms[tradeRealm].consoles ? std::clamp(tjUi.platform, 0, 2) : 0;
 			if (!tjUi.league.empty()) { tradeLeague = tjUi.league; leagueUserSet = true; }
+			const int t = tjUi.abyssMode ? tjUi.lastAbyss : tjUi.lastLegion;
+			if (t >= 1 && t <= kMaxJewelType && TJIsAbyss(t) == tjUi.abyssMode) jewelType = t;
+			classId_ = tjUi.classId;
+			asc_ = tjUi.asc;
 		}
 		leagues.SetHost(kTradeRealms[tradeRealm].hostW);
 
@@ -679,14 +715,16 @@ public:
 			templates = TJStatTemplates(*ds, jewelType);
 			templatesFor = jewelType;
 			wants.clear();          // previously-picked stats may not exist on this jewel
+			(TJIsAbyss(jewelType) ? tjUi.lastAbyss : tjUi.lastLegion) = jewelType;
+			tjUi.abyssMode = TJIsAbyss(jewelType);
+			saveTjUi();
 		}
+		updateAbyssDerived();
 
 		// conqueror (affects keystones + trade export)
 		const std::vector<TJConqueror>* conqs = conqListFor(jewelType);
 		const int conqN = conqs ? (int)conqs->size() : 0;
-		if (conquerorSel >= conqN || conquerorSel < 0) conquerorSel = 0;
-		conquerorId_ = conqN ? (*conqs)[conquerorSel].id : std::string("1");
-		tradeStatId_ = conqN ? (*conqs)[conquerorSel].trade : std::string();
+		deriveConqueror(conqs, conqN);
 
 		// A finished search reports once, as a toast; the table says the rest.
 		if (job.done.load() && !job.running.load() && !jobReported_) {
@@ -820,8 +858,12 @@ public:
 		auto at = [&](float x, float h) { ImGui::SetCursorScreenPos(ImVec2(x, hp.y + std::floor((H - h) * 0.5f))); };
 
 		// what goes in each slot, measured before anything is drawn
+		// 永恆 (1-6) and 深淵 (7-11) search differently, so each mode lists only its own jewels
+		const bool abyssKind = TJIsAbyss(jewelType);
+		const int tLo = abyssKind ? 7 : 1, tHi = abyssKind ? kMaxJewelType : 6;
+		const char* kindLabels[2] = { u8"永恆珠寶", u8"深淵珠寶" };
 		std::vector<std::string> jewelLbl, jewelNote;
-		for (int t = 1; t <= kMaxJewelType; t++) { jewelLbl.push_back(JewelZhShort(t)); jewelNote.push_back(JewelEn(t)); }
+		for (int t = tLo; t <= tHi; t++) { jewelLbl.push_back(JewelZhShort(t)); jewelNote.push_back(JewelEn(t)); }
 		std::vector<const char*> jewelP, jewelN;
 		for (size_t i = 0; i < jewelLbl.size(); i++) { jewelP.push_back(jewelLbl[i].c_str()); jewelN.push_back(jewelNote[i].c_str()); }
 		std::vector<std::string> conqLbl, conqNote;
@@ -832,8 +874,10 @@ public:
 			if (c.id.find("_v2") != std::string::npos) note += u8"（舊版）";
 			conqNote.push_back(note);
 		}
+		if (conqAnyOk(conqN)) { conqLbl.push_back(u8"任意"); conqNote.push_back(u8"不限征服者，只看詞綴"); }
+		const int conqItems = (int)conqLbl.size();
 		std::vector<const char*> conqP, conqNP;
-		for (int i = 0; i < conqN; i++) { conqP.push_back(conqLbl[i].c_str()); conqNP.push_back(conqNote[i].c_str()); }
+		for (int i = 0; i < conqItems; i++) { conqP.push_back(conqLbl[i].c_str()); conqNP.push_back(conqNote[i].c_str()); }
 		const char* modeLabels[2] = { u8"找種子", u8"查已知種子" };
 		const char* pasteLbl = u8"從遊戲貼上珠寶";
 
@@ -846,7 +890,7 @@ public:
 		const float conqW = std::floor(PobUi::D(190.0f));
 		const float pasteW = PobUi::ButtonWidth(pasteLbl, PobUi::BtnSize::Sm, PobIcon::Copy);
 		const float leftW = PobUi::IconWidth(PobIcon::Gem, iconPx) + (wf.icons ? PobUi::D(8.0f) : 0.0f) + headingW +
-		                    gap + pasteW + gap + jewelW + gap + conqW + gap + PobUi::SegmentedWidth(modeLabels, 2);
+		                    gap + pasteW + gap + PobUi::SegmentedWidth(kindLabels, 2) + gap + jewelW + gap + conqW + gap + PobUi::SegmentedWidth(modeLabels, 2);
 
 		// right: the tree's version and coverage, or the tree update in progress
 		const bool updBusy = ust.phase == PassiveUpdatePhase::Downloading ||
@@ -892,12 +936,25 @@ public:
 			PobUi::Tooltip(u8"在遊戲中對珠寶按 Ctrl+C，再按這裡：自動帶入珠寶、征服者與種子，並切到「查已知種子」。");
 		x += pasteW + gap;
 
-		// jewel
+		// kind, then the jewel within it; each kind comes back to its last jewel
 		at(x, H);
-		int jsel = jewelType - 1;
+		int ksel = abyssKind ? 1 : 0;
+		if (PobUi::Segmented("##kind", &ksel, kindLabels, 2) && ksel != (abyssKind ? 1 : 0)) {
+			jewelType = ksel ? tjUi.lastAbyss : tjUi.lastLegion;
+			if (TJIsAbyss(jewelType) != (ksel == 1)) jewelType = ksel ? 8 : 3;
+			conquerorSel = 0;
+			ensureBin(jewelType);
+		}
+		if (ImGui::IsItemHovered())
+			PobUi::Tooltip(u8"深淵珠寶的計算與查詢照 POB 2.68，分數為權重 × 數值");
+		x += PobUi::SegmentedWidth(kindLabels, 2) + gap;
+
+		at(x, H);
+		int jsel = jewelType - tLo;
+		if (jsel < 0 || jsel >= (int)jewelP.size()) jsel = 0;
 		if (PobUi::Select("##jewel", &jsel, jewelP.data(), jewelN.data(), (int)jewelP.size(), jewelW) &&
-		    jsel + 1 != jewelType) {
-			jewelType = jsel + 1;
+		    jsel + tLo != jewelType) {
+			jewelType = jsel + tLo;
 			conquerorSel = 0;
 			ensureBin(jewelType);
 		}
@@ -906,9 +963,9 @@ public:
 		// conqueror (keystones + trade export)
 		at(x, H);
 		int csel = conquerorSel;
-		if (PobUi::Select("##conq", &csel, conqP.data(), conqNP.data(), conqN, conqW, conqN > 0))
+		if (PobUi::Select("##conq", &csel, conqP.data(), conqNP.data(), conqItems, conqW, conqN > 0))
 			conquerorSel = csel;
-		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"征服者決定關鍵天賦會變成哪一個，也是交易站搜尋用的詞綴");
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"征服者決定關鍵天賦會變成哪一個，也是交易站搜尋用的詞綴；選「任意」不限征服者，只找種子對應的詞綴");
 		x += conqW + gap;
 
 		// mode. Bound straight to `mode`, so setting it elsewhere (a paste) sticks:
@@ -1172,7 +1229,8 @@ public:
 	void tradeSeed(int seed)
 	{
 		if (tradeOff()) return;
-		openTrade(TradeSearchUrl(tradeRealm, tradeLeague, tradePlatform, TradeQueryJson(tradeStatId_, seed)), "seed");
+		const std::string q = conqAny_ ? TradeQueryJsonAny(tradeIds_, { seed }) : TradeQueryJson(tradeStatId_, seed);
+		openTrade(TradeSearchUrl(tradeRealm, tradeLeague, tradePlatform, q), "seed");
 	}
 
 	// Several seeds in one search: a "count >= 1" stat group, one filter per seed
@@ -1181,7 +1239,8 @@ public:
 	void tradeSeeds(const std::vector<int>& seeds, const char* tag)
 	{
 		if (tradeOff() || seeds.empty()) return;
-		openTrade(TradeSearchUrl(tradeRealm, tradeLeague, tradePlatform, TradeQueryJsonMulti(tradeStatId_, seeds)), tag);
+		const std::string q = conqAny_ ? TradeQueryJsonAny(tradeIds_, seeds) : TradeQueryJsonMulti(tradeStatId_, seeds);
+		openTrade(TradeSearchUrl(tradeRealm, tradeLeague, tradePlatform, q), tag);
 	}
 
 	// Banners under the header: a failed tree update, a failed paste or copy.
@@ -1260,9 +1319,9 @@ public:
 	{
 		if (!TJIsAbyss(jewelType)) return;
 		const char* desc = TJIsZorath(jewelType)
-			? u8"目前可對照的實測樣本仍少，請以遊戲內實際結果為準。重奪惡意另外取決於你從插槽走到職業起點的已配點路徑，"
-			  u8"本工具沒有角色資料：請隨意點一個插槽，用它周邊的天賦判斷這顆種子。單一天賦會變成什麼、昇華天賦的選擇，這兩項是準確的。"
-			: u8"目前可對照的實測樣本仍少，結果無法像軍團珠寶那樣完整驗證，請以遊戲內實際結果為準。";
+			? u8"計算方式同原版POB。重奪惡意只改插槽到職業起點的路徑，加上昇華的一個天賦；"
+			  u8"這裡的路徑取整棵樹上最短的一條，實際配點繞路時會不同。"
+			: u8"計算方式同原版POB：分數為「權重×數值」，鑰石不計分。實測樣本仍少，請以遊戲內實際結果為準。";
 		PobUi::Banner("##abyss", PobUi::BannerTone::Warn, PobIcon::TriangleAlert, u8"深淵珠寶是 3.29 新增", desc,
 		              false, nullptr, false);
 		ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
@@ -1278,12 +1337,18 @@ public:
 			// to know which radius to walk, types 7-10 because the socket IS the key
 			// their file is indexed by, and Zorath because it is the place the user
 			// is asking us to look around.
-			return TJIsZorath(jewelType) ? u8"請先在天賦樹上點一個珠寶插槽（隨意一個即可，用來決定要看哪一帶的天賦）"
+			return TJIsZorath(jewelType) ? u8"請先在天賦樹上點一個珠寶插槽"
 			       : TJIsAbyss(jewelType) ? u8"請先在天賦樹上點一個珠寶插槽（深淵珠寶的結果由插槽決定，沒有半徑）"
 			                              : u8"請先在天賦樹上點一個珠寶插槽（搜尋只計算該插槽半徑內的節點）";
 		}
 		const PtNode& sn = ptData.nodes[selSocket];
 		std::string s = u8"插槽：" + (sn.nameZh.empty() ? sn.name : sn.nameZh);
+		if (TJIsAbyss(jewelType)) {
+			const std::string why = abyssBlocker();
+			if (!why.empty()) { *missing = true; return s + u8"｜" + why; }
+			if (TJIsZorath(jewelType)) s += u8"（路徑 " + std::to_string(zorathPath_.size()) + u8" 個天賦）";
+			return s;
+		}
 		int picked = 0;
 		for (char c : ptSelected) if (c) picked++;
 		if (picked > 0) s += u8"（只看已選的 " + std::to_string(picked) + u8" 個節點）";
@@ -1320,14 +1385,66 @@ public:
 		for (int idx : ptData.NodesInRadius(selSocket, 1800.0f)) {
 			const PtNode& n = ptData.nodes[idx];
 			if (n.kind != kPtKeystone) continue;
-			TJTransform t = TJApply(*ds, kNoBlob, jewelType, -1, n.id, "Keystone", n.stats,
-			                        ConquerorType(jewelType), conquerorId_, n.name);
+			TJTransform t = applyNode(kNoBlob, -1, n, "Keystone");
 			if (!t.ok || !t.replaced) continue;
 			lost += u8"「" + (n.nameZh.empty() ? n.name : n.nameZh) + u8"」";
-			becomes = t.newNameZh.empty() ? t.newName : t.newNameZh;
+			if (conqAny_) {
+				becomes.clear();
+				for (size_t i = 0; i < t.linesZh.size(); i++) becomes += (i ? u8"、" : "") + t.linesZh[i];
+			} else {
+				becomes = u8"「" + (t.newNameZh.empty() ? t.newName : t.newNameZh) + u8"」";
+			}
 		}
 		if (lost.empty()) return {};
-		return u8"此插槽的鑰石" + lost + u8"會變成「" + becomes + u8"」，與種子無關";
+		if (conqAny_) return u8"此插槽的鑰石" + lost + u8"依征服者而定：" + becomes + u8"，與種子無關";
+		return u8"此插槽的鑰石" + lost + u8"會變成" + becomes + u8"，與種子無關";
+	}
+
+	// "任意" sits after the conquerors (saved / pasted indices keep their meaning); Legion only.
+	bool conqAnyOk(int conqN) const { return conqN > 1 && !TJIsAbyss(jewelType); }
+
+	void deriveConqueror(const std::vector<TJConqueror>* conqs, int conqN)
+	{
+		const int items = conqN + (conqAnyOk(conqN) ? 1 : 0);
+		if (conquerorSel >= items || conquerorSel < 0) conquerorSel = 0;
+		conqAny_ = conqAnyOk(conqN) && conquerorSel == conqN;
+		tradeIds_.clear();
+		if (conqAny_) {
+			conquerorId_ = "*"; // keystones go through applyNode; other nodes ignore the conqueror
+			for (const TJConqueror& c : *conqs)
+				if (!c.trade.empty() && std::find(tradeIds_.begin(), tradeIds_.end(), c.trade) == tradeIds_.end())
+					tradeIds_.push_back(c.trade);
+			tradeStatId_ = tradeIds_.empty() ? std::string() : tradeIds_.front();
+		} else {
+			conquerorId_ = conqN ? (*conqs)[conquerorSel].id : std::string("1");
+			tradeStatId_ = conqN ? (*conqs)[conquerorSel].trade : std::string();
+		}
+	}
+
+	// Seeds one trade search carries for the current conqueror pick.
+	size_t tradePerSearch() const { return conqAny_ ? TradeSeedsPerSearch(tradeIds_.size()) : kMaxTradeSeeds; }
+
+	// TJApply for the picked conqueror; under "任意" a keystone lists every conqueror's ("卡奧姆 → X").
+	TJTransform applyNode(const std::string& blobRef, int seed, const PtNode& n, const char* nodeType) const
+	{
+		const std::vector<TJConqueror>* conqs = conqListFor(jewelType);
+		if (!conqAny_ || !conqs || n.kind != kPtKeystone)
+			return TJApply(*ds, blobRef, jewelType, seed, n.id, nodeType, n.stats, ConquerorType(jewelType),
+			               conquerorId_, n.name);
+		TJTransform out;
+		for (const TJConqueror& c : *conqs) {
+			const TJTransform t = TJApply(*ds, blobRef, jewelType, seed, n.id, nodeType, n.stats,
+			                              ConquerorType(jewelType), c.id, n.name);
+			if (!t.ok || !t.replaced) continue;
+			out.ok = out.replaced = true;
+			std::string who = c.nameZh.empty() ? c.name : c.nameZh;
+			if (c.id.find("_v2") != std::string::npos) who += u8"（舊版）";
+			out.lines.push_back(c.name + " -> " + t.newName);
+			out.linesZh.push_back(who + u8" → " + (t.newNameZh.empty() ? t.newName : t.newNameZh));
+		}
+		out.newName = "Depends on conqueror";
+		out.newNameZh = u8"依征服者而定";
+		return out;
 	}
 
 	// The pinned block under both forms: the socket line, then the keystone
@@ -1343,6 +1460,90 @@ public:
 	{
 		PobUi::Hint(hint.c_str(), w, noSocket ? Tok::Warning : 0);
 		if (!note.empty()) PobUi::Hint(note.c_str(), w, Tok::Warning);
+	}
+
+	// Zorath: the class start its path runs to (shortest over the whole tree, no build needed) and the
+	// Ascendancy whose passives it can take (PoB 2.68: required outcome, protected passives).
+	void drawBuildSection()
+	{
+		if (!TJIsZorath(jewelType)) return;
+		const float w = ImGui::GetContentRegionAvail().x;
+		const float H = PobUi::ControlH();
+		PobUi::Heading(u8"職業起點");
+		ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
+		if (ptData.classStarts.empty()) {
+			PobUi::Hint(u8"天賦樹資料太舊（缺職業起點），請更新天賦樹", w, Tok::Warning);
+			ImGui::Dummy(ImVec2(0, PobUi::D(8.0f)));
+			return;
+		}
+		loadClassNames();
+		const float sw = std::floor(PobUi::D(170.0f));
+		std::vector<const PassiveTreeData::ClassStart*> cls;
+		for (const auto& cs : ptData.classStarts) cls.push_back(&cs);
+		std::sort(cls.begin(), cls.end(), [](auto* a, auto* b) { return a->classId < b->classId; });
+		std::vector<std::string> cl;
+		int sel = -1;
+		for (size_t i = 0; i < cls.size(); i++) {
+			cl.push_back(zhOr(classZh_, cls[i]->name));
+			if (cls[i]->classId == classId_) sel = (int)i;
+		}
+		std::vector<const char*> cp;
+		for (const auto& l : cl) cp.push_back(l.c_str());
+		labelRow(u8"職業", u8"重奪惡意的路徑＝插槽到這個職業起點的最短路徑（整棵樹上最短的一條）",
+		         sw, H, [&]() {
+			if (PobUi::Select("##class", &sel, cp.data(), nullptr, (int)cp.size(), sw) && sel >= 0 &&
+			    cls[(size_t)sel]->classId != classId_) {
+				classId_ = cls[(size_t)sel]->classId;
+				asc_.clear(); protectAsc_.clear(); reqAscSel_ = 0;
+				tjUi.classId = classId_; tjUi.asc = asc_; saveTjUi();
+			}
+		});
+		if (sel < 0) classId_ = -1; // saved class not in this tree: ask again instead of blaming the socket
+		if (classId_ < 0) {
+			PobUi::Hint(u8"選一個職業：路徑取插槽到該職業起點的最短距離", w);
+			ImGui::Dummy(ImVec2(0, PobUi::D(8.0f)));
+			return;
+		}
+		std::vector<const PassiveTreeData::AscClass*> ascs;
+		for (const auto& a : ptData.ascClasses) if (a.classId == classId_) ascs.push_back(&a);
+		std::vector<std::string> al{ u8"不計算昇華" };
+		int asel = 0;
+		for (size_t i = 0; i < ascs.size(); i++) {
+			al.push_back(zhOr(ascZh_, ascs[i]->id, ascs[i]->name));
+			if (ascs[i]->id == asc_) asel = (int)i + 1;
+		}
+		std::vector<const char*> ap;
+		for (const auto& l : al) ap.push_back(l.c_str());
+		labelRow(u8"昇華", u8"重奪惡意也會依種子改掉這個昇華的一個昇華天賦", sw, H, [&]() {
+			if (PobUi::Select("##asc", &asel, ap.data(), nullptr, (int)ap.size(), sw)) {
+				const std::string a = asel > 0 ? ascs[(size_t)asel - 1]->id : std::string();
+				if (a != asc_) { asc_ = a; protectAsc_.clear(); reqAscSel_ = 0; tjUi.asc = asc_; saveTjUi(); }
+			}
+		});
+		PobUi::Hint(u8"實際配點繞遠路、或同樣短的路線不只一條時，路徑上的天賦會不同", w);
+		ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
+		if (!ascClass().empty()) {
+			{
+				std::vector<std::string> lbl{ u8"不限" };
+				for (const auto& o : ascOutcomes_) lbl.push_back(o.second);
+				std::vector<const char*> lp;
+				for (const auto& l : lbl) lp.push_back(l.c_str());
+				labelRow(u8"必要昇華結果", u8"同 POB：昇華天賦必須變成這一個，其餘種子不列出",
+				         sw, H, [&]() { PobUi::Select("##reqasc", &reqAscSel_, lp.data(), nullptr, (int)lp.size(), sw); });
+				if (!ascTargets_.empty()) {
+					PobUi::Hint(u8"保護昇華天賦（勾選的天賦被改掉的種子不列出）：", w);
+					for (int id : ascTargets_) {
+						bool on = protectAsc_.count(id) != 0;
+						ImGui::PushID(id);
+						if (ImGui::Checkbox(ascName(id).c_str(), &on)) {
+							if (on) protectAsc_.insert(id); else protectAsc_.erase(id);
+						}
+						ImGui::PopID();
+					}
+				}
+			}
+		}
+		ImGui::Dummy(ImVec2(0, PobUi::D(8.0f)));
 	}
 
 	// left: find seeds
@@ -1362,6 +1563,7 @@ public:
 		ImGui::BeginChild("##formscroll", ImVec2(0, formH), false);
 		const float formTop = ImGui::GetCursorScreenPos().y;
 		drawAbyssBanner();
+		drawBuildSection();
 		PobUi::Heading(u8"想要的詞綴");
 		ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
 
@@ -1420,7 +1622,10 @@ public:
 
 		// the picked stats: 詞綴 / 最小值 / 權重 / 移除
 		if (wants.empty()) {
-			PobUi::Hint(u8"還沒有詞綴：在上方輸入關鍵字，從清單點選加入。", ImGui::GetContentRegionAvail().x);
+			const bool reqAsc = TJIsZorath(jewelType) && reqAscSel_ > 0; // required outcome still scores by its roll
+			PobUi::Hint(reqAsc ? u8"還沒有詞綴：在上方輸入關鍵字，從清單點選加入。"
+			                   : u8"還沒有詞綴：在上方輸入關鍵字，從清單點選加入。不加詞綴直接搜尋會依編號列出全部種子（最小總權重與範圍不作用）。",
+			            ImGui::GetContentRegionAvail().x);
 		} else {
 			pushTableStyle();
 			if (ImGui::BeginTable("##wants", 4, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit)) {
@@ -1473,7 +1678,8 @@ public:
 		// Abyss jewels conquer keystones too, and TJAbyssInScope counts them as
 		// "big" -- the label has to say so or the filter looks like it is dropping
 		// results.
-		const char* scopeLbl[2] = { TJIsAbyss(jewelType) ? u8"大天賦與鑰石" : u8"只看大點", u8"全部節點" };
+		// Abyss: keystones never score (PoB scoreNode), so "big" is notables (and Zorath's Ascendancy pick).
+		const char* scopeLbl[2] = { TJIsAbyss(jewelType) ? u8"只看大天賦" : u8"只看大點", u8"全部節點" };
 		int scopeSel = scope == 1 ? 0 : 1;
 		labelRow(u8"範圍", nullptr, PobUi::SegmentedWidth(scopeLbl, 2), H, [&]() {
 			if (PobUi::Segmented("##scope", &scopeSel, scopeLbl, 2)) scope = scopeSel == 0 ? 1 : 0;
@@ -1492,48 +1698,29 @@ public:
 		                                     ImGui::GetStyle().WindowPadding.y - bottomH));
 		drawHintBlock(hint, ksNote, w, noSocket);
 		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f) - ImGui::GetStyle().ItemSpacing.y));
-		const bool canSearch = !busy && !wants.empty() && selSocket >= 0;
+		const std::string abyssWhy = abyssBlocker();
+		const bool canSearch = !busy && selSocket >= 0 && abyssWhy.empty();
 		if (PobUi::Button(busy ? u8"搜尋中…" : u8"搜尋這個插槽", PobUi::BtnKind::Primary, PobUi::BtnSize::Lg, nullptr, w,
 		                  canSearch))
 			runSearch();
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !canSearch && !busy)
-			PobUi::Tooltip(wants.empty() ? u8"先加入至少一條想要的詞綴" : u8"先在天賦樹上點一個珠寶插槽");
+			PobUi::Tooltip(selSocket < 0 ? u8"先在天賦樹上點一個珠寶插槽" : abyssWhy.c_str());
 	}
 
 	void runSearch()
 	{
-		if (job.running.load() || wants.empty() || selSocket < 0) return;
+		if (job.running.load() || selSocket < 0) return;
 		if (!ensureBin(jewelType)) {
 			showError(u8"讀不到這顆珠寶的查表資料", binErr, false);
 			return;
 		}
+		updateAbyssDerived();
+		if (!abyssBlocker().empty()) return;
 		tradeNext_.clear();   // every search starts its groups at the first batch
 		const bool isAbyss = TJIsAbyss(jewelType);
-		const bool isZorath = TJIsZorath(jewelType);
-		TJSearchQuery q;
-		q.jewelType = jewelType;
-		q.scope = scope;
-		q.minTotalWeight = minTotalWeight;
-		q.requireAll = requireAll;
-		for (auto& w : wants) q.wants.push_back({ w.en, w.minValue, w.weight });
+		const TJSearchQuery q = makeQuery();
+		searchNoWants_ = q.wants.empty() && q.requiredAscOutcome.empty(); // nothing scored: listed by seed number
 		detailSeed = -1;
-		// Types 7-10 need no node list: their file names the conquered passives.
-		// Everything else is judged on the socket's neighbourhood, narrowed to the
-		// user's picks when there are any -- for Zorath that neighbourhood stands
-		// in for a path we cannot know, so letting the user pick the nodes IS the
-		// way to aim it at their own build.
-		if (!isAbyss || isZorath) {
-			std::vector<int> inRad = ptData.NodesInRadius(selSocket, 1800.0f);
-			bool anySel = false;
-			for (int idx : inRad)
-				if (idx < (int)ptSelected.size() && ptSelected[idx]) { anySel = true; break; }
-			for (int idx : inRad) {
-				if (ptData.nodes[idx].kind == kPtSocket) continue;
-				if (anySel && !(idx < (int)ptSelected.size() && ptSelected[idx])) continue;
-				q.nodeIds.push_back(ptData.nodes[idx].id);
-			}
-		}
-		q.protectIds = protectedIds();
 		searchProtected_ = !q.protectIds.empty();
 		jobReported_ = false;
 		if (isAbyss)
@@ -1546,6 +1733,7 @@ public:
 	void drawSeedForm()
 	{
 		drawAbyssBanner();
+		if (TJIsZorath(jewelType)) drawBuildSection(); // the path decides what the seed changes
 		PobUi::Heading(u8"查已知種子");
 		ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
 		const float w = ImGui::GetContentRegionAvail().x;
@@ -1649,9 +1837,11 @@ public:
 
 	void copyForPob(int seed)
 	{
-		std::string t = TJItemText(*ds, jewelType, conquerorSel, seed);
+		// POB needs one conqueror on the item: under "任意" the first one (the seed's mods do not depend on it)
+		std::string t = TJItemText(*ds, jewelType, conqAny_ ? 0 : conquerorSel, seed);
 		if (!t.empty() && WriteClipboardUtf8(nullptr, t))
-			PobUi::ShowToast(u8"已複製物品文字，可在 POB 的物品欄貼上 (Ctrl+V)", PobUi::Tone::Ok);
+			PobUi::ShowToast(conqAny_ ? u8"已複製物品文字（征服者用第一位，鑰石以實際珠寶為準），可在 POB 的物品欄貼上 (Ctrl+V)"
+			                          : u8"已複製物品文字，可在 POB 的物品欄貼上 (Ctrl+V)", PobUi::Tone::Ok);
 		else
 			showError(u8"複製失敗", u8"無法寫入剪貼簿，請再試一次。", false);
 	}
@@ -1688,7 +1878,7 @@ public:
 			ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + w, p.y + rowH), Tok::Bg);
 			ImGui::GetWindowDrawList()->AddLine(ImVec2(p.x, p.y + rowH - 0.5f), ImVec2(p.x + w, p.y + rowH - 0.5f),
 			                                    Tok::Border, 1.0f);
-			const bool canPick = selSocket >= 0 && (treeRadius || zorath);
+			const bool canPick = selSocket >= 0 && treeRadius;
 			const char* pickLbl[4] = { u8"全部", u8"大點", u8"一般", u8"清除" };
 			float pickW = 0.0f;
 			if (canPick) {
@@ -1705,7 +1895,7 @@ public:
 				// hits; the 7-10 passives come from the jewel's own file and are not
 				// in a circle at all. Saying "radius" there would describe the wrong
 				// mechanic.
-				else if (zorath) st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜圈內為判斷用，實際生效看你的配點";
+				else if (zorath) st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜亮起的是插槽到職業起點的最短路徑";
 				else if (treeAbyss) st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜此插槽被征服的天賦以金框標示";
 				else st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜半徑內受影響節點以金框標示";
 			}
@@ -1743,7 +1933,7 @@ public:
 		// recompute highlight + per-node transforms when the input tuple changes
 		// (selVersion covers the picked-node set).
 		long long sig = ((long long)selSocket * 1000003 + detailSeed) * 97 +
-		                (long long)jewelType * 13 + conquerorSel * 131 + selVersion;
+		                (long long)jewelType * 13 + conquerorSel * 131 + selVersion + (long long)abyssVer_ * 7919;
 		if (sig != hiSig) {
 			hiSig = sig;
 			recomputeHighlights(treeRadius);
@@ -1778,20 +1968,24 @@ public:
 
 		PassiveTreeInput tin;
 		tin.selectedSocket = selSocket;
-		// Zorath has no radius either, but this ring marks the area being judged,
-		// not an area of effect -- the status row says which. Leaving it invisible
-		// would hide what the numbers were computed from.
-		tin.radiusWorld = (treeRadius || zorath) ? 1800.0f : 0.0f;
+		// Zorath has no radius: what it judges is the build's path to the class
+		// start, shown in the "selected" style instead of a ring.
+		tin.radiusWorld = treeRadius ? 1800.0f : 0.0f;
 		tin.hi = &dispHi;
-		tin.selected = ptSelected.empty() ? nullptr : &ptSelected;
+		tin.selected = treeAbyss ? (pathMask_.size() == ptData.nodes.size() ? &pathMask_ : nullptr)
+		                      : ptSelected.empty() ? nullptr : &ptSelected;
 		tin.protectedMark = (canProtect() && !ptProtected.empty()) ? &ptProtected : nullptr;
 		tin.emphasize = emphNode;
-		const bool pickable = treeRadius || zorath;
+		tin.showAsc = treeAbyss;
+		tin.ascName = ascClass();
+		tin.ascHit = &ascHit_;
+		const bool pickable = treeRadius;
 		tin.overlay = [this, pickable](ImDrawList* dl, ImVec2 mn, ImVec2 mx) { drawLegend(dl, mn, mx, pickable); };
 		// Test aid (POBTOOLS_TJ_STATE=protectclick): pin a notable under the canvas
 		// centre, right-click it through ImGui's own input queue (no OS input), then
 		// write what the click changed to POBTOOLS_TJ_CLICK_DUMP.
 		if (testClickNode_ >= 0) ptView.SetCamera(0.3f, ptData.nodes[testClickNode_].x, ptData.nodes[testClickNode_].y);
+		if (testCam_.x > 0) { ptView.SetCamera(testCam_.x, testCam_.y, testCam_.z); centerPending_ = false; }
 		PassiveTreeOutput tout = ptView.Draw(ptData, scale, tin);
 		if (testClickNode_ >= 0 && testClickFrame_ >= 0) {
 			if (testClickFrame_ == 2) {
@@ -1841,7 +2035,30 @@ public:
 			}
 		}
 		if (tout.hoveredNode >= 0) drawNodeTooltip(tout.hoveredNode);
-		else if (testHoverNode_ >= 0) drawNodeTooltip(testHoverNode_); // POBTOOLS_TJ_STATE=keystone
+		else if (tout.hoveredAsc >= 0) drawAscTooltip(tout.hoveredAsc);
+		else if (testHoverNode_ >= 0) { drawNodeTooltip(testHoverNode_); dumpKeystoneOnce(); } // POBTOOLS_TJ_STATE=keystone
+	}
+
+	// Test aid (POBTOOLS_TJ_STATE=keystone): the socket note and the hovered keystone's lines go to POBTOOLS_TJ_KS_DUMP.
+	void dumpKeystoneOnce()
+	{
+		if (testKsDumped_ || hiSig == -1) return;
+		testKsDumped_ = true;
+		wchar_t path[MAX_PATH] = L"";
+		const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_TJ_KS_DUMP", path, MAX_PATH);
+		if (n == 0 || n >= MAX_PATH) return;
+		std::string out = "note=" + keystoneNote() + "\n";
+		const auto it = ptTrans.find(testHoverNode_);
+		out += std::string("replaced=") + (it != ptTrans.end() && it->second.replaced ? "1" : "0") + "\n";
+		if (it != ptTrans.end()) {
+			out += "name=" + it->second.newNameZh + "\n";
+			for (const auto& l : it->second.linesZh) out += "line=" + l + "\n";
+		}
+		HANDLE f = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (f == INVALID_HANDLE_VALUE) return;
+		DWORD wr = 0;
+		WriteFile(f, out.data(), (DWORD)out.size(), &wr, nullptr);
+		CloseHandle(f);
 	}
 
 	// Bottom-left of the canvas: what the gold ring and the socket mean.
@@ -1854,17 +2071,25 @@ public:
 		const float gap = PobUi::D(16.0f), padX = PobUi::D(10.0f), padY = PobUi::D(6.0f);
 		const char* hitL = u8"種子改變的節點";
 		const char* sockL = u8"珠寶插槽";
+		const char* clL = u8"星團珠寶格";
 		const char* pickL = canProtect() ? u8"左鍵點節點可單獨查看｜右鍵大點＝保護不被替換" : u8"點一般節點可單獨查看";
+		bool pickRing = true;
+		if (TJIsZorath(jewelType) && !zorathPath_.empty()) {   // the lit nodes/links are Zorath's path
+			pickable = true;
+			pickL = u8"亮起＝插槽到職業起點的最短路徑";
+			pickRing = false;
+		}
 		float w = padX * 2.0f + sw + PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, hitL).x + gap + sw +
-		          PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, sockL).x;
-		if (pickable) w += gap + f->CalcTextSizeA(px, FLT_MAX, 0, pickL).x;
+		          PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, sockL).x +
+		          gap + sw + PobUi::D(6.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, clL).x;
+		if (pickable) w += gap + (pickRing ? sw + PobUi::D(6.0f) : 0.0f) + f->CalcTextSizeA(px, FLT_MAX, 0, pickL).x;
 		const float h = px + padY * 2.0f;
 		const ImVec2 p(mn.x + PobUi::D(16.0f), mx.y - PobUi::D(14.0f) - h);
 		if (p.x + w > mx.x || p.y < mn.y) return;   // canvas too small: no legend
 		dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), (Tok::Canvas & 0x00FFFFFFu) | 0xCC000000u, PobUi::D(6.0f));
 		float x = p.x + padX;
 		const float cy = p.y + h * 0.5f;
-		dl->AddCircle(ImVec2(x + sw * 0.5f, cy), sw * 0.5f, Tok::TreeHit, 16, 2.0f);
+		dl->AddCircle(ImVec2(x + sw * 0.5f, cy), sw * 0.5f, Tok::Danger, 16, 2.0f);
 		x += sw + PobUi::D(6.0f);
 		dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, hitL);
 		x += f->CalcTextSizeA(px, FLT_MAX, 0, hitL).x + gap;
@@ -1872,7 +2097,17 @@ public:
 		x += sw + PobUi::D(6.0f);
 		dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, sockL);
 		x += f->CalcTextSizeA(px, FLT_MAX, 0, sockL).x + gap;
-		if (pickable) dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, pickL);
+		dl->AddCircle(ImVec2(x + sw * 0.5f, cy), sw * 0.5f, Tok::FxPurple, 16, 2.0f);
+		x += sw + PobUi::D(6.0f);
+		dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, clL);
+		x += f->CalcTextSizeA(px, FLT_MAX, 0, clL).x + gap;
+		if (pickable) {
+			if (pickRing) {   // picked nodes are ringed red on the tree
+				dl->AddCircle(ImVec2(x + sw * 0.5f, cy), sw * 0.5f, Tok::FxWhite, 16, 2.0f);
+				x += sw + PobUi::D(6.0f);
+			}
+			dl->AddText(f, px, ImVec2(x, p.y + padY), Tok::TextMuted, pickL);
+		}
 	}
 
 	static PobUi::TreeKind kindOf(int ptKindV)
@@ -1922,11 +2157,31 @@ public:
 			const std::vector<std::string> lines = PtDisplayStats(n);
 			if (!lines.empty()) ImGui::Separator();
 			for (const std::string& s : lines) ImGui::TextColored(text, "%s", s.c_str());
+			if (n.cluster) PobUi::Hint(u8"大型星團珠寶格（也可放深淵／永恆珠寶）");
 		}
 		if (canProtect() && nodeIdx < (int)ptProtected.size() && ptProtected[nodeIdx]) {
 			ImGui::Separator();
 			ImGui::TextColored(PobUi::TokV4(Tok::Success), "%s", u8"已保護：搜尋會排除替換這個大點的種子（右鍵取消）");
 		}
+		ImGui::PopTextWrapPos();
+		ImGui::EndTooltip();
+		ImGui::PopStyleVar();
+	}
+
+	void drawAscTooltip(int ascIdx)
+	{
+		const PtNode& n = ptData.ascNodes[ascIdx];
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(std::floor(16 * scale), std::floor(12 * scale)));
+		ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(440 * scale, FLT_MAX));
+		ImGui::BeginTooltip();
+		ImGui::PushTextWrapPos(400 * scale);
+		const bool hit = ascHit_.count(n.id) != 0;
+		const std::string& nm = n.nameZh.empty() ? n.name : n.nameZh;
+		ImGui::TextColored(PobUi::TokV4(hit ? Tok::TreeHit : PobUi::TreeKindColor(kindOf(n.kind))), "%s", nm.c_str());
+		if (hit) PobUi::Hint(u8"（這個種子會改掉這個昇華天賦，詳見右側「昇華天賦選擇」）");
+		const std::vector<std::string> lines = PtDisplayStats(n);
+		if (!lines.empty()) ImGui::Separator();
+		for (const std::string& s : lines) ImGui::TextColored(PobUi::TokV4(Tok::Text), "%s", s.c_str());
 		ImGui::PopTextWrapPos();
 		ImGui::EndTooltip();
 		ImGui::PopStyleVar();
@@ -1942,11 +2197,11 @@ public:
 		{
 			const std::vector<TJConqueror>* conqs = conqListFor(jewelType);
 			const int conqN = conqs ? (int)conqs->size() : 0;
-			if (conquerorSel >= conqN || conquerorSel < 0) conquerorSel = 0;
-			conquerorId_ = conqN ? (*conqs)[conquerorSel].id : std::string("1");
+			deriveConqueror(conqs, conqN);
 		}
 		ptHi.assign(ptData.nodes.size(), kPtHiNone);
 		ptTrans.clear();
+		ascHit_.clear();
 		statGroups.clear();
 		emphNode = -1; hlStatGroup = -1;
 		const bool abyssDetail = TJIsAbyss(jewelType);
@@ -1968,9 +2223,15 @@ public:
 				}
 			}
 		} else {
-			// Legion: the socket's neighbourhood IS the affected set; Zorath: only where we look
-			// (the real set follows the character's own allocation).
-			cand = ptData.NodesInRadius(selSocket, 1800.0f);
+			// Legion: the socket's neighbourhood IS the affected set; Zorath: the shortest path to the chosen class start.
+			if (zorathDetail) {
+				for (int id : zorathPath_) {
+					const int idx = ptData.IndexOfId(id);
+					if (idx >= 0 && ptData.nodes[idx].kind != kPtSocket) cand.push_back(idx);
+				}
+			} else {
+				cand = ptData.NodesInRadius(selSocket, 1800.0f);
+			}
 			if (zorathDetail && haveBin) {
 				std::vector<int> ids;
 				ids.reserve(cand.size());
@@ -1985,12 +2246,19 @@ public:
 					abyssMods[idx] = it->second;
 				}
 				cand.swap(kept);
+				// every Ascendancy passive the seed takes: the same read as the 昇華天賦選擇 section (no query, so
+				// protection / required picks never hide one)
+				std::map<std::string, std::vector<int>> picks;
+				if (TJAbyssReadAscendancies(*blob, *abyssLut, detailSeed, picks))
+					for (const auto& kv : picks)
+						// the chosen Ascendancy only (all of them when none is chosen); both are disc ids
+						if (ascClass().empty() || kv.first == ascClass()) ascHit_.insert(kv.second.begin(), kv.second.end());
 			}
 		}
 
 		bool anySel = false;
 		for (int idx : cand)
-			if (idx < (int)ptSelected.size() && ptSelected[idx]) { anySel = true; break; }
+			if (!abyssDetail && idx < (int)ptSelected.size() && ptSelected[idx]) { anySel = true; break; }
 		auto included = [&](int idx) { return !anySel || (idx < (int)ptSelected.size() && ptSelected[idx]); };
 		for (int idx : cand) {
 			const PtNode& n = ptData.nodes[idx];
@@ -2000,8 +2268,7 @@ public:
 				// so preview it now and let the conqueror picker change it.
 				if (!abyssDetail && n.kind == kPtKeystone) {
 					static const std::string kNoBlob;
-					TJTransform t = TJApply(*ds, kNoBlob, jewelType, -1, n.id, "Keystone", n.stats,
-					                        ConquerorType(jewelType), conquerorId_, n.name);
+					TJTransform t = applyNode(kNoBlob, -1, n, "Keystone");
 					if (t.ok && t.replaced) {
 						ptHi[idx] = kPtHiReplaced;
 						ptTrans[idx] = std::move(t);
@@ -2018,8 +2285,7 @@ public:
 				t = TJAbyssApply(*ds, m->second);
 			} else {
 				const char* nt = n.kind == kPtKeystone ? "Keystone" : n.kind == kPtNotable ? "Notable" : "Normal";
-				t = TJApply(*ds, *blob, jewelType, detailSeed, n.id, nt, n.stats, ConquerorType(jewelType),
-				            conquerorId_, n.name);
+				t = applyNode(*blob, detailSeed, n, nt);
 			}
 			if (t.ok && (!t.lines.empty() || t.replaced)) {
 				ptHi[idx] = t.replaced ? kPtHiReplaced : kPtHiAffected;
@@ -2131,14 +2397,17 @@ public:
 			return;
 		}
 		if (job.results.empty()) {
-			if (job.done.load())
+			if (job.done.load() && searchNoWants_)
+				PobUi::EmptyState("##noresult", PobIcon::Search, u8"沒有符合條件的種子",
+				                  u8"每個種子都會改掉你保護的天賦。取消幾個保護再搜尋一次。");
+			else if (job.done.load())
 				PobUi::EmptyState("##noresult", PobIcon::Search, u8"沒有符合條件的種子",
 				                  searchProtected_
 				                      ? u8"符合詞綴的種子都會替換掉你保護的大點。在樹上右鍵取消幾個保護，或放寬詞綴條件。"
 				                      : u8"降低最小值或最小總權重、關掉「必須包含全部詞綴」，或把範圍改成全部節點。");
 			else
 				PobUi::EmptyState("##noresult", PobIcon::Search, u8"還沒有搜尋結果",
-				                  u8"在左側加入想要的詞綴、在樹上選好插槽，再按「搜尋這個插槽」。");
+				                  u8"在樹上選好插槽，再按「搜尋這個插槽」。左側加入想要的詞綴會依權重排序；不加詞綴就列出全部種子。");
 			return;
 		}
 
@@ -2148,7 +2417,7 @@ public:
 			const float w = ImGui::GetContentRegionAvail().x;
 			PobUi::Heading((u8"找到 " + std::to_string(job.results.size()) + u8" 個種子").c_str());
 			const float lineH = ImGui::GetItemRectSize().y;
-			const char* sortHint = u8"依權重排序";
+			const char* sortHint = searchNoWants_ ? u8"依種子編號排序" : u8"依權重排序";
 			const ImFont* sf = PobUi::Fonts().small ? PobUi::Fonts().small : ImGui::GetFont();
 			const float hw = ((ImFont*)sf)->CalcTextSizeA(sf->FontSize, FLT_MAX, 0.0f, sortHint).x;
 			ImGui::SetCursorScreenPos(ImVec2(p.x + w - hw, p.y + std::floor((lineH - sf->FontSize) * 0.5f)));
@@ -2177,16 +2446,18 @@ public:
 	// ("… 41-80"). Call under the same ID stack as drawTradeGroupButton.
 	std::string tradeGroupLabel(const std::vector<int>& seeds, const char* base, const char* tag)
 	{
-		if (seeds.size() <= kMaxTradeSeeds) return base;
-		const TradeBatch b = TradeNextBatch(seeds.size(), tradeNext_[ImGui::GetID(tag)]);
+		const size_t per = tradePerSearch();
+		if (seeds.size() <= per) return base;
+		const TradeBatch b = TradeNextBatch(seeds.size(), tradeNext_[ImGui::GetID(tag)], per);
 		return std::string(base) + " " + std::to_string(b.begin + 1) + "-" + std::to_string(b.end);
 	}
 
 	void drawTradeGroupButton(const std::vector<int>& seeds, const char* base, const char* tag, float minW)
 	{
-		const bool capped = seeds.size() > kMaxTradeSeeds;
+		const size_t per = tradePerSearch();
+		const bool capped = seeds.size() > per;
 		size_t& next = tradeNext_[ImGui::GetID(tag)];
-		const TradeBatch b = TradeNextBatch(seeds.size(), next);
+		const TradeBatch b = TradeNextBatch(seeds.size(), next, per);
 		// the ID stays `tag` while the visible label moves on to the next batch
 		const std::string label = tradeGroupLabel(seeds, base, tag) + "###" + tag;
 		if (PobUi::Button(label.c_str(), PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::ExternalLink, minW, !tradeOff())) {
@@ -2212,8 +2483,9 @@ public:
 			if (tradeOff()) tip = tradeOffWhy();
 			else {
 				tip = u8"一次在交易站搜尋 " + std::to_string(b.end - b.begin) + u8" 個種子（任一符合即列出，即時購買）。";
+				if (conqAny_) tip += u8"征服者選「任意」：每個種子對每位征服者各佔一條條件。";
 				if (capped)
-					tip += u8"交易站一次查詢最多 " + std::to_string(kMaxTradeSeeds) + u8" 個種子，這裡共 " +
+					tip += u8"交易站一次查詢最多 " + std::to_string(per) + u8" 個種子，這裡共 " +
 					       std::to_string(seeds.size()) + u8" 個：這次送排名第 " + std::to_string(b.begin + 1) + "-" +
 					       std::to_string(b.end) + u8" 個，再按一次送下一批，送完最後一批會從頭開始。";
 			}
@@ -2263,7 +2535,7 @@ public:
 	std::vector<int> resultNodes() const
 	{
 		std::vector<int> inRad;
-		if (selSocket >= 0 && (!TJIsAbyss(jewelType) || TJIsZorath(jewelType))) {
+		if (selSocket >= 0 && !TJIsAbyss(jewelType)) {
 			std::vector<int> rad = ptData.NodesInRadius(selSocket, 1800.0f);
 			bool anySel = false;
 			for (int idx : rad)
@@ -2289,7 +2561,13 @@ public:
 		}
 		unsigned h = 2166136261u;
 		for (size_t i = 0; i < ptSelected.size(); i++) h = (h ^ (ptSelected[i] ? 1u : 0u) ^ (unsigned)i) * 16777619u;
-		return s + std::to_string(h);
+		s += std::to_string(h);
+		// abyss-only inputs: keep the eternal (1-6) key exactly as it was
+		if (TJIsAbyss(jewelType)) {
+			s += "|" + std::to_string(abyssVer_) + "|" + std::to_string(reqAscSel_) + "|";
+			for (int id : protectAsc_) s += std::to_string(id) + ",";
+		}
+		return s;
 	}
 
 	SeedSummary buildSummary(int seed)
@@ -2314,30 +2592,21 @@ public:
 		};
 		auto isBig = [](int kind) { return kind == kPtNotable || kind == kPtKeystone; };
 		if (TJIsAbyss(jewelType)) {
-			std::map<int, TJAbyssMod> rec;
-			bool got = false;
-			if (selSocket >= 0) {
-				if (TJIsZorath(jewelType)) {
-					std::vector<int> ids;
-					for (int idx : resultNodesCache_) ids.push_back(ptData.nodes[idx].id);
-					got = TJAbyssReadNodes(*ds, *blob, *abyssLut, ids, seed, rec);
-				} else {
-					got = TJAbyssReadSocket(*ds, *blob, *abyssLut, ptData.nodes[selSocket].id, seed, rec);
-				}
-			}
-			if (got)
-				for (const auto& m : rec) {
-					if (!TJAbyssInScope(scope, m.first, *ds, &ptKind)) continue;
-					TJTransform t = TJAbyssApply(*ds, m.second);
-					const auto k = ptKind.find(m.first);
-					if (t.ok) take(t, k != ptKind.end() && isBig(k->second));
+			// exactly what the search scored: same query, same per-seed scorer
+			std::vector<TJAbyssScored> det;
+			TJSeedHit hit;
+			if (selSocket >= 0 && abyssBlocker().empty() &&
+			    TJAbyssScoreSeed(*ds, *blob, *abyssLut, makeQuery(), ptData.nodes[selSocket].id, seed, &ptKind, hit, &det))
+				for (const TJAbyssScored& d : det) {
+					if (!d.scored || !d.t.ok) continue;
+					const auto k = ptKind.find(d.nodeId);
+					take(d.t, d.ascendancy || (k != ptKind.end() && isBig(k->second)));
 				}
 		} else {
 			for (int idx : resultNodesCache_) {
 				const PtNode& n = ptData.nodes[idx];
 				const char* nt = n.kind == kPtKeystone ? "Keystone" : n.kind == kPtNotable ? "Notable" : "Normal";
-				TJTransform t = TJApply(*ds, *blob, jewelType, seed, n.id, nt, n.stats,
-				                        ConquerorType(jewelType), conquerorId_, n.name);
+				TJTransform t = applyNode(*blob, seed, n, nt);
 				if (t.ok) take(t, isBig(n.kind));
 			}
 		}
@@ -2433,6 +2702,7 @@ public:
 		char wmeta[48], cmeta[48];
 		snprintf(wmeta, sizeof(wmeta), u8"權重 %.1f", h.weight);
 		snprintf(cmeta, sizeof(cmeta), u8"詞綴 %d/%d", h.distinctWants, nw);
+		if (searchNoWants_) wmeta[0] = cmeta[0] = 0; // nothing was scored
 		const float metaW = small->CalcTextSizeA(small->FontSize, FLT_MAX, 0.0f, wmeta).x + PobUi::D(10.0f) +
 		                    small->CalcTextSizeA(small->FontSize, FLT_MAX, 0.0f, cmeta).x;
 
@@ -2595,10 +2865,11 @@ public:
 			x += PobUi::IconWidth(PobIcon::ChevronDown, px) + PobUi::D(4.0f);
 		}
 		char lbl[64], note[64];
-		snprintf(lbl, sizeof(lbl), u8"命中 %d 個節點", matches);
+		if (searchNoWants_ && matches == 0) snprintf(lbl, sizeof(lbl), u8"符合條件的種子");
+		else snprintf(lbl, sizeof(lbl), u8"命中 %d 個節點", matches);
 		// past the cap the note says how many go to the trade site per click (the
 		// button names the batch, its tooltip says why)
-		if (seeds.size() > kMaxTradeSeeds) snprintf(note, sizeof(note), u8"%d 個種子・每次查 %d 個", count, (int)kMaxTradeSeeds);
+		if (seeds.size() > tradePerSearch()) snprintf(note, sizeof(note), u8"%d 個種子・每次查 %d 個", count, (int)tradePerSearch());
 		else snprintf(note, sizeof(note), u8"%d 個種子", count);
 		dl->PushClipRect(p, ImVec2(p.x + toggleW, p.y + h), true);
 		dl->AddText(body, px, ImVec2(x, ty), Tok::Text, lbl);
@@ -2661,7 +2932,7 @@ public:
 		// scatter them over the tree.
 		char title[96];
 		snprintf(title, sizeof(title),
-		         TJIsZorath(jewelType) ? u8"種子 %d 對這一帶天賦的效果"
+		         TJIsZorath(jewelType) ? u8"種子 %d 改變的路徑天賦"
 		         : TJIsAbyss(jewelType) ? u8"種子 %d 征服的天賦"
 		                                : u8"種子 %d 的變化",
 		         detailSeed);
@@ -2734,9 +3005,7 @@ public:
 						}
 					}
 					ImGui::EndChild();
-					// PobTools' tree leaves Ascendancy nodes out; what the notable
-					// becomes is the part being chosen, so that is what is shown.
-					PobUi::Hint(u8"本工具的樹資料不含昇華節點，只顯示它會變成什麼。", innerW);
+					PobUi::Hint(u8"被改掉的昇華天賦在天賦樹的昇華盤上以金圈標出。", innerW);
 				}
 			}
 		}
@@ -2877,6 +3146,10 @@ public:
 			ImDrawList* dl = ImGui::GetWindowDrawList();
 			if (r.prio) DrawStar(dl, ImVec2(p.x + starW * 0.45f, p.y + lineH * 0.5f), lineH * 0.42f, Tok::TreeHit);
 			dl->AddText(ImVec2(p.x + starW, p.y), nc, nm.c_str());
+			if (t.replaced) {   // show what the seed took away, not just what it gives
+				const std::string was = u8"（原：" + (n.nameZh.empty() ? n.name : n.nameZh) + u8"）";
+				dl->AddText(ImVec2(p.x + starW + ImGui::CalcTextSize(nm.c_str()).x + PobUi::D(6.0f), p.y), Tok::TextMuted, was.c_str());
+			}
 			if (sel) { panToNode = r.idx; emphNode = r.idx; }
 			ImGui::Indent(PobUi::D(20.0f));
 			for (size_t i = 0; i < t.lines.size(); i++) {
@@ -2917,6 +3190,10 @@ public:
 		if (testState_.empty() || !ptDataOk) return;
 		jewelType = 2;
 		conquerorSel = 0;
+		{
+			wchar_t cq[8] = L""; // POBTOOLS_TJ_CONQ = conqueror index, for every state
+			if (GetEnvironmentVariableW(L"POBTOOLS_TJ_CONQ", cq, 8) > 0) conquerorSel = (std::max)(0, _wtoi(cq));
+		}
 		templates = TJStatTemplates(*ds, jewelType);
 		templatesFor = jewelType;
 		ensureBin(jewelType);
@@ -2929,6 +3206,11 @@ public:
 		}
 		selSocket = best;
 		centerPending_ = true;
+		// POBTOOLS_TJ_CAM="zoom,x,y": pin the tree camera (whole tree / an ascendancy disc) instead of centring the socket
+		if (const char* cam = std::getenv("POBTOOLS_TJ_CAM")) {
+			float z = 0, x = 0, y = 0;
+			if (sscanf(cam, "%f,%f,%f", &z, &x, &y) == 3) testCam_ = ImVec4(z, x, y, 0);
+		}
 		const char* wantEn[3] = { "Attack Speed", "Leech", "maximum Life" };
 		const float wantW[3] = { 1.0f, 2.0f, 1.5f };
 		for (int k = 0; k < 3; k++)
@@ -2954,6 +3236,12 @@ public:
 			if (testState_ == "tradepanel") openTrade_ = true;
 			if (testState_ == "noleague") tradeLeague.clear();
 			runSearch();
+		} else if (testState_ == "nowants") {   // search with no stats: every seed, by number
+			mode = 0;
+			groupResults = true;
+			autoPick_ = true;
+			wants.clear();
+			runSearch();
 		} else if (testState_ == "seed") {
 			mode = 1;
 			seedText = std::to_string(mid);
@@ -2962,7 +3250,7 @@ public:
 			openMore_ = true;
 		} else if (testState_ == "paste" || testState_ == "pastenosock") {
 			mode = 0;   // the paste must be what switches to the seed page
-			std::string txt = TJItemText(*ds, jewelType, conquerorSel, mid);
+			std::string txt = TJItemText(*ds, jewelType, conqAny_ ? 0 : conquerorSel, mid);
 			wchar_t path[MAX_PATH] = L"";
 			const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_TJ_PASTE_FILE", path, MAX_PATH);
 			if (n > 0 && n < MAX_PATH) {
@@ -2994,7 +3282,30 @@ public:
 			centerPending_ = true;
 			mode = 0;
 			wants.clear();
-		} else if (testState_ == "protect") {
+		} else if (testState_ == "abyss" || testState_ == "zorath") {
+			// Abyss mode: Ulaman (or Zorath) on the first socket, one wanted stat, a search run and the first
+			// seed opened. Zorath: POBTOOLS_TJ_CLASS = class id (default 1 Marauder), its first Ascendancy.
+			jewelType = testState_ == "zorath" ? 11 : 8;
+			templates = TJStatTemplates(*ds, jewelType);
+			templatesFor = jewelType;
+			ensureBin(jewelType);
+			wchar_t cn[16] = L"";
+			classId_ = GetEnvironmentVariableW(L"POBTOOLS_TJ_CLASS", cn, 16) > 0 ? _wtoi(cn) : 1;
+			asc_.clear(); protectAsc_.clear(); reqAscSel_ = 0;
+			for (const auto& a : ptData.ascClasses)
+				if (asc_.empty() && a.classId == classId_) asc_ = a.id;
+			selSocket = ptData.sockets.empty() ? -1 : ptData.sockets[0];
+			centerPending_ = true;
+			wants.clear();
+			const char* en = jewelType == 11 ? "+# to maximum Life" : "#% increased Impale Effect";
+			for (const auto& t : templates)
+				if (t.en == en) wants.push_back({ t.en, t.zh.empty() ? t.en : t.zh, 0.0f, 2.0f });
+			scope = 0;
+			mode = 0;
+			autoPick_ = true;
+			updateAbyssDerived();
+			runSearch();
+		} else if (testState_ == "protect" || testState_ == "picked") {
 			// Militant Faith on the socket already chosen above, two notables
 			// protected, searching for Devotion, the first seed opened.
 			jewelType = 4;
@@ -3008,6 +3319,11 @@ public:
 			int marked = 0;
 			for (int idx : ptData.NodesInRadius(selSocket, 1800.0f))
 				if (ptData.nodes[idx].kind == kPtNotable && marked < 2) { ptProtected[idx] = 1; marked++; }
+			if (testState_ == "picked") {   // every third node in reach picked: the picked ring beside the seed halo
+				ptSelected.assign(ptData.nodes.size(), 0);
+				int k = 0;
+				for (int idx : ptData.NodesInRadius(selSocket, 1800.0f)) if (k++ % 3 == 0) ptSelected[idx] = 1;
+			}
 			mode = 0;
 			autoPick_ = true;
 			runSearch();
@@ -3079,6 +3395,135 @@ private:
 				if (i < n.statsZh.size() && !n.statsZh[i].empty()) zh++;
 			}
 		zhPct = lines > 0 ? (int)(100.0 * zh / lines + 0.5) : -1;
+	}
+
+	// ---- Abyss mode helpers ----
+	// The chosen Ascendancy's disc id, as Zorath's ASCS section keys it ("Raider", not the display name "Warden");
+	// "" = none or not of the chosen class.
+	std::string ascClass() const
+	{
+		for (const auto& a : ptData.ascClasses)
+			if (!asc_.empty() && a.id == asc_ && a.classId == classId_) return a.id;
+		return {};
+	}
+
+	// GGPK names for the class / Ascendancy pickers (ui.json, ascendancy_by_id.json); English when missing.
+	void loadClassNames()
+	{
+		if (classNamesLoaded_) return;
+		classNamesLoaded_ = true;
+		auto load = [&](const wchar_t* file, std::map<std::string, std::string>& out, bool onlyClasses) {
+			std::string content;
+			if (!read_file_utf8(exeDir + L"Data\\poe1\\zh-rTW\\" + file, content)) return;
+			try {
+				const nlohmann::json d = nlohmann::json::parse(content);
+				const nlohmann::json& e = d.at("entries");
+				if (!onlyClasses) {
+					for (const auto& [k, v] : e.items()) if (v.is_string()) out[k] = v.get<std::string>();
+					return;
+				}
+				for (const auto& cs : ptData.classStarts) {
+					auto it = e.find(cs.name);
+					if (it != e.end() && it->is_string()) out[cs.name] = it->get<std::string>();
+				}
+			} catch (...) {}   // names are cosmetic: a bad file just shows English
+		};
+		load(L"ui.json", classZh_, true);
+		load(L"ascendancy_by_id.json", ascZh_, false);
+	}
+	static std::string zhOr(const std::map<std::string, std::string>& m, const std::string& key, const std::string& en = {})
+	{
+		auto it = m.find(key);
+		return it != m.end() && !it->second.empty() ? it->second : en.empty() ? key : en;
+	}
+
+	std::string ascName(int id) const
+	{
+		auto it = passiveZh_.find(id);
+		return it != passiveZh_.end() ? it->second : std::to_string(id);
+	}
+
+	void loadAbyssNames()
+	{
+		if (!ascOutcomes_.empty()) return;
+		for (const TJEntry& e : ds->nodes)
+			if (e.id.rfind("abyss_special_ascendancy_notable_", 0) == 0)
+				ascOutcomes_.push_back({ e.id, e.dnZh.empty() ? e.dn : e.dnZh });
+		std::sort(ascOutcomes_.begin(), ascOutcomes_.end(),
+		          [](const std::pair<std::string, std::string>& a, const std::pair<std::string, std::string>& b) { return a.second < b.second; });
+		std::string content;
+		if (read_file_utf8(exeDir + L"Data\\poe1\\zh-rTW\\passives_by_id.json", content)) {
+			try {
+				const nlohmann::json d = nlohmann::json::parse(content);
+				for (const auto& [k, v] : d.at("entries").items())
+					if (v.is_string()) passiveZh_[atoi(k.c_str())] = v.get<std::string>();
+			} catch (...) {}   // names are cosmetic: a bad file just shows ids
+		}
+	}
+
+	// Rebuild Zorath's path / the protect candidates when anything they depend on changes.
+	// Cheap: one BFS over ~2000 nodes, one ASCS walk.
+	void updateAbyssDerived()
+	{
+		if (!TJIsAbyss(jewelType)) return;
+		const std::string key = std::to_string(jewelType) + "|" + std::to_string(selSocket) + "|" +
+		                        std::to_string(classId_) + "|" + asc_ + "|" +
+		                        std::to_string(binOk && loadedBinType == jewelType) + "|" + ptData.Version();
+		if (key == abyssKey_) return;
+		abyssKey_ = key;
+		abyssVer_++;
+		zorathPath_.clear(); ascTargets_.clear();
+		pathMask_.assign(ptData.nodes.size(), 0);
+		if (!TJIsZorath(jewelType) || classId_ < 0) return;   // 7-10 light nothing: the jewel's file lists its passives
+		if (selSocket >= 0) {
+			std::set<int> all;   // every passive "allocated" = the shortest path over the whole tree
+			for (const PtNode& n : ptData.nodes) all.insert(n.id);
+			zorathPath_ = PtShortestPathToClassStart(ptData, all, ptData.nodes[selSocket].id, classId_);
+		}
+		for (int id : zorathPath_) {
+			const int idx = ptData.IndexOfId(id);
+			if (idx >= 0) pathMask_[idx] = 1;
+		}
+		loadAbyssNames();
+		if (binOk && loadedBinType == jewelType && !ascClass().empty())
+			ascTargets_ = TJAbyssAscendancyTargets(*blob, *abyssLut, ascClass());
+		for (auto it = protectAsc_.begin(); it != protectAsc_.end();)
+			it = std::find(ascTargets_.begin(), ascTargets_.end(), *it) == ascTargets_.end() ? protectAsc_.erase(it) : ++it;
+	}
+
+	// Why an Abyss search cannot run yet; "" when it can.
+	std::string abyssBlocker() const
+	{
+		if (!TJIsAbyss(jewelType)) return {};
+		if (TJIsZorath(jewelType)) {
+			if (ptData.classStarts.empty()) return u8"天賦樹資料太舊（缺職業起點），請更新天賦樹";
+			if (classId_ < 0) return u8"重奪惡意要先在左側選職業起點";
+			if (selSocket >= 0 && zorathPath_.empty()) return u8"這個插槽沒有路徑通到所選的職業起點";
+		}
+		return {};
+	}
+
+	// The query both the search and the result summaries use, so a listed score
+	// and its breakdown come from the same rules.
+	TJSearchQuery makeQuery() const
+	{
+		TJSearchQuery q;
+		q.jewelType = jewelType;
+		q.scope = scope;
+		q.minTotalWeight = minTotalWeight;
+		q.requireAll = requireAll;
+		for (auto& w : wants) q.wants.push_back({ w.en, w.minValue, w.weight });
+		if (!TJIsAbyss(jewelType)) {
+			// Legion: the socket's neighbourhood, narrowed to the user's picks when there are any.
+			for (int idx : resultNodes()) q.nodeIds.push_back(ptData.nodes[idx].id);
+			q.protectIds = protectedIds();
+		} else if (TJIsZorath(jewelType)) {
+			q.nodeIds.assign(zorathPath_.begin(), zorathPath_.end());
+			q.ascClass = ascClass();
+			if (reqAscSel_ > 0 && reqAscSel_ <= (int)ascOutcomes_.size()) q.requiredAscOutcome = ascOutcomes_[reqAscSel_ - 1].first;
+			q.protectAscIds.assign(protectAsc_.begin(), protectAsc_.end());
+		}
+		return q;
 	}
 
 	void saveTjUi()
@@ -3155,6 +3600,8 @@ private:
 	// this frame's conqueror, for the trade export and TJApply
 	std::string conquerorId_ = "1";
 	std::string tradeStatId_;
+	bool conqAny_ = false;               // conqueror "任意": keystones list every conqueror, trade ORs all
+	std::vector<std::string> tradeIds_;  // every conqueror's trade stat (deduped) under "任意"
 	// results: toast once per finished search; the test aid picks the first seed
 	bool jobReported_ = true;
 	bool autoPick_ = false;
@@ -3183,6 +3630,7 @@ private:
 	// POBTOOLS_TJ_STATE / POBTOOLS_TOOL_SHOT
 	std::string testState_;
 	bool testMode_ = false;
+	bool testKsDumped_ = false;   // POBTOOLS_TJ_STATE=keystone: POBTOOLS_TJ_KS_DUMP written
 	int testHoverNode_ = -1;      // POBTOOLS_TJ_STATE=keystone: tooltip shown without a mouse
 	int testConqSwitch_ = -1;     // POBTOOLS_TJ_CONQ_SWITCH: conqueror picked after the first recompute
 	int testClickNode_ = -1;      // POBTOOLS_TJ_STATE=protectclick: the notable right-clicked
@@ -3207,6 +3655,7 @@ private:
 	std::vector<char> ptSelected;                // per-node: user-picked focus set (1 = picked)
 	std::vector<char> ptProtected;               // per-node: notable the search must not let be replaced
 	bool searchProtected_ = false;               // the last search carried a protection (empty-state wording)
+	bool searchNoWants_ = false;                 // the last search had no stats: every seed, by number
 	int selVersion = 0;                          // bumps on any selection change
 	std::map<int, TJTransform> ptTrans;          // node index -> transform (affected only)
 	std::vector<StatGroup> statGroups;
@@ -3252,6 +3701,24 @@ private:
 
 	SearchJob job;
 	std::map<int, int> ptKind;
+
+	// ---- Abyss mode: Zorath's class start and Ascendancy (PoB 2.68 searchSingleSocket) ----
+	int classId_ = -1;            // Zorath: class start the path runs to; -1 = none chosen
+	std::string asc_;             // Zorath: Ascendancy disc id ("Raider"); "" = none
+	bool classNamesLoaded_ = false;
+	std::map<std::string, std::string> classZh_, ascZh_; // English class / Ascendancy id -> GGPK name
+	int reqAscSel_ = 0;           // Zorath: 0 = any, else 1 + index into ascOutcomes_
+	std::vector<std::pair<std::string, std::string>> ascOutcomes_; // legion id, display name
+	std::set<int> protectAsc_;    // Zorath: Ascendancy passives a seed must not conquer
+	// derived from the above + socket + jewel; rebuilt when abyssKey_ changes
+	std::string abyssKey_;
+	int abyssVer_ = 0;
+	std::set<int> zorathPath_;    // ids, socket and class start included
+	std::vector<char> pathMask_;  // node index -> lit on the tree: Zorath's path
+	ImVec4 testCam_{ 0, 0, 0, 0 }; // POBTOOLS_TJ_CAM: zoom, x, y pinned every frame (screenshot aid)
+	std::set<int> ascHit_;        // Zorath: ascendancy node ids the detail seed conquers (gold ring on the disc)
+	std::vector<int> ascTargets_; // Zorath: the chosen Ascendancy's passives the jewel can take
+	std::map<int, std::string> passiveZh_; // passives_by_id.json, for Ascendancy names
 };
 
 IToolPanel* CreateTimelessJewelPanel()

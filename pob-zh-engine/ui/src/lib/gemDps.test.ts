@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DPS_DOWN, DPS_SAME, DPS_UP, dpsDeltaColor, dpsDeltaText, formatSignedNumber, formatSignedPct } from "./gemDps";
+import { DPS_DOWN, DPS_SAME, DPS_UP, dpsDeltaColor, dpsDeltaText, formatSignedGain, formatSignedNumber, formatSignedPct } from "./gemDps";
 
 describe("gem DPS change", () => {
   it("uses POB's three colours", () => {
@@ -24,5 +24,16 @@ describe("gem DPS change", () => {
     expect(dpsDeltaText({ delta: 500, pct: 25 })).toBe("+25%");
     expect(dpsDeltaText({ delta: 500 })).toBe("+500");
     expect(dpsDeltaText({})).toBe("");
+  });
+});
+
+describe("formatSignedGain", () => {
+  it("小數型增減(攻速、倍率)保留兩位，不被取整成 ±0", () => {
+    expect(formatSignedGain(0.3)).toBe("+0.30");
+    expect(formatSignedGain(-0.05)).toBe("−0.05");
+  });
+  it("大於等於 10 的增減取整並分位", () => {
+    expect(formatSignedGain(1234.6)).toBe("+1,235");
+    expect(formatSignedGain(58)).toBe("+58");
   });
 });

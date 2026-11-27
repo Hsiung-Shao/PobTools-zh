@@ -70,7 +70,8 @@
     const root = app.buildPath.split(String.fromCharCode(92)).join("/").replace(/[/]+$/, "").toLowerCase();
     const file = (h?.dbFileName ?? "").split(String.fromCharCode(92)).join("/");
     const dir = file.slice(0, file.lastIndexOf("/") + 1);
-    saveAsDir = file && dir.toLowerCase().startsWith(root + "/") ? dir.slice(root.length + 1) : "";
+    // a build with no file yet goes where the list was when it was made (POB's dbFileSubPath)
+    saveAsDir = file && dir.toLowerCase().startsWith(root + "/") ? dir.slice(root.length + 1) : file ? "" : (h?.dbFileSubPath ?? "");
     saveAsOpen = true;
     await loadFolders(saveAsDir);
   }

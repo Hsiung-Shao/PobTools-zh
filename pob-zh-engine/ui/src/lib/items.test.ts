@@ -38,6 +38,17 @@ describe("groupSlots", () => {
     expect(g[2].slots.map((s) => s.name)).toEqual(["Amulet", "Ring 1", "Belt"]);
     expect(g[4].slots.map((s) => s.name)).toEqual(["Jewel 100"]);
   });
+  it("3.30 樹時柳條人四欄自成一組，不混進防具", () => {
+    const g = groupSlots([slot({ name: "Helmet" }), slot({ name: "Flask 1", isFlask: true }),
+      slot({ name: "Head" }), slot({ name: "Body" }), slot({ name: "Arm" }), slot({ name: "Leg" })]);
+    expect(g.map((x) => x.key)).toEqual(["armour", "flasks", "wickerman"]);
+    expect(g[0].slots.map((s) => s.name)).toEqual(["Helmet"]);
+    expect(g[2].slots.map((s) => s.name)).toEqual(["Head", "Body", "Arm", "Leg"]);
+  });
+  it("非 3.30 樹(柳條人欄隱藏)時不出現柳條人組", () => {
+    const g = groupSlots([slot({ name: "Helmet" }), slot({ name: "Head", shown: false })]);
+    expect(g.map((x) => x.key)).toEqual(["armour"]);
+  });
 });
 
 describe("item <-> slot lookups", () => {

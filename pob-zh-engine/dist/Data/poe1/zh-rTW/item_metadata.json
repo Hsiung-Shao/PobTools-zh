@@ -376,6 +376,11 @@
       "en": "Corrupted"
     },
     {
+      "zh": "二次汙染",
+      "en": "Twice Corrupted",
+      "ident": "ItemPopupDoubleCorrupted"
+    },
+    {
       "zh": "已鏡像",
       "en": "Mirrored"
     },

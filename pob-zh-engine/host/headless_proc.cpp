@@ -1,9 +1,11 @@
 #include "headless_proc.h"
 
 #include "error_log.h"
+#include "pob_sandbox.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shlobj.h>
 #include "win_util.h"
 
 #include <condition_variable>
@@ -309,6 +311,84 @@ void Child::SetExitSink(std::function<void()> sink)
 {
 	std::lock_guard<std::mutex> lock(impl_->mu);
 	impl_->exitSink = std::move(sink);
+}
+
+bool BootSandboxed(const std::wstring& exeDir, const std::wstring& pobDirIn, const std::wstring& sandboxDir, bool rebuild,
+                   const std::wstring& bridgeOverride, std::unique_ptr<Child>& child, std::string& err, bool withBuilds)
+{
+	using namespace PobSandbox;
+	// FindPoe1Dir ends in a backslash; junctions built from "dir\\name" point nowhere
+	std::wstring pobDir = pobDirIn;
+	while (pobDir.size() > 3 && (pobDir.back() == L'\\' || pobDir.back() == L'/')) pobDir.pop_back();
+	if (rebuild || !IsDir(sandboxDir)) {
+		if (child) { child->Stop(1000); child.reset(); }
+		Rmtree(sandboxDir);
+		MkdirP(sandboxDir);
+		CopyStats st;
+		LinkTree(pobDir, sandboxDir, st, withBuilds);
+		// An installed POB (installed.cfg, left out of the sandbox) keeps its
+		// builds under Documents\Path of Building\Builds: bring those along.
+		if (withBuilds && GetFileAttributesW((pobDir + L"\\installed.cfg").c_str()) != INVALID_FILE_ATTRIBUTES) {
+			PWSTR docs = nullptr;
+			if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &docs))) {
+				const std::wstring userBuilds = std::wstring(docs) + L"\\Path of Building\\Builds";
+				if (IsDir(userBuilds)) CopyTree(userBuilds, sandboxDir + L"\\Builds", st, true);
+			}
+			CoTaskMemFree(docs);
+		}
+		if (st.errors > 0 || (st.junctions == 0 && st.files < 100)) {
+			err = "Could not prepare the sandbox copy of Path of Building (" + std::to_string(st.errors) + " errors).";
+			return false;
+		}
+		// POB's background update check (Launch.lua runs UpdateCheck.lua from
+		// its folder at start and every 12 h) would download a whole POB
+		// update into the sandbox's Update\ on every session. The sandbox's
+		// copy answers "no update" instead; the user's own file is untouched.
+		HANDLE uc = CreateFileW((sandboxDir + L"\\UpdateCheck.lua").c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (uc != INVALID_HANDLE_VALUE) {
+			static const char stub[] = "return \"none\"\n";
+			DWORD w = 0;
+			WriteFile(uc, stub, sizeof(stub) - 1, &w, nullptr);
+			CloseHandle(uc);
+		}
+	}
+	if (child) child->Stop(1000);
+	child = std::make_unique<HeadlessProc::Child>();
+	HeadlessProc::Options opt;
+	opt.exeDir = exeDir;
+	opt.launchLua = sandboxDir + L"\\Launch.lua";
+	opt.game = L"poe1";
+	opt.locale = L"zh-rTW";
+	opt.bridgeLua = bridgeOverride;
+	if (!child->Start(opt, err)) return false;
+	json hello, gate;
+	if (!child->WaitEvent("hello", hello, 180000)) {
+		err = "Path of Building did not start in the headless engine: " + child->StrayOutput().substr(0, 400);
+		child->Stop(1000);
+		return false;
+	}
+	if (child->WaitEvent("gate_result", gate, 10000) && !gate.value("ok", false)) {
+		err = "This Path of Building version is not supported by the installed PobTools data pack yet; update PobTools. (" +
+		      gate.dump().substr(0, 300) + ")";
+		child->Stop(1000);
+		return false;
+	}
+	json r;
+	child->Call("set_translate", json{{"enabled", true}}, r, 10000);
+	// Stop POB caching timeless-jewel tables through the Data junction into
+	// the user's folder (mcp_tools.lua M.mcp_setup). It reaches into POB's
+	// private locals, so a POB refactor can break it: refuse to run then,
+	// like a failed bridge gate, rather than silently writing into the
+	// user's install. mcp_tools.lua ships in the data pack, so the fix can.
+	json setup;
+	if (!child->Call("mcp_setup", json::object(), setup, 10000) || !setup.value("jewelCacheOff", false)) {
+		err = "This Path of Building version is not supported by the installed PobTools data pack yet "
+		      "(timeless jewel loader changed); update PobTools.";
+		PobLog::Error("mcp", err);
+		child->Stop(1000);
+		return false;
+	}
+	return true;
 }
 
 } // namespace HeadlessProc

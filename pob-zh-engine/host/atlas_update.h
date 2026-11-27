@@ -49,7 +49,7 @@ private:
 	bool doCheck(std::string* err) override;     // worker
 	bool doUpdate(std::string* err) override;    // worker
 	void ackExtra(Status& st) override { st.zhRefreshed = false; }
-	bool refreshZhMapping(const std::string& tag, const std::string& repoeVer, std::string* err);
+	bool refreshZhMapping(const std::string& tag, const std::string& ref, const std::string& repoeVer, std::string* err);
 	void saveVersionRecord();
 
 	// version record + check result cache (worker-thread only after Init)
@@ -60,17 +60,35 @@ private:
 // Builds atlas_tree_zh.json inside destDir (trailing backslash, e.g. a season
 // folder Data/atlas_versions/<tag>/) from a GGG atlastree-export data.json
 // (English names/stats) joined with repoe-fork's Traditional-Chinese Atlas.json
-// on the node hash. Writes only after both inputs parsed and the join is sane; a
-// zero join keeps the previous mapping. Shared by the worker and the CLIs.
+// on the node hash. enAtlasJson (repoe-fork English Atlas.json, same row order
+// as the TC one) pairs statsZh to statsEn by full text; empty or unparsable =
+// number matching only. Writes only after both inputs parsed and the join is
+// sane; a zero join keeps the previous mapping. Shared by the worker and the CLIs.
 bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& tcAtlasJson,
                             const std::string& tag, const std::string& repoeVersion,
-                            const std::wstring& destDir, std::string* err, std::string* summary);
+                            const std::wstring& destDir, std::string* err, std::string* summary,
+                            const std::string& enAtlasJson = std::string());
+
+// Newest atlas data on GitHub: the highest plain-semver tag, or the default
+// branch head when its commit message starts with that same version (GGG
+// pushed "3.30.0c" to master without tagging it). headBody = GET commits?per_page=1,
+// empty/unparsable = tag only. Download by *sha, not by tag name. *fromHead:
+// *sha is the head's (only then does a sha mismatch on the same tag mean "newer").
+bool PickAtlasRemote(const std::string& tagsBody, const std::string& headBody,
+                     std::string* tag, std::string* sha, bool* fromHead, std::string* err);
+// Local tag/sha vs remote: new tag, or same tag with a different known head sha
+// (a tag-only fallback must not "update" a head revision back to the tag).
+bool AtlasNeedsUpdate(const std::string& localTag, const std::string& localSha,
+                      const std::string& remoteTag, const std::string& remoteSha, bool remoteFromHead);
+// sha of the installed `tag`: the atlas_index.json entry (follows the data an app
+// update ships), else the update record's sha.
+std::string AtlasInstalledSha(const std::wstring& exeDir, const std::string& tag, const std::string& recordSha);
 
 // "pob-zh.exe --atlas-update": headless check + download + import + zh mapping
 // (ignores the daily throttle). Prints the outcome; 0 on success/up-to-date.
 int RunAtlasUpdateCli(const std::wstring& exeDir);
 
-// "pob-zh.exe --atlas-zh <data.json> <Atlas_tc.json>": offline zh-mapping
-// rebuild from local files (join-logic test bed).
+// "pob-zh.exe --atlas-zh <data.json> <Atlas_tc.json> [<Atlas_en.json>]": offline
+// zh-mapping rebuild from local files (join-logic test bed).
 int RunAtlasZhCli(const std::wstring& dataJsonPath, const std::wstring& tcJsonPath,
-                  const std::wstring& exeDir);
+                  const std::wstring& enJsonPath, const std::wstring& exeDir);

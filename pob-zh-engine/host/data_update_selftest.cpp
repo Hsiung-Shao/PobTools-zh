@@ -1,6 +1,7 @@
 #include "data_update_selftest.h"
 #include "atlas_update.h"
 #include "passive_tree_update.h"
+#include "passive_import.h"
 #include "http_client.h"
 #include "error_log.h"
 
@@ -134,6 +135,7 @@ struct FakeNet {
 	int unexpected = 0;             // requests outside the known set
 
 	std::string tagsPath, rawPrefix; // the exact request shapes the updater is expected to use
+	std::string headPath;            // atlas only: default-branch head (fake answers "unreachable" = tag only)
 	std::string tagsBody;
 	bool tagsFail = false;
 	std::string repoeVer = "r1";
@@ -167,6 +169,7 @@ struct FakeNet {
 		};
 
 		if (h == "api.github.com") {
+			if (!headPath.empty() && p == headPath) return no("fake: head unreachable", false);
 			if (p != tagsPath) return no("unexpected api path", true);
 			if (tagsFail) return no("fake: tags unreachable", false);
 			return ok(tagsBody);
@@ -174,6 +177,7 @@ struct FakeNet {
 		if (h == "repoe-fork.github.io") {
 			if (p == "/version.txt") return ok(repoeVer + "\n");
 			if (p == "/Traditional%20Chinese/passive_skill_trees/Atlas.json") return ok(tcAtlas);
+			if (p == "/passive_skill_trees/Atlas.json") return no("fake: no en atlas", false); // number-matching fallback
 			return no("unexpected repoe path", true);
 		}
 		if (h == "raw.githubusercontent.com") {
@@ -306,6 +310,21 @@ std::string without_key(const std::string& good, const char* key)
 	return d.dump();
 }
 
+// pt_data_good + one ascendancy (Ascendant under Scion): a start node (20) linked to one ordinary node (21), same group.
+// The ascendancy sprite keys (Classes<id>, AscendancyMiddle, AscendancyFrame*) live in the "ascendancy" sprite category.
+std::string pt_data_asc()
+{
+	ordered_json d = ordered_json::parse(pt_data_good());
+	d["classes"] = ordered_json::parse(R"([{"name":"Scion","ascendancies":[{"id":"Ascendant","name":"Ascendant"}]}])");
+	d["groups"]["2"] = ordered_json::parse(R"({"x":0,"y":0})");
+	d["nodes"]["20"] = ordered_json::parse(R"({"skill":20,"name":"Ascendant Start","ascendancyName":"Ascendant","isAscendancyStart":true,"group":2,"orbit":0,"orbitIndex":0,"icon":"ic","out":["21"]})");
+	d["nodes"]["21"] = ordered_json::parse(R"({"skill":21,"name":"Asc Node","ascendancyName":"Ascendant","group":2,"orbit":1,"orbitIndex":0,"icon":"ic","in":["20"],"stats":["+2 to test"]})");
+	d["sprites"]["ascendancy"] = ordered_json::parse(sprite("0.3835", "asc-3.png", 64,
+		coords_obj({ "ClassesAscendant", "AscendancyMiddle", "AscendancyFrameSmallNormal", "AscendancyFrameSmallAllocated",
+		             "AscendancyFrameLargeNormal", "AscendancyFrameLargeAllocated" }, 32)));
+	return d.dump();
+}
+
 // ---- updater driver (one test body for both) ----------------------------------------------------------------
 
 enum class Ph { Idle, Checking, UpToDate, UpdateAvailable, Downloading, Importing, Done, Error };
@@ -368,6 +387,7 @@ struct Flavor {
 	bool atlas;
 	std::string curTag, newTag, curLatest, newLatest; // curTag/newTag = GitHub tags; *Latest = Status::latest form
 	std::string newSha;
+	std::string ref() const { return newSha.empty() ? newTag : newSha; } // download/cache key
 	std::string tagsPath, rawPrefix;
 	std::string dataGood;
 	std::wstring treeFile;                     // an existing tree file an up-to-date check must not rewrite
@@ -425,11 +445,11 @@ const Flavor& pt_flavor()
 		x.newSha = "";
 		x.tagsPath = "/repos/grindinggear/skilltree-export/tags?per_page=100";
 		x.rawPrefix = "/grindinggear/skilltree-export/";
-		x.dataGood = pt_data_good();
+		x.dataGood = pt_data_asc(); // with an ascendancy: the updater must fetch its sheet too
 		x.treeFile = L"Data\\passive_tree_poe1.json";
 		x.guard = { L"Data\\passive_tree_poe1.json", L"Data\\passive_update.json" };
 		x.absent = { L"Data\\tree\\a-3.png", L"Data\\tree\\b-3.png" };
-		x.neededAssets = { "a-3.png", "b-3.png", "f-3.png", "g-3.png" };
+		x.neededAssets = { "a-3.png", "asc-3.png", "b-3.png", "f-3.png", "g-3.png" };
 		x.breakKey = "classes";
 		x.seed = seed_pt;
 		return x;
@@ -463,6 +483,7 @@ struct Ctx {
 			put(pob + L"TreeData\\" + widen(o.pobVer) + L"\\a-3.png", "POB-A3-SHEET");
 		}
 		net.tagsPath = fl.tagsPath;
+		if (fl.atlas) net.headPath = "/repos/grindinggear/atlastree-export/commits?per_page=1";
 		net.rawPrefix = fl.rawPrefix;
 		net.tagsBody = o.newer
 			? R"([{"name":"3.30.0-ruthless","commit":{"sha":"ruthsha"}},{"name":"3.29.0","commit":{"sha":"newsha"}},{"name":"3.28.0","commit":{"sha":"oldsha"}}])"
@@ -598,7 +619,7 @@ void verify_atlas_installed(Ctx& c, Rep& R)
 	for (const std::string& a : c.fl.neededAssets)
 		if (slurp(nd + L"atlas\\" + widen(a)) != "ASSET:" + a) sheetsOk = false;
 	R.chk(0, sheetsOk, u8"4 張圖集都複製進新賽季 atlas\\（內容與下載相同）");
-	R.chk(0, !dir_exists(d + L"PobTools\\cache\\atlas_update\\3.29.0\\assets"), u8"成功後清掉下載快取");
+	R.chk(0, !dir_exists(d + L"PobTools\\cache\\atlas_update\\" + widen(c.fl.ref()) + L"\\assets"), u8"成功後清掉下載快取");
 }
 
 void verify_pt_installed(Ctx& c, Rep& R)
@@ -610,7 +631,7 @@ void verify_pt_installed(Ctx& c, Rep& R)
 	bool sheetsOk = true;
 	for (const std::string& a : c.fl.neededAssets)
 		if (slurp(d + L"Data\\tree\\" + widen(a)) != "ASSET:" + a) sheetsOk = false;
-	R.chk(0, sheetsOk, u8"4 張圖集都複製進 Data\\tree\\（內容與下載相同）");
+	R.chk(0, sheetsOk, u8"5 張圖集都複製進 Data\\tree\\（內容與下載相同）");
 	ordered_json rec = parse_file(d + L"Data\\passive_update.json");
 	R.chk(0, rec.is_object() && rec.value("lastCheckUtc", 0ll) > 0, u8"節流紀錄 passive_update.json 寫入檢查時間",
 	      slurp(d + L"Data\\passive_update.json"));
@@ -644,7 +665,7 @@ void test_update(Rep& R)
 	}
 
 	std::vector<std::string> calls = c.net.allCalls();
-	R.chk(0, data_calls(calls) == 1 && has_call(calls, "raw.githubusercontent.com" + fl.rawPrefix + fl.newTag + "/data.json"),
+	R.chk(0, data_calls(calls) == 1 && has_call(calls, "raw.githubusercontent.com" + fl.rawPrefix + fl.ref() + "/data.json"),
 	      u8"只下載一次新 tag 的 data.json（路徑正確）");
 	R.chk(0, asset_calls(calls) == fl.neededAssets, u8"只下載資料實際引用的圖集（不多不少、共用的只抓一次）",
 	      "got=" + join(asset_calls(calls)));
@@ -801,7 +822,7 @@ void test_cache_write(Rep& R)
 	Opt o;
 	Ctx c(fl, o);
 	const std::string one = *fl.neededAssets.begin();
-	put(c.dir + L"PobTools\\cache\\" + (fl.atlas ? L"atlas_update" : L"pt_update") + L"\\" + widen(fl.newTag) +
+	put(c.dir + L"PobTools\\cache\\" + (fl.atlas ? L"atlas_update" : L"pt_update") + L"\\" + widen(fl.ref()) +
 	    L"\\assets\\" + widen(one) + L".part", "HALF");
 	bool ok = false;
 	View v = c.check(true, &ok);
@@ -865,6 +886,53 @@ void test_pob_local(Rep& R)
 	}
 }
 
+// ---- A6: 匯入器把昇華節點/連線寫進 asc 區段,不污染主樹 nodes ----------------------------------------------------
+
+// 直接呼叫 ImportPassiveTreeData(圖集從 data.json 旁的 assets\ 取);回傳輸出樹檔,失敗時 *err 帶原因
+ordered_json import_tree(const std::string& dataJson, std::string* err)
+{
+	const std::wstring d = make_sandbox_dir();
+	put(d + L"in\\data.json", dataJson);
+	for (const char* a : { "a-3.png", "b-3.png", "f-3.png", "g-3.png", "asc-3.png" })
+		put(d + L"in\\assets\\" + widen(a), std::string("ASSET:") + a);
+	std::string summary;
+	ordered_json out;
+	if (ImportPassiveTreeData(d + L"in\\data.json", "3_29", d, err, &summary))
+		out = parse_file(d + L"Data\\passive_tree_poe1.json");
+	rmtree(d.substr(0, d.size() - 1));
+	return out;
+}
+
+void test_pt_ascendancy(Rep& R)
+{
+	std::string e0, e1;
+	const ordered_json base = import_tree(pt_data_good(), &e0);
+	const ordered_json asc = import_tree(pt_data_asc(), &e1);
+	R.chk_id("A6a", base.is_object() && asc.is_object(), u8"含昇華與不含昇華的最小 data.json 都匯入成功", e0 + " | " + e1);
+	if (!base.is_object() || !asc.is_object()) return;
+	const bool hasAsc = asc.contains("asc") && asc["asc"].is_object();
+	R.chk_id("A6b", hasAsc && asc["asc"]["nodes"].size() == 2, u8"輸出 asc.nodes 為 2 筆（起點 + 一般昇華節點）",
+	         hasAsc ? std::to_string(asc["asc"]["nodes"].size()) : std::string("無 asc 區段"));
+	R.chk_id("A6c", hasAsc && asc["asc"]["edges"].size() == 1, u8"輸出 asc.edges 為 1 筆（兩昇華節點相連）",
+	         hasAsc ? std::to_string(asc["asc"]["edges"].size()) : std::string("無 asc 區段"));
+	R.chk_id("A6d", base["nodes"].size() == asc["nodes"].size() && asc["nodes"].size() == 2,
+	         u8"主樹 nodes 數與不含昇華時相同（昇華節點不進主樹）",
+	         std::to_string(base["nodes"].size()) + " vs " + std::to_string(asc["nodes"].size()));
+	const ordered_json& cls = hasAsc ? asc["asc"]["classes"] : ordered_json();
+	R.chk_id("A6e", cls.is_array() && cls.size() == 1 && cls[0].value("name", "") == "Ascendant",
+	         u8"asc.classes 帶昇華顯示名 name（POB 流派檔存的是 name）", cls.dump());
+	// 昇華框 sprite 缺失：昇華區段整段捨棄，主樹照常匯入，也不帶出昇華圖集
+	ordered_json broken = ordered_json::parse(pt_data_asc());
+	broken["sprites"]["ascendancy"]["0.3835"]["coords"].erase("AscendancyFrameLargeAllocated");
+	std::string e2;
+	const ordered_json noAsc = import_tree(broken.dump(), &e2);
+	bool ascSheet = false;
+	if (noAsc.is_object())
+		for (const auto& sh : noAsc["sheets"]) ascSheet = ascSheet || sh.value("file", "") == "asc-3.png";
+	R.chk_id("A6f", noAsc.is_object() && !noAsc.contains("asc") && !ascSheet && noAsc["nodes"].size() == 2,
+	         u8"昇華 sprite 缺失時只捨棄昇華區段，主樹仍匯入成功", e2);
+}
+
 int run(const std::wstring& exeDir, const Flavor& fl, const wchar_t* reportName)
 {
 	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
@@ -882,7 +950,8 @@ int run(const std::wstring& exeDir, const Flavor& fl, const wchar_t* reportName)
 	test_cache_write(R);
 	if (!fl.atlas) test_pt_tree_write(R);
 	if (!fl.atlas) test_pob_local(R);
-	else rep.note(u8"輿圖更新器不讀本機 POB，無對應補充項");
+	if (!fl.atlas) test_pt_ascendancy(R);
+	if (fl.atlas) rep.note(u8"輿圖更新器不讀本機 POB，無對應補充項");
 	return rep.finish(exeDir + reportName);
 }
 

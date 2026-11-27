@@ -4,4 +4,5 @@
 extern const GameRules kGameRulesPoe2 = {
     "poe2",
     /* stat_keep_input_brackets */ true,
+    /* stripped_reverse_wins */ true,
 };

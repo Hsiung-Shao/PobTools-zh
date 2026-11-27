@@ -980,6 +980,8 @@ InstallInfo DetectInstalls(const std::wstring& exeDir)
 			do {
 				if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
 				if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) continue;
+				// POB beside the exe (case 3) stages its background update here, Launch.lua included.
+				if (_wcsicmp(fd.cFileName, L"Update") == 0) continue;
 				subs.push_back(fd.cFileName);
 			} while (FindNextFileW(h, &fd));
 			FindClose(h);
@@ -1224,6 +1226,14 @@ int RunDetectInstallsSelfTest(const std::wstring& exeDir)
 		InstallInfo i = DetectInstalls(r);
 		check("T13 Launch.lua beats manifest and name",
 		      i.poe1Dir == r + L"poe2_old" && i.poe2Dir.empty(),
+		      ascii_narrow(i.poe1Dir + L" | " + i.poe2Dir));
+	}
+	{ // T14: exe 與 POB 同層時,POB 背景更新暫存的 Update\Launch.lua 不算安裝
+		std::wstring r = makeRoot({ L"Update" }, true, L"case14");
+		writeManifest(r + L"Update", false); // UpdateCheck.lua 也會存 Update\manifest.xml
+		InstallInfo i = DetectInstalls(r);
+		check("T14 POB updater staging dir is not an install",
+		      i.poe1Dir + L"\\" == r && i.poe2Dir.empty(),
 		      ascii_narrow(i.poe1Dir + L" | " + i.poe2Dir));
 	}
 

@@ -239,6 +239,13 @@ public:
 			history_.SetSessionStartAndSave(exeDir_, state_.game, historyLeague_, setStartRequest_);
 			setStartRequest_ = 0;
 		}
+		if (deleteRequest_) {
+			if (selSnapUtc_ == deleteRequest_) selSnapUtc_ = 0;
+			if (!history_.DeleteAndSave(exeDir_, state_.game, historyLeague_, deleteRequest_))
+				PobUi::ShowToast(u8"刪除失敗：快照已不存在或無法寫入", PobUi::Tone::Bad);
+			linesForUtc_ = 0; // re-sort the detail table against what is left
+			deleteRequest_ = 0;
+		}
 	}
 
 	ToolCloseState RequestClose() override
@@ -1693,7 +1700,7 @@ private:
 	{
 		{
 			char head[64];
-			snprintf(head, sizeof(head), u8"快照 %d 份 · 右鍵設為起點", (int)history_.snaps.size());
+			snprintf(head, sizeof(head), u8"快照 %d 份 · 右鍵設為起點或刪除", (int)history_.snaps.size());
 			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + D(6.0f));
 			PobUi::Overline(head);
 		}
@@ -1735,6 +1742,11 @@ private:
 				else if (ImGui::MenuItem(u8"設為起點", nullptr, false, !s.summary))
 					setStartRequest_ = s.utc; // applied after the frame: s points into history_
 				if (s.summary) ImGui::TextDisabled(u8"摘要快照沒有逐項明細，不能當起點");
+				ImGui::Separator();
+				if (ImGui::MenuItem(u8"刪除這份快照")) {
+					deleteAskUtc_ = s.utc;
+					askDelete_ = true;
+				}
 				ImGui::EndPopup();
 			}
 			if (s.summary && hov) {
@@ -1760,6 +1772,13 @@ private:
 		}
 		ImGui::PopStyleVar();
 		ImGui::PopStyleColor(3);
+
+		{
+			const std::string when = FormatUtcLocal(deleteAskUtc_);
+			const PobUi::DialogResult r = PobUi::ConfirmDialog(u8"##delsnap", &askDelete_, u8"刪除這份快照？",
+				u8"刪除後無法復原，收益與走勢會用剩下的快照重新計算。", when.c_str(), u8"取消", u8"刪除", nullptr);
+			if (r == PobUi::DialogResult::Danger) deleteRequest_ = deleteAskUtc_; // applied after the frame
+		}
 	}
 
 	// The three pages, picked by our own tab bar or a host's; the host speaks in ints (WarehouseEmbed::page).
@@ -1808,6 +1827,9 @@ private:
 	int detailView_ = 0;       // 0 變化, 1 持有明細
 	int catFilter_ = 0;
 	long long setStartRequest_ = 0; // "設為起點" picked this frame; applied after drawing
+	long long deleteAskUtc_ = 0;    // the snapshot the delete dialog is about
+	bool askDelete_ = false;
+	long long deleteRequest_ = 0;   // confirmed this frame; applied after drawing
 	double lastStatCheck_ = -10.0;  // ImGui time of the last history-file stat
 	FILETIME histWrite_{};          // history file's last-write time as last seen
 	char searchBuf_[128] = "";

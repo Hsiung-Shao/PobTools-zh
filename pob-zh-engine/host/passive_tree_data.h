@@ -4,6 +4,8 @@
 // folder (PathOfBuildingCommunity/TreeData/<treeVersion>/); this file carries only geometry + normalized sprite uv.
 #pragma once
 
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -13,6 +15,7 @@ enum : int {
 	kPtNotable = 1,
 	kPtKeystone = 2,
 	kPtSocket = 3,
+	kPtAscStart = 4,                         // ascendancy start (asc section only)
 };
 
 // Where a sprite lives: sheet slot + normalized uv + world-unit quad size.
@@ -31,6 +34,8 @@ struct PtNode {
 	std::vector<std::string> stats, statsZh;
 	PtSprite on, off;                    // allocated / unallocated icon (sockets: none)
 	std::vector<int> adj;                // neighbour node indices
+	bool cluster = false;                // socket: outer Large cluster-jewel socket (GGG expansionJewel size 2)
+	std::string asc;                     // ascendancy id (asc section nodes only)
 };
 
 // The stat lines to SHOW for a node: statsZh line by line, falling back to English where the Chinese is missing or
@@ -79,11 +84,39 @@ public:
 	PtFrame frames[3];                   // indexed by kind (normal/notable/keystone)
 	std::vector<PtDeco> masteries, groupbg;
 	float minX = 0, minY = 0, maxX = 0, maxY = 0;
+	float worldPerPx = 2.66f;               // world units per sprite-sheet pixel (art drawn outside the JSON)
+
+	// Class start nodes are not drawn (not in `nodes`); kept only so Zorath's path
+	// to the class start can be walked. Empty for trees written before this field.
+	struct ClassStart { int classId = -1; int id = 0; std::string name; std::vector<int> adj; }; // adj: node indices; name: "Marauder"
+	std::vector<ClassStart> classStarts;
+
+	// Ascendancy discs, drawn where the game puts them (outside the main tree). Kept apart from `nodes` so
+	// socket/path/LUT code never sees them. Empty for trees written before this field.
+	struct AscClass { std::string id, name; int classId = -1; float x = 0, y = 0; PtSprite bg; }; // name: English display name; classId: its class start, -1 in older files
+	std::vector<AscClass> ascClasses;
+	std::vector<PtNode> ascNodes;        // kind: normal / notable / kPtAscStart; adj = ascNodes indices
+	std::vector<PtEdge> ascEdges;        // a/b index ascNodes
+	PtFrame ascFrames[2];                // small / large: off + on (path unused)
 
 private:
 	std::string treeVersion_;            // e.g. "3_28" (sheet subfolder)
 	std::string version_;
 };
+
+// Port of PoB PassiveSpec:GetShortestPathToClassStart: breadth-first through
+// ALLOCATED nodes only, from the socket to the start of `classId`. Returns the
+// GGG ids on the path, socket and class start included; empty when the socket
+// is not allocated, the class start is unknown, or no allocated path exists.
+// Every node of the tree as allocIds = the shortest path over the whole tree.
+std::set<int> PtShortestPathToClassStart(const PassiveTreeData& t, const std::set<int>& allocIds,
+                                         int socketId, int classId);
+
+// PoB's pathDist for the "Filter Nodes" option: id -> how many unallocated
+// nodes must be taken to reach it (allocated = 0), for every node within
+// `maxDist`. Nodes farther away are absent.
+std::map<int, int> PtDistanceFromAllocated(const PassiveTreeData& t, const std::set<int>& allocIds,
+                                           int maxDist);
 
 // Headless check driven by "pob-zh.exe --passive-tree-selftest".
 int RunPassiveTreeSelfTest(const std::wstring& exeDir);

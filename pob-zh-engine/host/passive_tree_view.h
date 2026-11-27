@@ -34,12 +34,17 @@ struct PassiveTreeInput {
 	const std::vector<char>* selected = nullptr;          // per-node: draw a "picked" marker
 	const std::vector<char>* protectedMark = nullptr;     // per-node: draw a "must not be replaced" ring
 	int emphasize = -1;                                   // node index to ring-pulse (list pick)
+	// Ascendancy discs (d.asc*): the build's own ascendancy solid, the others half transparent, as POB.
+	bool showAsc = false;
+	std::string ascName;                                  // the build's ascendancy id ("" = none solid)
+	const std::set<int>* ascHit = nullptr;                // ascendancy node ids the seed changes (gold ring)
 	// Drawn last, inside the canvas clip, with the canvas rect (legend, notes).
 	std::function<void(ImDrawList*, ImVec2 min, ImVec2 max)> overlay;
 };
 
 struct PassiveTreeOutput {
 	int hoveredNode = -1;                    // node under the cursor (-1 none)
+	int hoveredAsc = -1;                     // ascendancy node (d.ascNodes index) under the cursor, when showAsc
 	int clickedSocket = -1;                  // a socket clicked this frame (-1 none)
 	int clickedNode = -1;                    // a non-socket node clicked this frame (-1 none)
 	int rightClickedNode = -1;               // a non-socket node right-clicked (not dragged) this frame
