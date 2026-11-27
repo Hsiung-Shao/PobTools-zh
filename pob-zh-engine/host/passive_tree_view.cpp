@@ -381,15 +381,15 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 		}
 		// a node the seed changes: a gold (TreeHit) halo ring; a REPLACED node gets a second inner ring (same hue, one legend swatch).
 		if (h) {
-			float ring = std::max((std::max(n.off.w, n.off.h) * 0.5f + 22.0f) * zoom_, 8.0f);
-			dl->AddCircle(c, ring, h == kPtHiReplaced ? kColReplaced : kColAffected, 0, 3.5f);
-			if (h == kPtHiReplaced) dl->AddCircle(c, std::max(ring - 6.0f, 4.0f), kColReplaced, 0, 2.0f);
+			// zoomed out, a small thick auto-segmented ring filled in to an orange square: keep a gap and a true circle
+			const float ring = std::max(std::max(n.off.w, n.off.h) * 0.5f * zoom_ + 7.0f, 12.0f);
+			dl->AddCircle(c, ring, h == kPtHiReplaced ? kColReplaced : kColAffected, 32, 2.5f);
+			if (h == kPtHiReplaced) dl->AddCircle(c, ring + 4.0f, kColReplaced, 32, 1.5f);
 		}
-		if (sel) dl->AddCircle(c, std::max((std::max(n.off.w, n.off.h) * 0.5f + 10.0f) * zoom_, 4.0f), kColPicked, 0, 3.0f);
+		if (sel) dl->AddCircle(c, std::max(std::max(n.off.w, n.off.h) * 0.5f * zoom_ + 3.0f, 8.0f), kColPicked, 32, 2.5f);
 		// protected: a ring outside the seed halo, so both stay readable together
 		if (in.protectedMark && i < (int)in.protectedMark->size() && (*in.protectedMark)[i])
-			dl->AddCircle(c, std::max((std::max(n.off.w, n.off.h) * 0.5f + 30.0f) * zoom_, 11.0f),
-			              kColProtected, 0, 3.0f);
+			dl->AddCircle(c, std::max(std::max(n.off.w, n.off.h) * 0.5f * zoom_ + 13.0f, 19.0f), kColProtected, 32, 2.5f);
 		if (i == hover_)
 			dl->AddCircle(c, std::max((std::max(n.off.w, n.off.h) * 0.5f + 16.0f) * zoom_, 5.0f),
 			              kColHoverRing, 0, 2.0f);
