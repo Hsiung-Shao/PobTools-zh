@@ -184,15 +184,33 @@ struct BuildCoverage { bool cluster = false, unused = false; };
 BuildCoverage BuildCoverageOf(const std::string& body)
 {
 	BuildCoverage c;
-	c.cluster = body.find("Cluster Jewel") != std::string::npos;
-	std::set<std::string> items, held;
+	auto itemIdsIn = [](const std::string& s) {
+		std::set<std::string> ids;
+		for (size_t p = s.find("itemId=\""); p != std::string::npos; p = s.find("itemId=\"", p + 1))
+			ids.insert(s.substr(p + 8, s.find('"', p + 8) - p - 8));
+		return ids;
+	};
+	std::set<std::string> items, clusterItems;
 	for (size_t p = body.find("<Item "); p != std::string::npos; p = body.find("<Item ", p + 1)) {
 		const size_t end = body.find('>', p), q = body.find(" id=\"", p);
-		if (q < end) items.insert(body.substr(q + 5, body.find('"', q + 5) - q - 5));
+		if (q >= end) continue;
+		const std::string id = body.substr(q + 5, body.find('"', q + 5) - q - 5);
+		items.insert(id);
+		if (body.substr(p, body.find("</Item>", p) - p).find("Cluster Jewel") != std::string::npos) clusterItems.insert(id);
 	}
-	for (size_t p = body.find("itemId=\""); p != std::string::npos; p = body.find("itemId=\"", p + 1))
-		held.insert(body.substr(p + 8, body.find('"', p + 8) - p - 8));
+	const std::set<std::string> held = itemIdsIn(body);
 	for (const auto& id : items) if (!held.count(id)) { c.unused = true; break; }
+	// get_tree_state reports the active tree only: a cluster jewel counts when that <Spec>'s sockets hold one
+	int active = 1;
+	if (size_t t = body.find("<Tree "); t != std::string::npos) {
+		const size_t a = body.find("activeSpec=\"", t);
+		if (a != std::string::npos && a < body.find('>', t)) active = std::atoi(body.c_str() + a + 12);
+	}
+	size_t spec = std::string::npos;
+	for (int i = 0; i < active; i++) spec = body.find("<Spec ", spec == std::string::npos ? 0 : spec + 1);
+	if (spec != std::string::npos)
+		for (const auto& id : itemIdsIn(body.substr(spec, body.find("</Spec>", spec) - spec)))
+			if (clusterItems.count(id)) { c.cluster = true; break; }
 	return c;
 }
 
@@ -1408,20 +1426,23 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		{
 			json li;
 			bool okLi = okLoad && child.Call("list_items", json::object(), li, 60000);
-			long long idRare = 0, idHelmet = 0, idUnused = 0, idUnusedRing = 0;
+			long long idRare = 0, idRareAny = 0, idHelmet = 0, idUnused = 0, idUnusedRing = 0;
 			int usedSlot = 0, unusedN = 0;
 			if (okLi) for (auto& it : li["items"]) {
 				const bool used = it.contains("usedIn") && !it["usedIn"].is_null();
 				if (used) usedSlot++; else unusedN++;
 				const std::string rarity = it.value("rarity", ""), type = it.value("type", "");
 				const long long id = it.value("id", 0LL);
-				// a socketed, quality-bearing rare (weapon/armour): the edit checks read its sockets and quality line
-				const bool socketless = type == "Jewel" || type == "Flask" || type == "Ring" || type == "Amulet" || type == "Belt" || type == "Quiver";
-				if (used && !idRare && rarity == "RARE" && !socketless) idRare = id;
+				// prefer a rare in a weapon/armour slot: the edit checks read its sockets and quality line
+				const std::string slot = used && it["usedIn"].value("kind", "") == "slot" ? it["usedIn"].value("slot", "") : "";
+				const bool socketed = slot == "Weapon 1" || slot == "Helmet" || slot == "Body Armour" || slot == "Gloves" || slot == "Boots";
+				if (used && !idRare && rarity == "RARE" && socketed) idRare = id;
+				if (used && !idRareAny && rarity == "RARE" && type != "Jewel" && type != "Flask") idRareAny = id;
 				if (used && !idHelmet && type == "Helmet") idHelmet = id;
 				if (!used && !idUnused) idUnused = id;
 				if (!used && !idUnusedRing && type == "Ring") idUnusedRing = id;
 			}
+			if (!idRare) idRare = idRareAny; // every weapon/armour unique: a jewellery rare still exercises the list checks
 			check("list_items: usedIn says where each item is (slot / abyss / jewel) or is absent for unused ones",
 			      okLi && usedSlot >= 10 && (unusedN >= 1 || !cov.unused) && idRare > 0,
 			      std::string(cov.unused ? "" : "unused side skipped (every item of the sample build is held) ") +
