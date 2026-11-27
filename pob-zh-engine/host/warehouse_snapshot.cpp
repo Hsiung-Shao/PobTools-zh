@@ -403,6 +403,28 @@ bool WarehouseHistory::SetSessionStartAndSave(const std::wstring& exeDir, const 
 	return ok;
 }
 
+bool WarehouseHistory::DeleteAndSave(const std::wstring& exeDir, const std::string& game,
+                                     const std::string& league, long long utc)
+{
+	WarehouseHistory disk;
+	disk.Load(exeDir, game, league);
+	if (disk.snaps.empty()) disk = LeagueSubset(*this, league);
+	const auto it = std::find_if(disk.snaps.begin(), disk.snaps.end(), [utc](const Snapshot& s) { return s.utc == utc; });
+	if (it == disk.snaps.end()) {
+		*this = std::move(disk); // already gone (the other panel); show what is there
+		return false;
+	}
+	disk.snaps.erase(it);
+	if (disk.sessionStartUtc == utc) {
+		disk.sessionStartUtc = 0;
+		for (const Snapshot& s : disk.snaps)
+			if (!s.summary) { disk.sessionStartUtc = s.utc; break; } // snaps are utc ascending
+	}
+	const bool ok = disk.Save(exeDir, game, league);
+	*this = std::move(disk);
+	return ok;
+}
+
 int WarehouseHistory::MigrateLegacy(const std::wstring& exeDir, const std::string& game)
 {
 	const std::wstring legacy = LegacyPath(exeDir, game);

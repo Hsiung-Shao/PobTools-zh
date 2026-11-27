@@ -100,6 +100,10 @@ struct WarehouseHistory {
 	// or is a summary (nothing to diff against).
 	bool SetSessionStartAndSave(const std::wstring& exeDir, const std::string& game,
 	                            const std::string& league, long long utc);
+	// Removes one snapshot (read-modify-write). Deleting the session start moves it to the oldest remaining full
+	// snapshot (0 when none). False (and nothing written) when that snapshot is no longer on disk.
+	bool DeleteAndSave(const std::wstring& exeDir, const std::string& game,
+	                   const std::string& league, long long utc);
 
 	// One-time move from the single-file layout (PobTools\warehouse_<game>.json) into per-league files. Merges into
 	// existing files (a snapshot's utc is its identity, never duplicated); the session start goes with its league.
